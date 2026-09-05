@@ -1,5 +1,40 @@
 import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { extendTailwindMerge } from 'tailwind-merge';
+
+/**
+ * Livd's font-size scale, declared to tailwind-merge.
+ *
+ * Without this, tailwind-merge sees `text-body` and — not recognising `body` as
+ * a size it knows — classifies it as a *colour*. It then resolves
+ * `cn('bg-brand text-canvas', 'text-body')` by dropping `text-canvas` as a
+ * conflicting colour, and the button silently renders light-on-light.
+ *
+ * That is not a theoretical hazard: it shipped, and `tests/design/cn.test.ts`
+ * exists so it cannot ship again.
+ */
+const FONT_SIZES = [
+  'micro',
+  'label',
+  'body',
+  'body-lg',
+  'title-md',
+  'title-lg',
+  'display-md',
+  'display-lg',
+  'display-xl',
+] as const;
+
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      'font-size': [{ text: [...FONT_SIZES] }],
+      tracking: [{ tracking: ['display', 'tightish', 'micro'] }],
+      // Named durations from the motion tokens, so `duration-fast` and
+      // `duration-slow` resolve against each other rather than coexisting.
+      duration: [{ duration: ['fast', 'base', 'slow'] }],
+    },
+  },
+});
 
 /** Conditional class names with Tailwind conflict resolution. */
 export function cn(...inputs: ClassValue[]): string {
