@@ -1,0 +1,71 @@
+/**
+ * Site-level configuration and runtime feature detection.
+ *
+ * Environment variables are read here and nowhere else, so the rest of the
+ * application depends on typed values rather than on `process.env` lookups
+ * scattered through it.
+ */
+
+export const SITE = {
+  name: 'Livd',
+  /** The product's one-line promise. Kept here so it is stated identically everywhere. */
+  tagline: "Know what it's really like to live there.",
+  description:
+    'Livd is a property intelligence platform built on real resident experiences. Read what people who actually lived there say — before you commit.',
+  url: (process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000').replace(/\/$/, ''),
+  locale: 'en',
+} as const;
+
+export type DataBackend = 'local' | 'supabase';
+
+/**
+ * Which repository adapter is active.
+ *
+ * Supabase is used when it is both requested and configured; otherwise the
+ * file-backed local store runs, so a fresh clone works without any external
+ * service.
+ */
+export function resolveDataBackend(): DataBackend {
+  const requested = process.env.LIVD_DATA_BACKEND;
+  const supabaseConfigured =
+    Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
+    Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
+  if (requested === 'supabase') {
+    if (!supabaseConfigured) {
+      throw new Error(
+        'LIVD_DATA_BACKEND=supabase but NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY are not set. ' +
+          'See .env.example.',
+      );
+    }
+    return 'supabase';
+  }
+
+  if (requested === 'local') return 'local';
+
+  return supabaseConfigured ? 'supabase' : 'local';
+}
+
+/** Seeded sample data is shown, and labelled, only when this is on. */
+export function showDemoData(): boolean {
+  return process.env.LIVD_SHOW_DEMO_DATA !== 'false';
+}
+
+/** Pagination and disclosure constants used across the application. */
+export const LIMITS = {
+  searchPageSize: 12,
+  reviewsPerPage: 8,
+  suggestionCount: 7,
+  maxShortlistCompare: 4,
+  reviewBodyMax: 4000,
+  reviewBodyMin: 40,
+  /** A review may be corrected within this window, then becomes immutable. */
+  reviewEditWindowHours: 24,
+} as const;
+
+export const NAV_LINKS = [
+  { href: '/search', label: 'Search' },
+  { href: '/places', label: 'Places' },
+  { href: '/how-it-works', label: 'How it works' },
+  { href: '/trust', label: 'Trust & safety' },
+] as const;

@@ -1,0 +1,75 @@
+import Link from 'next/link';
+
+import { Logo } from '@/components/brand/logo';
+import { copy } from '@/content/copy';
+
+const COLUMNS = [
+  {
+    heading: copy.footer.product,
+    links: [
+      { href: '/search', label: copy.nav.search },
+      { href: '/places', label: copy.nav.places },
+      { href: '/review', label: copy.nav.writeReview },
+      { href: '/shortlist', label: copy.nav.shortlist },
+    ],
+  },
+  {
+    heading: copy.footer.company,
+    links: [
+      { href: '/how-it-works', label: copy.nav.howItWorks },
+      { href: '/trust', label: copy.nav.trust },
+      { href: '/for-owners', label: copy.footer.forOwners },
+    ],
+  },
+  {
+    heading: copy.footer.legal,
+    links: [
+      { href: '/legal/privacy', label: copy.footer.privacy },
+      { href: '/legal/terms', label: copy.footer.terms },
+      { href: '/legal/content-policy', label: copy.footer.contentPolicy },
+    ],
+  },
+] as const;
+
+export function SiteFooter() {
+  return (
+    <footer className="mt-24 border-t border-border bg-surface-sunken/50">
+      <div className="container-shell py-14">
+        <div className="grid gap-10 md:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))]">
+          <div className="max-w-xs">
+            <Logo />
+            <p className="mt-3 text-label text-ink-muted">{copy.footer.tagline}</p>
+          </div>
+
+          {COLUMNS.map((column) => (
+            <nav key={column.heading} aria-label={column.heading}>
+              <h2 className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
+                {column.heading}
+              </h2>
+              <ul className="mt-3 flex flex-col gap-2.5">
+                {column.links.map((link) => (
+                  <li key={link.href}>
+                    <Link
+                      href={link.href}
+                      className="text-label text-ink-muted transition-colors duration-fast hover:text-ink"
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ))}
+        </div>
+
+        <div className="mt-12 flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-micro text-ink-subtle">{copy.footer.rights(new Date().getFullYear())}</p>
+          <p className="max-w-lg text-micro text-ink-subtle">
+            Reviews on Livd are written by residents and are their own accounts of living
+            somewhere. Property owners may respond; they cannot remove a review.
+          </p>
+        </div>
+      </div>
+    </footer>
+  );
+}

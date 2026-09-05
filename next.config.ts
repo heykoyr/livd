@@ -33,6 +33,12 @@ const contentSecurityPolicy = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  // A stray package-lock.json in a parent directory would otherwise be treated
+  // as the workspace root. This pins it to the project.
+  turbopack: {
+    root: __dirname,
+  },
+
   // Never leak stack traces or source paths to the client in production.
   productionBrowserSourceMaps: false,
 
