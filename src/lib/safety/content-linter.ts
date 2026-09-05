@@ -69,6 +69,15 @@ const EMAIL = /\b[\w.+-]+\s*(?:@|\(at\)|\[at\]|\s+at\s+)\s*[\w-]+(?:\s*(?:\.|\(d
  */
 const PHONE = /(?:\+\d[\d\s().-]{6,}\d)|(?:\b(?:\d[\s.-]?){7,}\d\b)/g;
 
+/**
+ * A parenthesised area code — "(415) 555-0132".
+ *
+ * Needs its own pattern because parentheses are not in the separator class
+ * above, and widening that class would start matching year ranges like
+ * "2019 - 2026" as phone numbers.
+ */
+const PHONE_PARENTHESISED = /\(\d{2,5}\)[\s.-]*\d(?:[\s.-]?\d){5,}/g;
+
 /** Digits spelled out to dodge the numeric matcher. */
 const SPELLED_PHONE =
   /\b(?:zero|one|two|three|four|five|six|seven|eight|nine)(?:[\s-]+(?:zero|one|two|three|four|five|six|seven|eight|nine)){6,}\b/gi;
@@ -98,11 +107,38 @@ const HASH_UNIT = /(?:^|\s)#\s?\d{1,4}[a-z]?\b/gi;
  * ---------------------------------------------------------------------- */
 
 /**
- * A title followed by a name. Covers the honorifics common across Livd's
- * launch markets rather than assuming an anglophone naming convention.
+ * A title followed by a name.
+ *
+ * Covers the honorifics common across Livd's launch markets rather than
+ * assuming an anglophone naming convention.
+ *
+ * Built rather than written literally, because case handling has to differ per
+ * title. The pattern cannot simply carry the `i` flag: that would relax
+ * `[A-Z][a-z]{2,}` too and match "Mr and", "Dr for" and similar. So a title's
+ * first letter is accepted in either case while the *name* stays strictly
+ * capitalised.
+ *
+ * A few titles are ordinary English words as well — "miss", "sir", "lady",
+ * "lord" — and matching those lowercase would block "I will miss London".
+ * Those are recognised only when capitalised.
  */
-const TITLED_NAME =
-  /\b(?:mr|mrs|ms|miss|dr|prof|sir|madam|chief|alhaji|alhaja|hajia|engr|barr|pastor|imam|rev|lord|lady|herr|frau|monsieur|madame|señor|señora)\.?\s+[A-Z][a-z]{2,}/g;
+const TITLES_ANY_CASE = [
+  'mr', 'mrs', 'ms', 'dr', 'prof', 'chief', 'alhaji', 'alhaja', 'hajia',
+  'engr', 'barr', 'pastor', 'imam', 'rev', 'herr', 'frau', 'monsieur',
+  'madame', 'señor', 'señora',
+];
+
+/** Also ordinary English words, so only the capitalised form counts. */
+const TITLES_CAPITALISED_ONLY = ['Miss', 'Sir', 'Madam', 'Lord', 'Lady'];
+
+const TITLE_ALTERNATION = [
+  ...TITLES_ANY_CASE.map(
+    (title) => `[${title.charAt(0).toUpperCase()}${title.charAt(0)}]${title.slice(1)}`,
+  ),
+  ...TITLES_CAPITALISED_ONLY,
+].join('|');
+
+const TITLED_NAME = new RegExp(`\\b(?:${TITLE_ALTERNATION})\\.?\\s+[A-Z][a-z]{2,}`, 'g');
 
 /**
  * A role word followed by a capitalised name — "the landlord Michael",
@@ -203,6 +239,7 @@ export function lintContent(rawText: string | null | undefined): SafetyResult {
 
   addMatches(blocks, text, EMAIL, 'contact_details', 'block');
   addMatches(blocks, text, PHONE, 'contact_details', 'block');
+  addMatches(blocks, text, PHONE_PARENTHESISED, 'contact_details', 'block');
   addMatches(blocks, text, SPELLED_PHONE, 'contact_details', 'block');
   addMatches(blocks, text, URL, 'contact_details', 'block');
   addMatches(blocks, text, HANDLE, 'contact_details', 'block');

@@ -406,8 +406,9 @@ export class SupabaseRepository implements LivdRepository {
   }
 
   async highestRated(options: DiscoveryOptions = {}): Promise<PropertySummary[]> {
-    // Scored properties only: a "highest rated" list built on unscored ones
-    // would be dishonest.
+    // Moderate evidence at minimum — a "highest rated" list headed by
+    // three-review properties is misleading however honestly the confidence is
+    // labelled beside it.
     return this.discover(options, 'overall_score', { scoredOnly: true });
   }
 
@@ -426,7 +427,11 @@ export class SupabaseRepository implements LivdRepository {
 
     if (options.countryCode) query = query.eq('country_code', options.countryCode.toUpperCase());
     if (!showDemoData()) query = query.eq('is_demo', false);
-    if (scoredOnly) query = query.not('property_stats.overall_score', 'is', null);
+    if (scoredOnly) {
+      query = query
+        .not('property_stats.overall_score', 'is', null)
+        .in('property_stats.confidence', ['moderate', 'strong']);
+    }
 
     const { data, error } = await query
       .order(orderColumn, { referencedTable: 'property_stats', ascending: false, nullsFirst: false })

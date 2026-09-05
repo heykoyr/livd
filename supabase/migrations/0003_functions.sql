@@ -41,20 +41,23 @@ as $$
   select ((least(5, greatest(1, rating)) - 1) / 4.0) * 100;
 $$;
 
--- Recency decay: halves every 30 months, floored at 0.25.
+-- Recency decay: full weight for the first 12 months, then halves every 30,
+-- floored at 0.25. Mirrors SCORING.recencyGraceMonths / recencyHalfLifeMonths.
 create or replace function livd_recency_weight(reference_date date)
 returns numeric
 language sql
 stable
 as $$
-  select greatest(
-    0.25,
-    power(
-      0.5,
-      greatest(0, (extract(year from age(current_date, reference_date)) * 12
-                 + extract(month from age(current_date, reference_date)))) / 30.0
-    )
-  );
+  select case
+    when months <= 12 then 1.0
+    else greatest(0.25, power(0.5, (months - 12) / 30.0))
+  end
+  from (
+    select greatest(0,
+      extract(year from age(current_date, reference_date)) * 12
+      + extract(month from age(current_date, reference_date))
+    ) as months
+  ) as elapsed;
 $$;
 
 -- A verified resident's review carries 1.8 of an unverified one. A disputed

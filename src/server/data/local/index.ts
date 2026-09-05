@@ -368,8 +368,12 @@ export class LocalRepository implements LivdRepository {
       database,
       options,
       (a, b) => (b.intelligence.overallScore ?? 0) - (a.intelligence.overallScore ?? 0),
-      // A "highest rated" list built on unscored properties would be dishonest.
-      (summary) => summary.intelligence.confidence !== 'insufficient',
+      // Moderate evidence at minimum. A "highest rated" list headed by
+      // three-review properties is misleading however honestly the confidence
+      // is labelled beside it — the list itself is the claim.
+      (summary) =>
+        summary.intelligence.confidence === 'moderate' ||
+        summary.intelligence.confidence === 'strong',
     );
   }
 

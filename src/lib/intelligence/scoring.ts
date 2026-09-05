@@ -35,8 +35,20 @@ import type {
 
 export const SCORING = {
   /**
-   * A review's influence halves every 30 months. A property under new
-   * management should not be judged indefinitely on how it was run in 2019.
+   * Reviews inside this window are treated as fully current.
+   *
+   * Without it, decay starts at month one and a review written last month is
+   * already worth 0.977 — which quietly means three fresh reviews sum to 2.93
+   * and never reach the `limited` band that is documented as needing three.
+   * A tenancy that ended six months ago is not meaningfully staler than one
+   * that ended last month, so the thresholds should mean what they say.
+   */
+  recencyGraceMonths: 12,
+
+  /**
+   * Past the grace window, a review's influence halves every 30 months. A
+   * property under new management should not be judged indefinitely on how it
+   * was run in 2019.
    */
   recencyHalfLifeMonths: 30,
   /**
@@ -120,9 +132,14 @@ export function monthsSince(date: Date, now: Date): number {
   return Math.max(0, months);
 }
 
-/** Exponential decay with a floor. */
+/** Full weight inside the grace window, then exponential decay with a floor. */
 export function recencyWeight(months: number): number {
-  const decayed = Math.pow(0.5, months / SCORING.recencyHalfLifeMonths);
+  if (months <= SCORING.recencyGraceMonths) return 1;
+
+  const decayed = Math.pow(
+    0.5,
+    (months - SCORING.recencyGraceMonths) / SCORING.recencyHalfLifeMonths,
+  );
   return Math.max(SCORING.recencyFloor, decayed);
 }
 
