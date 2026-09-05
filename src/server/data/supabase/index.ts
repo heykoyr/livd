@@ -9,6 +9,7 @@ import { normaliseForSearch } from '@/lib/search/matching';
 import { propertyContextLine, propertyDisplayName } from '@/lib/format';
 import { propertySlug } from '@/lib/utils';
 import {
+  createAnonymousSupabaseClient,
   createServerSupabaseClient,
   createServiceRoleClient,
 } from '@/server/auth/supabase-client';
@@ -85,8 +86,29 @@ function unwrap<T>(result: { data: T | null; error: { message: string } | null }
 }
 
 export class SupabaseRepository implements LivdRepository {
+  /**
+   * Request-scoped client, carrying the caller's session.
+   *
+   * For anything user-specific: their saved properties, their own reviews,
+   * their claims, and every write. RLS sees them as themselves.
+   *
+   * Must never be used inside `unstable_cache` — it reads cookies, which Next
+   * forbids in a cached scope, and a per-user result has no business in a
+   * shared cache anyway.
+   */
   private async client(): Promise<SupabaseClient> {
     return createServerSupabaseClient();
+  }
+
+  /**
+   * Cookie-free client for public reads.
+   *
+   * Everything a signed-out visitor may see: property pages, search,
+   * discovery, published reviews. These are the queries that get cached and
+   * shared between visitors, so they are evaluated with no user attached.
+   */
+  private publicClient(): SupabaseClient {
+    return createAnonymousSupabaseClient();
   }
 
   /** Service role. Only for moderation paths that have already been authorised. */
@@ -99,7 +121,7 @@ export class SupabaseRepository implements LivdRepository {
    * ------------------------------------------------------------------ */
 
   async getPropertyBySlug(slug: string): Promise<Property | null> {
-    const supabase = await this.client();
+    const supabase = this.publicClient();
     const { data, error } = await supabase
       .from('properties')
       .select(PROPERTY_SELECT)
@@ -115,7 +137,7 @@ export class SupabaseRepository implements LivdRepository {
   }
 
   async getPropertyById(id: string): Promise<Property | null> {
-    const supabase = await this.client();
+    const supabase = this.publicClient();
     const { data, error } = await supabase
       .from('properties')
       .select(PROPERTY_SELECT)
@@ -147,7 +169,7 @@ export class SupabaseRepository implements LivdRepository {
   }
 
   private async fetchPublishedReviews(propertyId: string): Promise<Review[]> {
-    const supabase = await this.client();
+    const supabase = this.publicClient();
     let query = supabase
       .from('reviews')
       .select(REVIEW_SELECT)
@@ -225,7 +247,7 @@ export class SupabaseRepository implements LivdRepository {
    * ------------------------------------------------------------------ */
 
   async searchProperties(filters: SearchFilters): Promise<SearchResults> {
-    const supabase = await this.client();
+    const supabase = this.publicClient();
     const pageSize = LIMITS.searchPageSize;
     const page = Math.max(1, filters.page);
 
@@ -318,7 +340,7 @@ export class SupabaseRepository implements LivdRepository {
   private async summarise(properties: Property[]): Promise<PropertySummary[]> {
     if (properties.length === 0) return [];
 
-    const supabase = await this.client();
+    const supabase = this.publicClient();
     let query = supabase
       .from('reviews')
       .select(REVIEW_SELECT)
@@ -354,7 +376,7 @@ export class SupabaseRepository implements LivdRepository {
     const trimmed = query.trim();
     if (trimmed.length < 2) return [];
 
-    const supabase = await this.client();
+    const supabase = this.publicClient();
     const { data, error } = await supabase.rpc('livd_property_search', {
       search_query: trimmed,
       filter_country: null,
@@ -417,7 +439,7 @@ export class SupabaseRepository implements LivdRepository {
     orderColumn: string,
     { scoredOnly = false }: { scoredOnly?: boolean } = {},
   ): Promise<PropertySummary[]> {
-    const supabase = await this.client();
+    const supabase = this.publicClient();
 
     let query = supabase
       .from('properties')
@@ -443,7 +465,7 @@ export class SupabaseRepository implements LivdRepository {
   }
 
   async listLocalities(countryCode?: string | null): Promise<LocalitySummary[]> {
-    const supabase = await this.client();
+    const supabase = this.publicClient();
 
     let query = supabase
       .from('properties')
@@ -496,7 +518,7 @@ export class SupabaseRepository implements LivdRepository {
   }
 
   async propertiesInLocality(countryCode: string, locality: string): Promise<PropertySummary[]> {
-    const supabase = await this.client();
+    const supabase = this.publicClient();
 
     let query = supabase
       .from('properties')
@@ -524,7 +546,7 @@ export class SupabaseRepository implements LivdRepository {
     propertyId: string,
     options: ReviewListOptions = {},
   ): Promise<ReviewListResult> {
-    const supabase = await this.client();
+    const supabase = this.publicClient();
     const pageSize = options.pageSize ?? LIMITS.reviewsPerPage;
     const page = Math.max(1, options.page ?? 1);
 
@@ -1059,6 +1081,21 @@ export class SupabaseRepository implements LivdRepository {
     return data ? toClaim(data as unknown as ClaimRow) : null;
   }
 
+  async isPropertyClaimed(propertyId: string): Promise<boolean> {
+    // Reads the public rollup, not property_claims — see migration 0007. The
+    // claims table is readable only by the claimant and by moderators, so a
+    // signed-out visitor querying it would see every property as unclaimed.
+    const supabase = this.publicClient();
+    const { data, error } = await supabase
+      .from('property_stats')
+      .select('is_claimed')
+      .eq('property_id', propertyId)
+      .maybeSingle();
+
+    if (error) throw new Error(`isPropertyClaimed: ${error.message}`);
+    return (data as { is_claimed: boolean } | null)?.is_claimed ?? false;
+  }
+
   async listClaimedPropertyIds(userId: string): Promise<string[]> {
     const supabase = await this.client();
     const { data, error } = await supabase
@@ -1313,7 +1350,7 @@ export class SupabaseRepository implements LivdRepository {
     locality: string | null;
     resultCount: number;
   }): Promise<void> {
-    const supabase = await this.client();
+    const supabase = this.publicClient();
 
     // Analytics must never break a user-facing request.
     await supabase

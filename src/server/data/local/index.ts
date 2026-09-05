@@ -877,6 +877,13 @@ export class LocalRepository implements LivdRepository {
     );
   }
 
+  async isPropertyClaimed(propertyId: string): Promise<boolean> {
+    const database = await getDatabase();
+    return database.claims.some(
+      (claim) => claim.propertyId === propertyId && claim.status === 'approved',
+    );
+  }
+
   async listClaimedPropertyIds(userId: string): Promise<string[]> {
     const database = await getDatabase();
     return database.claims

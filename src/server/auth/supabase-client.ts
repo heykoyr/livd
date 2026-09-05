@@ -57,6 +57,35 @@ export async function createServerSupabaseClient(): Promise<SupabaseClient> {
 }
 
 /**
+ * Anonymous client — no cookies, no session.
+ *
+ * For public reads: property pages, search, discovery, published reviews.
+ * Everything RLS grants the `anon` role, which is exactly the public view.
+ *
+ * It exists for two reasons, and both matter.
+ *
+ * First, correctness: `unstable_cache` forbids reading a dynamic source such
+ * as `cookies()` inside a cached scope, so the request-scoped client cannot be
+ * used by anything that is cached. Every cached discovery query threw a 500
+ * against a real database until this existed.
+ *
+ * Second, safety: a cached result is shared between visitors. Computing it
+ * under one user's RLS context and serving it to another is exactly the class
+ * of bug that leaks one person's data to everyone. A query whose result goes
+ * into a shared cache should be evaluated with no user attached, and this
+ * client makes that structural rather than a convention.
+ */
+export function createAnonymousSupabaseClient(): SupabaseClient {
+  return createClient(
+    requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    requireEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
+    {
+      auth: { persistSession: false, autoRefreshToken: false },
+    },
+  );
+}
+
+/**
  * Service-role client. Server-only, and never for a request whose authorisation
  * has not already been checked by a guard.
  */

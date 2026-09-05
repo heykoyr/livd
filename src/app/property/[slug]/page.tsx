@@ -97,10 +97,12 @@ export default async function PropertyPage({
 
   const options = parseReviewOptions(query);
 
-  const [intelligence, user, claim] = await Promise.all([
+  const [intelligence, user, isClaimed] = await Promise.all([
     getCachedIntelligence(property.id),
     getCurrentUser(),
-    repository.getApprovedClaim(property.id),
+    // The public flag, not the claim itself — a visitor may know a property is
+    // claimed, but not by whom.
+    repository.isPropertyClaimed(property.id),
   ]);
 
   const [reviews, isSaved] = await Promise.all([
@@ -134,7 +136,7 @@ export default async function PropertyPage({
         intelligence={intelligence}
         user={user}
         isSaved={isSaved}
-        isClaimed={claim !== null}
+        isClaimed={isClaimed}
       />
 
       {property.isDemo && (
@@ -286,7 +288,7 @@ export default async function PropertyPage({
             )}
           </div>
 
-          <PropertySidebar property={property} intelligence={intelligence} isClaimed={claim !== null} />
+          <PropertySidebar property={property} intelligence={intelligence} isClaimed={isClaimed} />
         </div>
       </div>
     </>

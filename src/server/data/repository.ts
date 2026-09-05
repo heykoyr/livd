@@ -197,6 +197,16 @@ export interface LivdRepository {
     actorId: string,
   ): Promise<void>;
   getApprovedClaim(propertyId: string): Promise<PropertyClaim | null>;
+  /**
+   * Whether an approved claim exists — the single publicly visible fact about
+   * a claim.
+   *
+   * Separate from `getApprovedClaim` because that returns the claimant's
+   * identity and is readable only by the claimant and by moderators. A visitor
+   * is entitled to know a property is claimed; nobody is entitled to know who
+   * claimed it.
+   */
+  isPropertyClaimed(propertyId: string): Promise<boolean>;
   /** The properties this user may respond on behalf of. */
   listClaimedPropertyIds(userId: string): Promise<string[]>;
 
