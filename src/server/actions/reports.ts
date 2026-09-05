@@ -5,6 +5,7 @@ import { headers } from 'next/headers';
 import { copy } from '@/content/copy';
 import { checkDualRateLimit } from '@/lib/safety/rate-limit';
 import { reportSchema } from '@/lib/validation/review';
+import type { ReportActionState } from './action-state';
 import { AuthorisationError, requireUser } from '@/server/auth/guards';
 import { getRepository } from '@/server/data';
 
@@ -17,13 +18,6 @@ import { getRepository } from '@/server/data';
  * It never changes a review's status, and the reviewer is never told who
  * reported them.
  */
-
-export interface ReportActionState {
-  status: 'idle' | 'success' | 'error';
-  error: string | null;
-}
-
-export const initialReportState: ReportActionState = { status: 'idle', error: null };
 
 export async function submitReport(
   _previous: ReportActionState,

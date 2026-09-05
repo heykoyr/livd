@@ -6,7 +6,8 @@ import { useActionState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { copy } from '@/content/copy';
-import { toggleSavedProperty, type SaveActionState } from '@/server/actions/saved';
+import type { SaveActionState } from '@/server/actions/action-state';
+import { toggleSavedProperty } from '@/server/actions/saved';
 
 /**
  * Save to shortlist.

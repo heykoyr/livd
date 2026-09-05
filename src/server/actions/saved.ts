@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { copy } from '@/content/copy';
 import { AuthorisationError, requireUser } from '@/server/auth/guards';
 import { getRepository } from '@/server/data';
+import type { SaveActionState } from './action-state';
 
 /**
  * Saved properties — the shortlist.
@@ -15,11 +16,6 @@ import { getRepository } from '@/server/data';
  * a landlord learning who is researching them is an obvious way for this data
  * to hurt the people it is meant to serve.
  */
-
-export interface SaveActionState {
-  saved: boolean;
-  error: string | null;
-}
 
 const propertyIdSchema = z.object({ propertyId: z.string().min(1).max(80) });
 

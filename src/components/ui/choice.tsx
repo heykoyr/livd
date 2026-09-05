@@ -32,6 +32,7 @@ export function RadioCardGroup({
   columns = 1,
   error,
   required,
+  hideLegend = false,
 }: {
   name: string;
   legend: string;
@@ -42,14 +43,23 @@ export function RadioCardGroup({
   columns?: 1 | 2;
   error?: string | null;
   required?: boolean;
+  /**
+   * Hides the legend visually while keeping it as the fieldset's accessible
+   * name. Used where the step heading already asks the question — a sighted
+   * reader should not see it twice, and a screen-reader user still needs the
+   * group to be named.
+   */
+  hideLegend?: boolean;
 }) {
   const id = useId();
   const errorId = `${id}-error`;
 
   return (
     <fieldset aria-describedby={error ? errorId : undefined}>
-      <legend className="text-label font-medium text-ink">{legend}</legend>
-      {hint && <p className="mt-1 text-label text-ink-muted">{hint}</p>}
+      <legend className={hideLegend ? 'sr-only' : 'text-label font-medium text-ink'}>
+        {legend}
+      </legend>
+      {hint && !hideLegend && <p className="mt-1 text-label text-ink-muted">{hint}</p>}
 
       <div
         className={cn(
@@ -137,6 +147,7 @@ export function CheckboxChipGroup({
   onChange,
   tone = 'neutral',
   max,
+  hideLegend = false,
 }: {
   name: string;
   legend: string;
@@ -146,6 +157,8 @@ export function CheckboxChipGroup({
   onChange: (values: string[]) => void;
   tone?: 'neutral' | 'positive' | 'problem';
   max?: number;
+  /** See `RadioCardGroup` — the step heading already asks the question. */
+  hideLegend?: boolean;
 }) {
   const selected = new Set(values);
   const atLimit = max !== undefined && values.length >= max;
@@ -160,10 +173,12 @@ export function CheckboxChipGroup({
 
   return (
     <fieldset>
-      <legend className="text-label font-medium text-ink">{legend}</legend>
-      {hint && <p className="mt-1 text-label text-ink-muted">{hint}</p>}
+      <legend className={hideLegend ? 'sr-only' : 'text-label font-medium text-ink'}>
+        {legend}
+      </legend>
+      {hint && !hideLegend && <p className="mt-1 text-label text-ink-muted">{hint}</p>}
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className={cn('flex flex-wrap gap-2', hideLegend ? '' : 'mt-3')}>
         {options.map((option) => {
           const isSelected = selected.has(option.value);
           const disabled = atLimit && !isSelected;

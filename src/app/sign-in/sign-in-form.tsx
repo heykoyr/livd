@@ -5,12 +5,11 @@ import { useActionState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Field, FormError, Input } from '@/components/ui/field';
 import { copy } from '@/content/copy';
-import { requestSignIn, type AuthActionState } from '@/server/actions/auth';
-
-const initialState: AuthActionState = { error: null, sentTo: null };
+import { initialAuthState, type AuthActionState } from '@/server/actions/action-state';
+import { requestSignIn } from '@/server/actions/auth';
 
 export function SignInForm({ next, isLocalAdapter }: { next: string; isLocalAdapter: boolean }) {
-  const [state, formAction, pending] = useActionState(requestSignIn, initialState);
+  const [state, formAction, pending] = useActionState(requestSignIn, initialAuthState);
 
   if (state.sentTo) {
     return (

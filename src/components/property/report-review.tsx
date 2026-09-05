@@ -8,7 +8,8 @@ import { Field, FormError, Textarea } from '@/components/ui/field';
 import { RadioCardGroup } from '@/components/ui/choice';
 import { useToast } from '@/components/ui/toast';
 import { copy } from '@/content/copy';
-import { initialReportState, submitReport } from '@/server/actions/reports';
+import { initialReportState } from '@/server/actions/action-state';
+import { submitReport } from '@/server/actions/reports';
 
 const REASON_OPTIONS = (
   Object.entries(copy.safety.reportReasons) as Array<

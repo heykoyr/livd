@@ -8,6 +8,7 @@ import { copy } from '@/content/copy';
 import { checkRateLimit } from '@/lib/safety/rate-limit';
 import { createLocalSession, destroySession } from '@/server/auth/session';
 import { getRepository } from '@/server/data';
+import type { AuthActionState } from './action-state';
 
 /**
  * Authentication actions.
@@ -22,11 +23,6 @@ const emailSchema = z.object({
   email: z.string().trim().toLowerCase().email('Enter a valid email address.').max(320),
   next: z.string().startsWith('/').max(500).optional(),
 });
-
-export interface AuthActionState {
-  error: string | null;
-  sentTo: string | null;
-}
 
 export async function requestSignIn(
   _previous: AuthActionState,
