@@ -36,7 +36,11 @@ export function ResidentVerdictPanel({
 }) {
   return (
     <Card className={cn('p-6 md:p-8', className)}>
-      <Eyebrow>{copy.property.residentVerdict}</Eyebrow>
+      {/* A real h2: the strengths and concerns beneath are h3s, and without a
+          heading here the page jumps from h1 straight to h3. */}
+      <h2 className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
+        {copy.property.residentVerdict}
+      </h2>
 
       <p className="mt-4 max-w-prose font-display text-title-lg leading-snug tracking-tightish text-ink">
         {verdict.summary}

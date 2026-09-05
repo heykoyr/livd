@@ -284,7 +284,10 @@ export function TrendPill({
     >
       <TrendArrow direction={direction} />
       {copy.score.trend[direction]}
-      {delta !== null && delta !== 0 && (
+      {/* The delta is only shown when a direction is actually being claimed.
+          "Stable +5" reads as a contradiction — the movement was below the
+          threshold precisely because it does not mean anything. */}
+      {direction !== 'stable' && delta !== null && delta !== 0 && (
         <span className="tabular font-normal">
           {delta > 0 ? '+' : ''}
           {delta}

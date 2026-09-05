@@ -23,18 +23,43 @@ import type { UserProfile } from '@/types/domain';
 const SESSION_COOKIE = 'livd_session';
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
-function sessionSecret(): string {
-  const secret = process.env.LIVD_SESSION_SECRET;
+/**
+ * Development fallback. Deliberately obvious in a diff, and never reachable in
+ * production — see the boot check below.
+ */
+const DEVELOPMENT_SECRET = 'livd-insecure-development-secret';
 
-  if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('LIVD_SESSION_SECRET must be set in production.');
-    }
-    // Development only, and deliberately obvious in a diff.
-    return 'livd-insecure-development-secret';
+/**
+ * Refuses to serve a production request without a configured secret.
+ *
+ * Called from `getCurrentUser`, which runs on every request through the root
+ * layout — so a misconfigured deployment fails on its very first request.
+ *
+ * The two obvious alternatives are both worse. Checking lazily inside the
+ * signing function meant a deployment without a secret looked healthy:
+ * requests with no session cookie returned 200, and only a reader who happened
+ * to carry a stale cookie hit a 500. Checking at module scope caught it
+ * earlier still, but `next build` also evaluates modules under
+ * NODE_ENV=production, so it broke the build for anyone who had not configured
+ * a secret yet — a build does not serve sessions and has no business demanding
+ * one.
+ */
+function assertSessionSecretConfigured(): void {
+  // `next build` prerenders pages under NODE_ENV=production and renders the
+  // root layout to do it, so it reaches this function. A build serves no
+  // sessions and has no business demanding a secret — the deployment that runs
+  // the build may not even be the one that holds the secrets.
+  if (process.env.NEXT_PHASE === 'phase-production-build') return;
+
+  if (process.env.NODE_ENV === 'production' && !process.env.LIVD_SESSION_SECRET) {
+    throw new Error(
+      'LIVD_SESSION_SECRET must be set in production. See .env.example for how to generate one.',
+    );
   }
+}
 
-  return secret;
+function sessionSecret(): string {
+  return process.env.LIVD_SESSION_SECRET ?? DEVELOPMENT_SECRET;
 }
 
 function sign(value: string): string {
@@ -54,6 +79,8 @@ function verify(value: string, signature: string): boolean {
  * ---------------------------------------------------------------------- */
 
 export async function getCurrentUser(): Promise<UserProfile | null> {
+  assertSessionSecretConfigured();
+
   if (resolveDataBackend() === 'supabase') {
     return getSupabaseUser();
   }

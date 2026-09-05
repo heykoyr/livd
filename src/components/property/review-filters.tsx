@@ -76,7 +76,9 @@ export function ReviewFilters({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           href={buildHref({ verifiedOnly: !options.verifiedOnly, page: 1 })}
-          aria-pressed={options.verifiedOnly}
+          // aria-current, not aria-pressed: this is a link to a filtered view,
+          // and aria-pressed is only valid on a button.
+          aria-current={options.verifiedOnly ? 'true' : undefined}
           className={cn(
             'inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-label transition-colors duration-fast',
             options.verifiedOnly

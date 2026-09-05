@@ -106,7 +106,18 @@ function localeFor(countryCode?: CountryCode | null): string {
  */
 export function formatMoney(
   money: Money,
-  options: { countryCode?: CountryCode | null; compact?: boolean } = {},
+  options: {
+    countryCode?: CountryCode | null;
+    compact?: boolean;
+    /**
+     * Appends the ISO code — "$2,450 CAD".
+     *
+     * For anywhere several currencies appear together, such as the shortlist
+     * comparison. A bare "$" is genuinely ambiguous between USD, CAD and AUD,
+     * and Livd shows properties from different markets on one page.
+     */
+    withCode?: boolean;
+  } = {},
 ): string {
   const minorUnit = minorUnitFor(money.currencyCode);
   const amount = money.amountMinor / 10 ** minorUnit;
@@ -116,12 +127,18 @@ export function formatMoney(
   const useCompact = options.compact === true && amount >= 1_000_000;
 
   try {
-    return new Intl.NumberFormat(localeFor(options.countryCode), {
+    const formatted = new Intl.NumberFormat(localeFor(options.countryCode), {
       style: 'currency',
       currency: money.currencyCode,
+      // Without this, a naira amount reads as "NGN 450,000" in a neutral locale
+      // rather than "₦450,000" — Intl only reaches for the symbol when the
+      // locale already expects it, which a global product cannot rely on.
+      currencyDisplay: 'narrowSymbol',
       maximumFractionDigits: useCompact ? 1 : options.compact || amount % 1 === 0 ? 0 : minorUnit,
       notation: useCompact ? 'compact' : 'standard',
     }).format(amount);
+
+    return options.withCode ? `${formatted} ${money.currencyCode}` : formatted;
   } catch {
     // An unrecognised currency code should degrade, not throw.
     return `${money.currencyCode} ${new Intl.NumberFormat().format(Math.round(amount))}`;

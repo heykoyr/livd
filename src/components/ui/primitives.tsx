@@ -174,12 +174,16 @@ export function EmptyState({
   action,
   icon,
   className,
+  // Defaults to h2 so an empty state directly under a page title does not skip
+  // a heading level; pass h3 where it genuinely sits inside a section.
+  headingLevel: Heading = 'h2',
 }: {
   title: string;
   description: string;
   action?: ReactNode;
   icon?: ReactNode;
   className?: string;
+  headingLevel?: 'h2' | 'h3';
 }) {
   return (
     <div
@@ -189,7 +193,7 @@ export function EmptyState({
       )}
     >
       {icon && <div className="mb-4 text-ink-subtle">{icon}</div>}
-      <h3 className="font-display text-title-md tracking-tightish text-ink">{title}</h3>
+      <Heading className="font-display text-title-md tracking-tightish text-ink">{title}</Heading>
       <p className="mt-2 max-w-md text-balance text-body text-ink-muted">{description}</p>
       {action && <div className="mt-6">{action}</div>}
     </div>
@@ -288,8 +292,14 @@ export function Stat({
       <dt className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
         {label}
       </dt>
-      <dd className="mt-1 text-title-md tabular text-ink">{value}</dd>
-      {hint && <p className="mt-0.5 text-micro text-ink-subtle">{hint}</p>}
+      {/* The hint lives inside the <dd>. A sibling <p> would make this an
+          invalid definition list — a <dl> may only hold dt/dd groups. */}
+      <dd className="mt-1 text-title-md tabular text-ink">
+        {value}
+        {hint && (
+          <span className="mt-0.5 block text-micro font-normal text-ink-subtle">{hint}</span>
+        )}
+      </dd>
     </div>
   );
 }

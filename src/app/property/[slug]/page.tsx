@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
 
 import {
   CategoryScores,
@@ -11,6 +10,7 @@ import {
   TagFrequencyList,
 } from '@/components/property/intelligence';
 import { PropertyHeader } from '@/components/property/property-header';
+import { PropertyMissing } from '@/components/property/property-missing';
 import { ReviewCard } from '@/components/property/review-card';
 import { ReviewFilters, type ReviewViewOptions } from '@/components/property/review-filters';
 import { ButtonLink } from '@/components/ui/button';
@@ -39,7 +39,8 @@ export async function generateMetadata({
   const property = await repository.getPropertyBySlug(slug);
 
   if (!property) {
-    return { title: copy.errors.propertyNotFoundTitle, robots: { index: false, follow: false } };
+    // Kept out of every index. See PropertyMissing for why this is a soft 404.
+    return { title: copy.errors.propertyNotFoundTitle, robots: { index: false, follow: true } };
   }
 
   const intelligence = await getCachedIntelligence(property.id);
@@ -92,7 +93,7 @@ export default async function PropertyPage({
 
   const repository = await getRepository();
   const property = await repository.getPropertyBySlug(slug);
-  if (!property) notFound();
+  if (!property) return <PropertyMissing />;
 
   const options = parseReviewOptions(query);
 

@@ -95,6 +95,8 @@ export function ComparisonTable({ summaries }: { summaries: PropertySummary[] })
                 ? `${formatMoney(intelligence.reportedRent.median, {
                     countryCode: property.address.countryCode,
                     compact: true,
+                    // Currencies mix here; a bare "$" would be ambiguous.
+                    withCode: true,
                   })}/${intelligence.reportedRent.period === 'month' ? 'mo' : 'yr'}`
                 : null
             }

@@ -49,6 +49,14 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: '1mb',
     },
+
+    // Lets app/global-not-found.tsx own the entire 404 document.
+    //
+    // Without it, Next renders a not-found boundary *outside* the root layout,
+    // in a shell with no lang attribute and none of the site's chrome — a real
+    // WCAG 3.1.1 failure on any mistyped property URL. Owning the document is
+    // the only way to put the lang attribute back.
+    globalNotFound: true,
   },
 
   async headers() {

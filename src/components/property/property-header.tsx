@@ -4,7 +4,6 @@ import { Badge, Card, Eyebrow, Stat } from '@/components/ui/primitives';
 import { getMarket, propertyTypeLabel } from '@/config/markets';
 import { copy } from '@/content/copy';
 import {
-  formatAddressInline,
   formatMoney,
   formatPercent,
   formatRelativeTime,
@@ -80,8 +79,12 @@ export function PropertyHeader({
 
             <p className="mt-2 text-body-lg text-ink-muted">{context}</p>
 
+            {/* The context line above already carries street, neighbourhood and
+                city. Repeating the whole formatted address here just made the
+                header say the same thing twice, which is most obvious on a
+                phone. This adds only what is genuinely missing. */}
             <address className="mt-1 not-italic text-label text-ink-subtle">
-              {formatAddressInline(address)} · {market.name}
+              {[address.postalCode, market.name].filter(Boolean).join(' · ')}
             </address>
 
             {/* Score, on mobile, sits directly under the identity it describes. */}
@@ -139,7 +142,9 @@ export function PropertyHeader({
               </div>
             </div>
 
-            <div className="mt-0 flex flex-wrap gap-2 lg:mt-5">
+            {/* Hidden below lg: the same two chips already sit beside the
+                dial in the mobile header block above. */}
+            <div className="hidden flex-wrap gap-2 lg:mt-5 lg:flex">
               <ConfidenceChip
                 confidence={intelligence.confidence}
                 reviewCount={intelligence.reviewCount}
