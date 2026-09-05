@@ -1,59 +1,90 @@
 # Livd — Build Roadmap
 
-Each phase ends with tests passing, a typecheck, a production build and a commit.
+Each phase ended with tests passing, a typecheck, a production build and a
+commit.
 
 ---
+
+## Delivered
 
 ### Phase 0 — Audit & specification ✅
 Environment audit, stack selection, repository initialised, five specification
-documents, toolchain pinned to the local Node version with zero engine warnings.
+documents, toolchain pinned to the local Node version with zero engine
+warnings.
 
-### Phase 1 — Foundation
+### Phase 1 — Foundation ✅
 Design tokens and global styles · typography · UI primitives · app shell and
-responsive navigation · the two-adapter data layer and its contract tests ·
-authentication adapters and route guards · error boundaries, loading states and
-the 404 surface · centralised copy · `Intl` formatting layer.
+responsive navigation · the two-adapter data layer · authentication adapters
+and route guards · error and loading states · centralised copy · `Intl`
+formatting for twelve markets · complete PostgreSQL schema with RLS.
 
-### Phase 2 — Property discovery
+### Phase 2 — Property discovery ✅
 Landing page · search with suggestions, fuzzy matching and typo tolerance ·
-results with filters and sorting · property cards · property profile shell ·
-location index pages · metadata, JSON-LD, sitemap and robots.
+results with filters and sorting · property cards · location index pages ·
+metadata, JSON-LD, sitemap and robots.
 
-### Phase 3 — Property intelligence
+### Phase 3 — Property intelligence ✅
 Livd Score with recency decay, verification weighting and Bayesian shrinkage ·
-confidence bands · category scores · resident verdict generator · "Why residents
-leave" · trend detection and timeline · "Check before you visit" · review list
-with filtering and sorting.
+confidence bands · category scores · resident verdict · "Why residents leave" ·
+trend detection · timeline · "Check before you visit" · review list with
+filtering and sorting.
 
-### Phase 4 — Contribution
+### Phase 4 — Contribution ✅
 Nine-step review wizard with progressive disclosure · property picker and
 "add a property" path · structured ratings, tags and departure reasons ·
-validation · content safety pipeline at submission · confirmation · edit window
-and its rules.
+validation · content safety pipeline at submission · confirmation · edit
+window.
 
-### Phase 5 — Trust & safety
-Verification framework · report flow · moderation queue and admin area ·
-rate limiting · duplicate and burst detection · property claims · owner
-responses · audit trail.
+### Phase 5 — Trust & safety ✅
+Report flow · moderation queue and admin area · rate limiting · duplicate
+prevention · property claims · owner responses · append-only audit trail ·
+verification levels feeding the score.
 
-### Phase 6 — Personalisation
-Account · my reviews · saved properties · shortlist comparison · recent searches
-· in-app notifications.
+### Phase 6 — Personalisation ✅
+Account · my reviews with the edit window shown · saved properties · shortlist
+comparison.
 
-### Phase 7 — Polish
-Full-product quality pass: spacing, hierarchy, copy, empty and error states,
-keyboard paths, axe audit on every screen, dark mode verification, responsive
-review at 360 / 768 / 1280, performance and bundle review.
+### Phase 7 — Polish ✅
+axe-core audit against a production build, four violations fixed · contrast
+verified in both themes against real computed styles · mobile pass · every
+route checked · production guards corrected.
 
 ---
 
-## Post-MVP
+## Known limitations
 
-Privacy-safe map discovery (area-level, never unit-level) · grounded AI
-summarisation of review corpora · rent trend intelligence · relocation research
-tools · property manager profiles · additional locales · public API.
+**Soft 404 on an unknown property slug.** Next 16 renders a not-found boundary
+outside the root layout, in a document with no `lang` attribute and no site
+chrome. Verified in a production build that no arrangement of `not-found.tsx`
+or `global-not-found.tsx` changes this. The property route therefore renders
+its missing state inline with `noindex` — trading the 404 status for a page
+that is readable and accessible. Revisit when the framework renders the
+boundary inside the layout.
 
-## Deferred on purpose
+**Verification is a framework, not yet a pipeline.** The levels exist, weigh
+the score correctly, and are settable by a moderator. The evidence upload and
+automated checks behind `verified_resident` are the next piece of work.
 
-Messaging between users · mobile applications · payments · any monetisation that
-creates an incentive to distort what residents reported.
+**Rate limiting is in-process.** Correct for a single-region MVP, wrong for
+multiple instances. `RateLimitStore` exists so this becomes a Postgres or Redis
+implementation without touching a call site.
+
+**Burst detection is specified, not implemented.** The schema and the plan are
+in `docs/architecture.md` §7; the scheduled job is not written.
+
+---
+
+## Next
+
+**Before launch.** Verification pipeline · Postgres-backed rate limiting ·
+burst detection job · legal review of the three policy pages in each launch
+market · an email provider for magic links · error monitoring.
+
+**Soon after.** Privacy-safe map discovery, area-level rather than unit-level ·
+grounded AI summarisation of review corpora, behind the existing
+`VerdictGenerator` interface · rent trend intelligence · property manager
+profiles · additional locales, which the copy layer is already structured for.
+
+**Deferred on purpose.** Messaging between users · mobile applications ·
+payments · any monetisation that creates an incentive to distort what residents
+reported.
