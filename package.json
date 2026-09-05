@@ -14,8 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "node --experimental-strip-types scripts/seed-local.ts",
-    "verify": "npm run typecheck && npm run test && npm run build"
+    "verify": "npm run typecheck && npm run test && npm run build",
+    "reset": "node scripts/reset-local.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

@@ -111,12 +111,16 @@ export function formatMoney(
   const minorUnit = minorUnitFor(money.currencyCode);
   const amount = money.amountMinor / 10 ** minorUnit;
 
+  // Compact notation only above a million, and with one fraction digit when it
+  // engages — "1M" for a rent of 1,050,000 loses the part the reader cares about.
+  const useCompact = options.compact === true && amount >= 1_000_000;
+
   try {
     return new Intl.NumberFormat(localeFor(options.countryCode), {
       style: 'currency',
       currency: money.currencyCode,
-      maximumFractionDigits: options.compact || amount % 1 === 0 ? 0 : minorUnit,
-      notation: options.compact && amount >= 1_000_000 ? 'compact' : 'standard',
+      maximumFractionDigits: useCompact ? 1 : options.compact || amount % 1 === 0 ? 0 : minorUnit,
+      notation: useCompact ? 'compact' : 'standard',
     }).format(amount);
   } catch {
     // An unrecognised currency code should degrade, not throw.

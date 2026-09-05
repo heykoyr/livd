@@ -108,8 +108,12 @@ function composeSummary(
   const sentences: string[] = [];
 
   // 1. The balance of praise and complaint.
-  const praise = lowerFirst(list(strengths.slice(0, 2)));
-  const complaint = lowerFirst(list(concerns.slice(0, 2)));
+  //
+  // Each label is lowercased individually before being joined. Lowercasing the
+  // joined string only touches the first item, which reads as
+  // "rate noise and Location & transport well".
+  const praise = list(strengths.slice(0, 2).map(lowerFirst));
+  const complaint = list(concerns.slice(0, 2).map(lowerFirst));
 
   if (strengths.length > 0 && concerns.length > 0) {
     sentences.push(`Residents rate ${praise} well, but consistently raise ${complaint}.`);

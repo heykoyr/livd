@@ -853,10 +853,18 @@ export function generateSeed(): SeedData {
       const residencyStatus: ResidencyStatus = isFormer ? 'former' : 'current';
 
       // Spread tenancies across the property's active years.
+      //
+      // Clamped to SEED_NOW: an unclamped December-2026 move-out produced a
+      // review written in January 2027, which the property page then rendered
+      // as "Last reviewed in 4 months". Demo data that describes the future is
+      // not merely untidy — it makes the recency weighting look broken.
       const endYear =
         profile.fromYear +
         Math.floor(random() * Math.max(1, profile.toYear - profile.fromYear + 1));
-      const endMonth = Math.floor(random() * 12);
+      const endMonth =
+        endYear >= SEED_NOW.getUTCFullYear()
+          ? Math.floor(random() * (SEED_NOW.getUTCMonth() + 1))
+          : Math.floor(random() * 12);
       const tenureMonths = 6 + Math.floor(random() * 42);
 
       const movedOut = isFormer ? isoMonth(endYear, endMonth) : null;
@@ -935,11 +943,14 @@ export function generateSeed(): SeedData {
       const verificationLevel =
         random() < profile.verifiedShare ? 'verified_resident' : 'unverified';
 
-      const createdAt = isFormer
-        ? new Date(Date.UTC(endYear, endMonth + 1, 8 + Math.floor(random() * 20))).toISOString()
-        : new Date(
-            Date.UTC(2026, 2 + Math.floor(random() * 6), 4 + Math.floor(random() * 24)),
-          ).toISOString();
+      const writtenAt = isFormer
+        ? new Date(Date.UTC(endYear, endMonth + 1, 8 + Math.floor(random() * 20)))
+        : new Date(Date.UTC(2026, 1 + Math.floor(random() * 6), 4 + Math.floor(random() * 24)));
+
+      // A review cannot have been written after the moment the seed represents.
+      const createdAt = (
+        writtenAt > SEED_NOW ? SEED_NOW : writtenAt
+      ).toISOString();
 
       // Rent drifts with the year, so the timeline has something real to report.
       const yearsFromStart = referenceYear - profile.fromYear;
