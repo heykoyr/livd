@@ -97,15 +97,54 @@ local store finds easy, and both adapters are held to the same behaviour. That
 is what lets you clone this repository and see the real product working —
 writes included — without provisioning anything.
 
-### Moving to Supabase
+### The production database
 
-1. Create a Supabase project.
-2. Apply `supabase/migrations/*.sql` in order.
-3. Copy `.env.example` to `.env.local` and fill in the three Supabase values.
-4. Set `LIVD_DATA_BACKEND=supabase` and `LIVD_SHOW_DEMO_DATA=false`.
+A Supabase project is provisioned and all seven migrations are applied:
 
-`SUPABASE_SERVICE_ROLE_KEY` bypasses every security policy. It is read by
-server-only modules, never prefixed `NEXT_PUBLIC_`, and never reaches a browser.
+| | |
+| --- | --- |
+| Project | `Livd` (Koyr org, `eu-west-2`) |
+| URL | `https://tehkyjihyyhxxrqlvmck.supabase.co` |
+| Tables with RLS | 25, with 48 policies |
+
+To point the app at it, set in `.env.local`:
+
+```
+LIVD_DATA_BACKEND=supabase
+NEXT_PUBLIC_SUPABASE_URL=https://tehkyjihyyhxxrqlvmck.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...        # Settings > API keys > anon
+SUPABASE_SERVICE_ROLE_KEY=...            # Settings > API keys > service_role
+LIVD_SESSION_SECRET=...                  # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+The anon key is safe in a browser — Row Level Security is what protects the
+data, not the secrecy of that key. `SUPABASE_SERVICE_ROLE_KEY` bypasses every
+policy: it is the one real secret, is read only by server-only modules, is
+never prefixed `NEXT_PUBLIC_`, and moderation will not work without it.
+
+### Seeding the demonstration data
+
+```bash
+npm run seed:supabase -- --dry   # report what it would write
+npm run seed:supabase            # apply
+npm run seed:supabase -- --purge # remove it again
+```
+
+Reuses the same generator as the local store, so the two cannot describe
+different properties. Everything it writes is marked `is_demo`, which is what
+makes the "Sample data" badge appear, marks those pages `noindex`, and keeps
+them out of the sitemap. Idempotent — ids are derived deterministically, so
+re-running updates rather than duplicates.
+
+It needs the service-role key: demo rows have no authenticated author, so every
+RLS insert policy correctly refuses them.
+
+### Deploying
+
+Set the five variables above in the Vercel project, plus
+`NEXT_PUBLIC_SITE_URL` pointing at the deployed origin. Do **not** set
+`LIVD_ALLOW_LOCAL_IN_PROD` — the local file store cannot work on a serverless
+filesystem, and the guard that refuses it is deliberate.
 
 ---
 
