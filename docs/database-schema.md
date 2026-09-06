@@ -173,6 +173,22 @@ review's status.**
 `expires_at`. **RLS grants `select` to `service_role` only.** No authenticated
 user, including the record's own subject, can read this table through the API.
 
+**`property_flags`** — `property_id`, `kind` (`review_burst`, `rating_anomaly`,
+`new_account_concentration`), `severity` 1–3, the window examined, `observed`
+(the arithmetic that raised it), `detail`, and a moderator's `status`,
+`reviewed_by`, `reviewed_at`.
+
+Written only by `livd_detect_property_flags`, which pg_cron runs hourly. A
+partial unique index on `(property_id, kind) where status = 'open'` keeps one
+open flag of each kind per property, so a re-run refreshes the numbers instead
+of filling the queue with the same finding every hour; a decided flag is not
+raised again for seven days.
+
+RLS: moderators select and update, and no other role sees them at all — telling
+a review author that their property has been flagged tells whoever is running a
+campaign exactly when to stop. No insert or delete policy exists for anyone: the
+rows come from the detector, and a flag that was raised stays on the record.
+
 **`rate_limit_events`** — `bucket_key`, `actor_hash` (salted SHA-256, never a raw
 IP), `occurred_at`. Indexed on `(bucket_key, actor_hash, occurred_at)`.
 

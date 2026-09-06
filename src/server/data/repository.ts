@@ -16,6 +16,8 @@ import type {
   SearchResults,
   SearchSuggestion,
   UserProfile,
+  PropertyFlag,
+  PropertyFlagStatus,
   VerificationLevel,
 } from '@/types/domain';
 
@@ -104,6 +106,7 @@ export interface AdminOverview {
   reviewCount: number;
   pendingModerationCount: number;
   openReportCount: number;
+  openFlagCount: number;
   pendingClaimCount: number;
   userCount: number;
   reviewsLast30Days: number;
@@ -176,6 +179,27 @@ export interface LivdRepository {
     status: Extract<ReportStatus, 'upheld' | 'dismissed'>,
     actorId: string,
     resolution: string,
+  ): Promise<void>;
+
+  /* --- Automated signals --- */
+
+  /**
+   * Flags raised by burst detection, most urgent first.
+   *
+   * Against Supabase these are rows written by a pg_cron job. The local
+   * adapter has no scheduler, so it derives the same signals from the store on
+   * read — the rules live in `src/lib/safety/burst-detection.ts` either way,
+   * and the SQL in migration 0011 mirrors them.
+   */
+  listPropertyFlags(
+    status?: PropertyFlagStatus,
+  ): Promise<Array<{ flag: PropertyFlag; property: Property }>>;
+
+  /** Records a moderator's decision. A flag is never removed, only decided. */
+  decidePropertyFlag(
+    flagId: string,
+    status: Extract<PropertyFlagStatus, 'reviewed' | 'dismissed'>,
+    actorId: string,
   ): Promise<void>;
 
   recordModerationAction(input: Omit<ModerationAction, 'id' | 'createdAt'>): Promise<ModerationAction>;

@@ -27,6 +27,12 @@ export default async function AdminDashboard() {
       hint: 'open reports',
     },
     {
+      href: '/admin/flags',
+      label: copy.admin.flags,
+      count: overview.openFlagCount,
+      hint: 'properties whose review activity does not fit their own history',
+    },
+    {
       href: '/admin/claims',
       label: copy.admin.claims,
       count: overview.pendingClaimCount,

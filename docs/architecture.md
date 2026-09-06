@@ -174,7 +174,7 @@ list and search ordering.
 | Duplicate prevention | Unique index on `(property_id, author_id, tenancy_key)` |
 | Rate limiting | `src/lib/safety/rate-limit.ts` — sliding window keyed by user and salted origin hash, counted in Postgres by `livd_rate_limit_hit` so the limit is per person rather than per warm instance |
 | Owner self-review block | Checked in the submit action against `property_claims` |
-| Burst detection | Scheduled aggregate over recent reviews per property; flags, never auto-deletes |
+| Burst detection | `src/lib/safety/burst-detection.ts` holds the rules; `livd_detect_property_flags` is the same three tests in SQL, run hourly by pg_cron. Raises `property_flags` for a moderator at `/admin/flags`; never changes a review, a status or a score |
 | Moderation queue | `review_reports` + `moderation_actions`, full audit trail, admin-only RLS |
 | Authorisation | `requireUser` / `requireRole` guards; RLS as the second, authoritative layer |
 

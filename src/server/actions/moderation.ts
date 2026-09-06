@@ -233,3 +233,56 @@ export async function setUserRole(
   revalidatePath('/admin/users');
   return { error: null, message: 'Role updated.' };
 }
+
+/* -------------------------------------------------------------------------
+ * Automated signals
+ * ---------------------------------------------------------------------- */
+
+const decideFlagSchema = z.object({
+  flagId: z.string().min(1).max(120),
+  status: z.enum(['reviewed', 'dismissed']),
+});
+
+/**
+ * Records what a moderator decided about a burst-detection flag.
+ *
+ * Deciding a flag does nothing to the reviews behind it. If the pattern turns
+ * out to be a campaign, each review is still held or removed one at a time,
+ * with a written reason — the same path as any other moderation decision, and
+ * the same audit trail. A signal is not evidence, and this action does not
+ * pretend otherwise.
+ */
+export async function decidePropertyFlag(
+  _previous: ModerationActionState,
+  formData: FormData,
+): Promise<ModerationActionState> {
+  let actor;
+  try {
+    actor = await requireRole('moderator');
+  } catch (error) {
+    return {
+      error: error instanceof AuthorisationError ? error.message : copy.errors.genericBody,
+      message: null,
+    };
+  }
+
+  const parsed = decideFlagSchema.safeParse({
+    flagId: formData.get('flagId'),
+    status: formData.get('status'),
+  });
+  if (!parsed.success) return { error: copy.errors.validationTitle, message: null };
+
+  const repository = await getRepository();
+  await repository.decidePropertyFlag(parsed.data.flagId, parsed.data.status, actor.id);
+
+  revalidatePath('/admin/flags');
+  revalidatePath('/admin');
+
+  return {
+    error: null,
+    message:
+      parsed.data.status === 'dismissed'
+        ? 'Dismissed. It will not be raised again for a week.'
+        : 'Marked as looked at.',
+  };
+}

@@ -8,6 +8,8 @@ import type {
   OwnerResponse,
   Property,
   PropertyClaim,
+  PropertyFlagKind,
+  PropertyFlagStatus,
   Review,
   ReviewReport,
   SavedProperty,
@@ -36,6 +38,21 @@ export interface LocalDatabase {
   claims: PropertyClaim[];
   ownerResponses: OwnerResponse[];
   moderationActions: ModerationAction[];
+  /**
+   * Decisions on burst-detection flags.
+   *
+   * The flags themselves are derived on read rather than stored — there is no
+   * scheduler here to write them — so only the moderator's verdict needs
+   * keeping, and it is keyed by what the flag is about rather than by an id
+   * that would change on every recomputation.
+   */
+  flagDecisions: Array<{
+    propertyId: string;
+    kind: PropertyFlagKind;
+    status: Exclude<PropertyFlagStatus, 'open'>;
+    reviewedBy: string;
+    reviewedAt: string;
+  }>;
   saved: SavedProperty[];
   helpfulVotes: Array<{ reviewId: string; voterId: string }>;
   searchEvents: Array<{
@@ -66,6 +83,7 @@ function emptyDatabase(): LocalDatabase {
     claims: [],
     ownerResponses: [],
     moderationActions: [],
+    flagDecisions: [],
     saved: [],
     helpfulVotes: [],
     searchEvents: [],

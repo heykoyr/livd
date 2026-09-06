@@ -431,6 +431,7 @@ export const copy = {
     dashboard: 'Dashboard',
     queue: 'Moderation queue',
     reports: 'Reports',
+    flags: 'Signals',
     properties: 'Properties',
     reviews: 'Reviews',
     users: 'Users',

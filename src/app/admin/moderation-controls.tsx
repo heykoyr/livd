@@ -7,6 +7,7 @@ import { FormError, Input } from '@/components/ui/field';
 import { initialModerationState } from '@/server/actions/action-state';
 import {
   decideClaim,
+  decidePropertyFlag,
   resolveReport,
   setReviewStatus,
   setReviewVerification,
@@ -200,6 +201,37 @@ export function RoleControls({ userId, currentRole }: { userId: string; currentR
       <Button type="submit" variant="secondary" size="sm" loading={pending}>
         Update
       </Button>
+      <Feedback state={state} />
+    </form>
+  );
+}
+
+export function FlagControls({ flagId }: { flagId: string }) {
+  const [state, formAction, pending] = useActionState(decidePropertyFlag, initialModerationState);
+
+  return (
+    <form action={formAction} className="flex flex-col gap-3">
+      <input type="hidden" name="flagId" value={flagId} />
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" name="status" value="reviewed" variant="secondary" size="sm" loading={pending}>
+          Looked at it
+        </Button>
+        <Button type="submit" name="status" value="dismissed" variant="ghost" size="sm" loading={pending}>
+          Nothing wrong here
+        </Button>
+      </div>
+
+      {/* No written reason is asked for, unlike every other control in this
+          file. Nothing here changes what the public sees — the reviews are
+          untouched either way — so the friction would buy nothing and would
+          slow down the one queue that needs to be cleared quickly to stay
+          useful. Acting on the reviews themselves still requires one. */}
+      <p className="text-micro text-ink-subtle">
+        Deciding a flag does not touch the reviews behind it. If this is a campaign, hold or
+        remove each review separately, with a reason.
+      </p>
+
       <Feedback state={state} />
     </form>
   );

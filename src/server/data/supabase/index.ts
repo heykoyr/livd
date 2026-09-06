@@ -29,6 +29,8 @@ import type {
   SearchResults,
   SearchSuggestion,
   UserProfile,
+  PropertyFlag,
+  PropertyFlagStatus,
   VerificationLevel,
 } from '@/types/domain';
 import type {
@@ -48,12 +50,14 @@ import {
   toClaim,
   toModerationAction,
   toProperty,
+  toPropertyFlag,
   toReport,
   toReview,
   toUserProfile,
   type ClaimRow,
   type ModerationActionRow,
   type ProfileRow,
+  type PropertyFlagRow,
   type PropertyRow,
   type ReportRow,
   type ReviewRow,
@@ -922,6 +926,70 @@ export class SupabaseRepository implements LivdRepository {
     });
   }
 
+  /* ---------------------------------------------------------------------
+   * Automated signals
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Reads what the detector found.
+   *
+   * The rows are written by `livd_detect_property_flags`, which pg_cron runs
+   * hourly — see migrations 0010 and 0011. Nothing in the application writes
+   * them, and nothing acts on them: a flag exists to put a property in front
+   * of a person.
+   */
+  async listPropertyFlags(
+    status: PropertyFlagStatus = 'open',
+  ): Promise<Array<{ flag: PropertyFlag; property: Property }>> {
+    const admin = this.admin();
+
+    const { data, error } = await admin
+      .from('property_flags')
+      .select(`*, properties!inner ( ${PROPERTY_SELECT} )`)
+      .eq('status', status)
+      .order('severity', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (error) throw new Error(`listPropertyFlags: ${error.message}`);
+
+    return (data ?? []).map((row) => {
+      const typed = row as unknown as PropertyFlagRow & { properties: PropertyRow };
+      return {
+        flag: toPropertyFlag(typed),
+        property: toProperty(typed.properties),
+      };
+    });
+  }
+
+  async decidePropertyFlag(
+    flagId: string,
+    status: Extract<PropertyFlagStatus, 'reviewed' | 'dismissed'>,
+    actorId: string,
+  ): Promise<void> {
+    const admin = this.admin();
+
+    const { data, error } = await admin
+      .from('property_flags')
+      .update({ status, reviewed_by: actorId, reviewed_at: new Date().toISOString() })
+      .eq('id', flagId)
+      .select('property_id, kind')
+      .single();
+
+    if (error) throw new Error(`decidePropertyFlag: ${error.message}`);
+
+    const decided = data as unknown as { property_id: string; kind: string };
+
+    await this.recordModerationAction({
+      actorId,
+      subjectType: 'property',
+      subjectId: decided.property_id,
+      action: `flag_${status}:${decided.kind}`,
+      reason: null,
+      previousStatus: 'open',
+      newStatus: status,
+    });
+  }
+
   async resolveReport(
     reportId: string,
     status: Extract<ReportStatus, 'upheld' | 'dismissed'>,
@@ -1386,6 +1454,7 @@ export class SupabaseRepository implements LivdRepository {
       reviewCount,
       pendingModerationCount,
       openReportCount,
+      openFlagCount,
       pendingClaimCount,
       userCount,
       reviewsLast30Days,
@@ -1394,6 +1463,7 @@ export class SupabaseRepository implements LivdRepository {
       count('reviews', (q) => (q as never as { eq: Function }).eq('status', 'published')),
       count('reviews', (q) => (q as never as { eq: Function }).eq('status', 'pending_moderation')),
       count('review_reports', (q) => (q as never as { eq: Function }).eq('status', 'open')),
+      count('property_flags', (q) => (q as never as { eq: Function }).eq('status', 'open')),
       count('property_claims', (q) => (q as never as { eq: Function }).eq('status', 'pending')),
       count('profiles'),
       count('reviews', (q) => (q as never as { gte: Function }).gte('created_at', thirtyDaysAgo)),
@@ -1404,6 +1474,7 @@ export class SupabaseRepository implements LivdRepository {
       reviewCount,
       pendingModerationCount,
       openReportCount,
+      openFlagCount,
       pendingClaimCount,
       userCount,
       reviewsLast30Days,

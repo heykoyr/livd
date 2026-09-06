@@ -21,8 +21,14 @@ import type {
   SearchResults,
   SearchSuggestion,
   UserProfile,
+  PropertyFlag,
+  PropertyFlagStatus,
   VerificationLevel,
 } from '@/types/domain';
+import { detectPropertyFlags } from '@/lib/safety/burst-detection';
+
+/** Matches `p_cooldown_days` in `livd_detect_property_flags`. */
+const FLAG_DECISION_COOLDOWN_DAYS = 7;
 import type {
   AdminOverview,
   CreatePropertyInput,
@@ -765,6 +771,116 @@ export class LocalRepository implements LivdRepository {
     });
   }
 
+  /* ---------------------------------------------------------------------
+   * Automated signals
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Derives the flags on read.
+   *
+   * Production runs the same three rules on a schedule inside Postgres and
+   * stores what they find. There is no scheduler here, so they are recomputed
+   * from the store each time and matched against whatever decisions a
+   * moderator has already recorded. The rules themselves live in one place —
+   * `src/lib/safety/burst-detection.ts` — so the two adapters cannot disagree
+   * about what counts as a burst.
+   */
+  async listPropertyFlags(
+    status: PropertyFlagStatus = 'open',
+  ): Promise<Array<{ flag: PropertyFlag; property: Property }>> {
+    const database = await getDatabase();
+    const usersById = new Map(database.users.map((user) => [user.id, user]));
+    const propertiesById = new Map(database.properties.map((p) => [p.id, p]));
+
+    const signals = database.reviews
+      .filter((review) => review.status === 'published')
+      .flatMap((review) => {
+        const author = usersById.get(review.authorId);
+        if (!author) return [];
+        return [
+          {
+            propertyId: review.propertyId,
+            createdAt: review.createdAt,
+            overallRating: review.overallRating,
+            authorCreatedAt: author.createdAt,
+          },
+        ];
+      });
+
+    return detectPropertyFlags(signals)
+      .flatMap((finding) => {
+        const property = propertiesById.get(finding.propertyId);
+        if (!property) return [];
+
+        // A decision holds for the same cooldown the SQL detector applies, so
+        // the two adapters agree: a moderator who has looked at this is not
+        // shown it again tomorrow, and a pattern still running next week is
+        // raised afresh rather than staying silently dismissed forever.
+        const decided = database.flagDecisions.find(
+          (d) => d.propertyId === finding.propertyId && d.kind === finding.kind,
+        );
+        const withinCooldown =
+          decided !== undefined &&
+          Date.now() - new Date(decided.reviewedAt).getTime() <
+            FLAG_DECISION_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+        const decision = withinCooldown ? decided : undefined;
+
+        const flag: PropertyFlag = {
+          // Stable for as long as the finding is: a decision has to survive
+          // the next recomputation to mean anything.
+          id: `flag-${finding.propertyId}-${finding.kind}`,
+          propertyId: finding.propertyId,
+          kind: finding.kind,
+          severity: finding.severity,
+          windowStart: finding.windowStart,
+          windowEnd: finding.windowEnd,
+          observed: finding.observed,
+          detail: finding.detail,
+          status: decision?.status ?? 'open',
+          reviewedBy: decision?.reviewedBy ?? null,
+          reviewedAt: decision?.reviewedAt ?? null,
+          createdAt: finding.windowEnd,
+        };
+
+        return [{ flag, property }];
+      })
+      .filter((entry) => entry.flag.status === status);
+  }
+
+  async decidePropertyFlag(
+    flagId: string,
+    status: Extract<PropertyFlagStatus, 'reviewed' | 'dismissed'>,
+    actorId: string,
+  ): Promise<void> {
+    const flags = await this.listPropertyFlags('open');
+    const target = flags.find((entry) => entry.flag.id === flagId);
+    if (!target) throw new Error('Flag not found');
+
+    const { propertyId, kind } = target.flag;
+
+    await mutate((database) => {
+      const existing = database.flagDecisions.find(
+        (d) => d.propertyId === propertyId && d.kind === kind,
+      );
+      const decision = { propertyId, kind, status, reviewedBy: actorId, reviewedAt: nowIso() };
+
+      if (existing) Object.assign(existing, decision);
+      else database.flagDecisions.push(decision);
+
+      database.moderationActions.push({
+        id: `action-${shortId(12)}`,
+        actorId,
+        subjectType: 'property',
+        subjectId: propertyId,
+        action: `flag_${status}:${kind}`,
+        reason: null,
+        previousStatus: 'open',
+        newStatus: status,
+        createdAt: nowIso(),
+      });
+    });
+  }
+
   async recordModerationAction(
     input: Omit<ModerationAction, 'id' | 'createdAt'>,
   ): Promise<ModerationAction> {
@@ -1084,6 +1200,8 @@ export class LocalRepository implements LivdRepository {
   async adminOverview(): Promise<AdminOverview> {
     const database = await getDatabase();
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    // Derived rather than counted: this adapter has no stored flags.
+    const openFlags = await this.listPropertyFlags('open');
 
     return {
       propertyCount: database.properties.filter((p) => p.status === 'active').length,
@@ -1091,6 +1209,7 @@ export class LocalRepository implements LivdRepository {
       pendingModerationCount: database.reviews.filter((r) => r.status === 'pending_moderation')
         .length,
       openReportCount: database.reports.filter((r) => r.status === 'open').length,
+      openFlagCount: openFlags.length,
       pendingClaimCount: database.claims.filter((c) => c.status === 'pending').length,
       userCount: database.users.filter((u) => !u.id.startsWith('demo-')).length,
       reviewsLast30Days: database.reviews.filter((r) => r.createdAt >= thirtyDaysAgo).length,

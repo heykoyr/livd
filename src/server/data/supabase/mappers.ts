@@ -2,6 +2,7 @@ import type {
   ModerationAction,
   Property,
   PropertyClaim,
+  PropertyFlag,
   PropertyTypeKey,
   Review,
   ReviewReport,
@@ -182,6 +183,40 @@ export function toReport(row: ReportRow): ReviewReport {
     resolution: row.resolution,
     createdAt: row.created_at,
     resolvedAt: row.resolved_at,
+  };
+}
+
+export interface PropertyFlagRow {
+  id: string;
+  property_id: string;
+  kind: PropertyFlag['kind'];
+  severity: number;
+  window_start: string;
+  window_end: string;
+  observed: Record<string, number | string | null>;
+  detail: string;
+  status: PropertyFlag['status'];
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export function toPropertyFlag(row: PropertyFlagRow): PropertyFlag {
+  return {
+    id: row.id,
+    propertyId: row.property_id,
+    kind: row.kind,
+    // The column is a smallint with a 1-3 check constraint; the cast carries
+    // that guarantee across into the type rather than widening it to number.
+    severity: row.severity as PropertyFlag['severity'],
+    windowStart: row.window_start,
+    windowEnd: row.window_end,
+    observed: row.observed ?? {},
+    detail: row.detail,
+    status: row.status,
+    reviewedBy: row.reviewed_by,
+    reviewedAt: row.reviewed_at,
+    createdAt: row.created_at,
   };
 }
 

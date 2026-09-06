@@ -348,6 +348,39 @@ export interface PropertyClaim {
   createdAt: string;
 }
 
+/* -------------------------------------------------------------------------
+ * Automated trust-and-safety signals
+ * ---------------------------------------------------------------------- */
+
+export type PropertyFlagKind = 'review_burst' | 'rating_anomaly' | 'new_account_concentration';
+
+export type PropertyFlagStatus = 'open' | 'reviewed' | 'dismissed';
+
+/**
+ * Something the burst detector noticed, waiting for a person to decide about it.
+ *
+ * A flag is never acted on automatically. A property written about by twenty
+ * delighted residents looks identical, from the outside, to one being
+ * astroturfed; telling those apart is a judgement, and `observed` carries the
+ * arithmetic so a moderator can make it rather than be handed a verdict.
+ */
+export interface PropertyFlag {
+  id: string;
+  propertyId: string;
+  kind: PropertyFlagKind;
+  /** 1 unusual · 2 hard to explain innocently · 3 look at this today. */
+  severity: 1 | 2 | 3;
+  windowStart: string;
+  windowEnd: string;
+  /** The numbers behind the flag. Shape depends on `kind`. */
+  observed: Record<string, number | string | null>;
+  detail: string;
+  status: PropertyFlagStatus;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
 export interface ModerationAction {
   id: string;
   actorId: string;

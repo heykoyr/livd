@@ -34,12 +34,11 @@ export default async function ReportsPage() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
                 <Badge tone="critical">{copy.safety.reportReasons[report.reason]}</Badge>
-                <Link
-                  href={`/property/${property.slug}`}
-                  className="mt-3 block font-display text-title-md tracking-tightish text-ink hover:underline"
-                >
-                  {propertyDisplayName(property.address)}
-                </Link>
+                <h2 className="mt-3 font-display text-title-md tracking-tightish text-ink">
+                  <Link href={`/property/${property.slug}`} className="hover:underline">
+                    {propertyDisplayName(property.address)}
+                  </Link>
+                </h2>
                 <p className="mt-1 text-label text-ink-subtle">
                   Reported {formatRelativeTime(report.createdAt)}
                 </p>
