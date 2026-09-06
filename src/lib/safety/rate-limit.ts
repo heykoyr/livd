@@ -1,11 +1,12 @@
 /**
  * Rate limiting.
  *
- * A fixed-window counter over an in-process store. That is the right shape for
- * a single-region MVP and the wrong shape for a multi-instance deployment, so
- * the store sits behind `RateLimitStore` and can be swapped for Postgres or
- * Redis without touching a call site. The Postgres implementation writes to
- * `rate_limit_events`; see `docs/database-schema.md`.
+ * A sliding-window counter behind `RateLimitStore`, with two implementations.
+ * Postgres is used wherever it is available, because an in-process counter on
+ * a serverless platform enforces the configured limit *per warm instance* —
+ * the real ceiling is that number multiplied by however many are running, and
+ * nothing in the code says so. The in-process store remains for the local
+ * adapter, for tests, and as the fallback when Postgres cannot be reached.
  *
  * Actors are identified by a salted hash, never by a raw IP address. Livd does
  * not need to know where anyone is, only that two requests came from the same
@@ -13,6 +14,8 @@
  */
 
 import { createHash } from 'node:crypto';
+
+import { resolveDataBackend } from '@/config/site';
 
 export interface RateLimitRule {
   /** Requests permitted per window. */
@@ -29,7 +32,18 @@ export interface RateLimitResult {
 }
 
 export interface RateLimitStore {
-  increment(key: string, windowSeconds: number): Promise<{ count: number; resetAt: number }>;
+  /**
+   * Records one request and returns how many that actor has made inside the
+   * window, plus the moment the window next admits another.
+   *
+   * Bucket and actor are separate arguments rather than one composite key so
+   * a store can index them independently — the Postgres one does.
+   */
+  increment(
+    bucket: string,
+    actorHash: string,
+    windowSeconds: number,
+  ): Promise<{ count: number; resetAt: number }>;
 }
 
 /* -------------------------------------------------------------------------
@@ -60,11 +74,13 @@ class MemoryRateLimitStore implements RateLimitStore {
   private lastSweep = Date.now();
 
   async increment(
-    key: string,
+    bucket: string,
+    actorHash: string,
     windowSeconds: number,
   ): Promise<{ count: number; resetAt: number }> {
     this.sweep();
 
+    const key = `${bucket}:${actorHash}`;
     const now = Date.now();
     const existing = this.windows.get(key);
 
@@ -89,12 +105,49 @@ class MemoryRateLimitStore implements RateLimitStore {
   }
 }
 
-let store: RateLimitStore = new MemoryRateLimitStore();
+const memoryStore = new MemoryRateLimitStore();
 
-/** Swaps the backing store — used by tests and by a future Postgres adapter. */
-export function setRateLimitStore(next: RateLimitStore): void {
+/** Set by a test, or by the first call that resolves the real store. */
+let store: RateLimitStore | null = null;
+
+/** Swaps the backing store. Tests use this; nothing else needs to. */
+export function setRateLimitStore(next: RateLimitStore | null): void {
   store = next;
 }
+
+/**
+ * Picks a store on first use.
+ *
+ * Resolved lazily and imported dynamically so that the Supabase client never
+ * enters the module graph of a deployment running the local adapter, and so a
+ * missing service-role key degrades rather than throwing at import time.
+ */
+async function resolveStore(): Promise<RateLimitStore> {
+  if (store) return store;
+
+  const usable =
+    resolveDataBackend() === 'supabase' && Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+  if (!usable) {
+    if (process.env.NODE_ENV === 'production' && !warnedAboutMemory) {
+      warnedAboutMemory = true;
+      console.warn(
+        '[livd] Rate limiting is counting in process memory. On a serverless ' +
+          'platform that means the configured limit applies per warm instance, ' +
+          'not per person. Set SUPABASE_SERVICE_ROLE_KEY to count in Postgres.',
+      );
+    }
+    store = memoryStore;
+    return store;
+  }
+
+  const { PostgresRateLimitStore } = await import('@/server/data/supabase/rate-limit-store');
+  store = new PostgresRateLimitStore();
+  return store;
+}
+
+let warnedAboutMemory = false;
+let warnedAboutFallback = false;
 
 /* -------------------------------------------------------------------------
  * Actor identity
@@ -115,14 +168,43 @@ export function hashActor(identifier: string): string {
  * Check
  * ---------------------------------------------------------------------- */
 
+/**
+ * Counts one hit, falling back to the in-process store if Postgres is
+ * unreachable.
+ *
+ * Failing closed would turn a database blip into "nobody may write anything",
+ * which is a worse outcome than the one this control exists to prevent.
+ * Failing fully open would remove the control. Falling back degrades it to
+ * per-instance counting — the behaviour this replaced — and says so once.
+ */
+async function countHit(
+  bucket: string,
+  actorHash: string,
+  windowSeconds: number,
+): Promise<{ count: number; resetAt: number }> {
+  try {
+    const active = await resolveStore();
+    return await active.increment(bucket, actorHash, windowSeconds);
+  } catch (error) {
+    if (!warnedAboutFallback) {
+      warnedAboutFallback = true;
+      console.error(
+        '[livd] Rate limit store unavailable; counting in process memory for now.',
+        error,
+      );
+    }
+    return memoryStore.increment(bucket, actorHash, windowSeconds);
+  }
+}
+
 export async function checkRateLimit(
   bucket: RateLimitBucket,
   actorIdentifier: string,
 ): Promise<RateLimitResult> {
   const rule = RATE_LIMITS[bucket];
-  const key = `${bucket}:${hashActor(actorIdentifier)}`;
+  const actorHash = hashActor(actorIdentifier);
 
-  const { count, resetAt } = await store.increment(key, rule.windowSeconds);
+  const { count, resetAt } = await countHit(bucket, actorHash, rule.windowSeconds);
   const retryAfter = Math.max(0, Math.ceil((resetAt - Date.now()) / 1000));
 
   return {

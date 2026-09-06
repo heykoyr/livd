@@ -176,6 +176,19 @@ user, including the record's own subject, can read this table through the API.
 **`rate_limit_events`** — `bucket_key`, `actor_hash` (salted SHA-256, never a raw
 IP), `occurred_at`. Indexed on `(bucket_key, actor_hash, occurred_at)`.
 
+Written only through `livd_rate_limit_hit(bucket, actor_hash, window_seconds)`,
+which prunes, records, counts and reports when a slot next frees up in one
+round trip, under an advisory lock keyed on the actor so concurrent requests
+cannot each count before the others are visible. The window slides: a fixed one
+would let someone spend a full allowance at 11:59 and another at 12:00.
+
+Service role only. Both this function and `livd_prune_rate_limit_events()` have
+EXECUTE revoked from `anon` and `authenticated` — a browser-callable version
+would let anyone holding the public anon key write unbounded rows under actor
+hashes of their own invention. `livd_prune_rate_limit_events()` runs nightly on
+pg_cron and clears anything older than two days; the longest configured window
+is 24 hours, so nothing older can affect a decision.
+
 ---
 
 ## Personalisation

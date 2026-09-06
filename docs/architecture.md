@@ -172,7 +172,7 @@ list and search ordering.
 | Content linting (contact details, named individuals, threats, slurs, allegations) | `src/lib/safety/content-linter.ts`, called by the submit action before persistence |
 | Unit-number redaction | Same linter, plus a database column grant that excludes `unit_label` from public views |
 | Duplicate prevention | Unique index on `(property_id, author_id, tenancy_key)` |
-| Rate limiting | `src/lib/safety/rate-limit.ts` — token bucket keyed by user and IP hash |
+| Rate limiting | `src/lib/safety/rate-limit.ts` — sliding window keyed by user and salted origin hash, counted in Postgres by `livd_rate_limit_hit` so the limit is per person rather than per warm instance |
 | Owner self-review block | Checked in the submit action against `property_claims` |
 | Burst detection | Scheduled aggregate over recent reviews per property; flags, never auto-deletes |
 | Moderation queue | `review_reports` + `moderation_actions`, full audit trail, admin-only RLS |
