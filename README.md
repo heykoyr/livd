@@ -122,6 +122,9 @@ data, not the secrecy of that key. `SUPABASE_SERVICE_ROLE_KEY` bypasses every
 policy: it is the one real secret, is read only by server-only modules, is
 never prefixed `NEXT_PUBLIC_`, and moderation will not work without it.
 
+The database is seeded: 16 properties, 222 reviews, 2,033 category ratings,
+212 departure reasons and 1,313 tags, all marked `is_demo`.
+
 ### Seeding the demonstration data
 
 ```bash
@@ -141,10 +144,37 @@ RLS insert policy correctly refuses them.
 
 ### Deploying
 
-Set the five variables above in the Vercel project, plus
-`NEXT_PUBLIC_SITE_URL` pointing at the deployed origin. Do **not** set
-`LIVD_ALLOW_LOCAL_IN_PROD` — the local file store cannot work on a serverless
-filesystem, and the guard that refuses it is deliberate.
+Livd is deployed on Vercel and rebuilds on every push to `main`.
+
+| | |
+| --- | --- |
+| Project | `koyrstudio/livd` |
+| Production | <https://livd-koyrstudio.vercel.app> |
+| Repository | <https://github.com/heykoyr/livd> |
+
+Environment variables set on the project:
+
+| Variable | Environments | |
+| --- | --- | --- |
+| `LIVD_DATA_BACKEND` | Production, Preview | `supabase` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Production, Preview | |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | All three | Public by design — RLS is the protection |
+| `NEXT_PUBLIC_SITE_URL` | Production | Previews fall back to `VERCEL_URL` |
+| `LIVD_SESSION_SECRET` | Production, Preview | |
+| `LIVD_SHOW_DEMO_DATA` | Production, Preview | `true` while the seeded data is the content |
+
+`SUPABASE_SERVICE_ROLE_KEY` is **not** set, on Vercel or locally. Everything a
+visitor does works without it, because every public read and every review
+submission goes through Row Level Security as the anon or authenticated role.
+Moderation does not: `/admin` needs the key to act on the queue. To add it:
+
+```bash
+# Supabase dashboard > Project Settings > API keys > service_role
+npm run vercel -- env add SUPABASE_SERVICE_ROLE_KEY production --type secret
+```
+
+Do **not** set `LIVD_ALLOW_LOCAL_IN_PROD` — the local file store cannot work on
+a serverless filesystem, and the guard that refuses it is deliberate.
 
 ---
 
