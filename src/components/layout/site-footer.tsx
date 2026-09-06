@@ -31,9 +31,17 @@ const COLUMNS = [
   },
 ] as const;
 
+/**
+ * The site footer.
+ *
+ * Deliberately carries no top margin. Every page already ends with its own
+ * bottom padding, and the footer adding 6rem on top of that is what produced a
+ * screen-height void between the last card and the rule. The tinted band and
+ * the border are the separation; the gap above them belongs to the page.
+ */
 export function SiteFooter() {
   return (
-    <footer className="mt-24 border-t border-border bg-surface-sunken/50">
+    <footer className="border-t border-border bg-surface-sunken/50">
       <div className="container-shell py-14">
         <div className="grid gap-10 md:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))]">
           <div className="max-w-xs">

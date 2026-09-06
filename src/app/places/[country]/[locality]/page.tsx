@@ -174,7 +174,7 @@ export default async function LocalityPage({ params }: { params: Promise<Params>
         Properties in {name}
       </h2>
 
-      <ul className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <ul className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {properties.map((summary) => (
           <li key={summary.property.id}>
             <PropertyCard summary={summary} />

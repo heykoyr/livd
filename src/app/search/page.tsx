@@ -96,7 +96,7 @@ export default async function SearchPage({
         />
       ) : (
         <>
-          <ul className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {results.items.map((summary) => (
               <li key={summary.property.id}>
                 <PropertyCard summary={summary} />

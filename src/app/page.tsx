@@ -119,7 +119,7 @@ function DiscoverSection({ summaries }: { summaries: PropertySummary[] }) {
           </Link>
         </div>
 
-        <div className="mt-9 grid gap-4 md:grid-cols-3">
+        <div className="mt-9 grid grid-cols-1 gap-4 md:grid-cols-3">
           {summaries.map((summary) => (
             <PropertyCard key={summary.property.id} summary={summary} />
           ))}
@@ -205,7 +205,7 @@ function PlacesSection({
 
 function ContributeSection() {
   return (
-    <section className="container-shell pb-24">
+    <section className="container-shell pb-20 md:pb-24">
       <Card className="overflow-hidden">
         <div className="grid gap-8 p-8 md:grid-cols-[1.3fr_1fr] md:items-center md:p-12">
           <div>

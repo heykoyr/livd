@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import type { ComponentPropsWithoutRef, ReactNode } from 'react';
+import type { ComponentPropsWithoutRef, ComponentPropsWithRef, ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -111,7 +111,10 @@ export function ButtonLink({
   );
 }
 
-interface IconButtonProps extends ComponentPropsWithoutRef<'button'> {
+// `WithRef`, so a caller can hold on to the element — the mobile drawer needs
+// it to return focus to the trigger on Escape. React 19 passes `ref` through
+// as an ordinary prop, so spreading it below is all the forwarding required.
+interface IconButtonProps extends ComponentPropsWithRef<'button'> {
   /** Required — an icon-only control must still have an accessible name. */
   label: string;
   variant?: ButtonVariant;

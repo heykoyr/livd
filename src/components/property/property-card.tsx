@@ -50,7 +50,13 @@ export function PropertyCard({
               {name}
             </Link>
           </h3>
-          <p className="mt-1 truncate text-label text-ink-muted">{context}</p>
+          {/* Wraps on a phone, single line with an ellipsis from `sm` up.
+              `truncate` implies `white-space: nowrap`, which makes this line's
+              min-content width the whole address — and a grid track sized by
+              its contents then grew to fit it, pushing the card past the edge
+              of the viewport. Wrapping also means a narrow screen sees the
+              town rather than an ellipsis where the town used to be. */}
+          <p className="mt-1 break-words text-label text-ink-muted sm:truncate">{context}</p>
         </div>
 
         <ScoreBadge
