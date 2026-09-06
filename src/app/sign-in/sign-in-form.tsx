@@ -5,7 +5,7 @@ import { useActionState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Field, FormError, Input } from '@/components/ui/field';
 import { copy } from '@/content/copy';
-import { initialAuthState, type AuthActionState } from '@/server/actions/action-state';
+import { initialAuthState } from '@/server/actions/action-state';
 import { requestSignIn } from '@/server/actions/auth';
 
 export function SignInForm({ next, isLocalAdapter }: { next: string; isLocalAdapter: boolean }) {

@@ -5,7 +5,6 @@ import { redirect } from 'next/navigation';
 import { copy } from '@/content/copy';
 import { lintContent, type SafetyCode } from '@/lib/safety/content-linter';
 import {
-  initialNewPropertyState,
   initialReviewSubmitState,
   type NewPropertyState,
   type ReviewSubmitState,

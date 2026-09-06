@@ -70,6 +70,10 @@ export default async function MyReviewsPage() {
       <ul className="mt-10 flex flex-col gap-4">
         {reviews.map((review, index) => {
           const property = properties[index];
+          // A server component, rendered once per request: "how old is this
+          // review right now" is exactly the question the edit window asks,
+          // and there is no client render for it to be inconsistent with.
+          // eslint-disable-next-line react-hooks/purity
           const ageHours = (Date.now() - new Date(review.createdAt).getTime()) / 3_600_000;
           const editable =
             review.status === 'published' && ageHours <= LIMITS.reviewEditWindowHours;

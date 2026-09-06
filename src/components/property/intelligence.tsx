@@ -1,4 +1,4 @@
-import { Badge, Card, Eyebrow, Meter } from '@/components/ui/primitives';
+import { Badge, Card, Meter } from '@/components/ui/primitives';
 import { CATEGORY_DEFINITIONS, categoryLabel, getCategory } from '@/config/categories';
 import { departureReasonLabel, getDepartureReason } from '@/config/departure-reasons';
 import { tagLabel } from '@/config/tags';

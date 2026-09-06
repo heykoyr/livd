@@ -22,7 +22,7 @@ const preload = fileURLToPath(new URL('./vercel-ascii-hostname.cjs', import.meta
 
 /** Quote anything a shell would otherwise split or interpret. */
 function quote(arg) {
-  return /^[A-Za-z0-9._\/=@:-]+$/.test(arg) ? arg : JSON.stringify(arg);
+  return /^[A-Za-z0-9._/=@:-]+$/.test(arg) ? arg : JSON.stringify(arg);
 }
 
 const command = ['npx', '--no-install', 'vercel', ...process.argv.slice(2)]

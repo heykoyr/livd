@@ -53,6 +53,11 @@ export default function GlobalNotFound() {
       <body className="min-h-dvh bg-canvas text-ink antialiased">
         <div className="container-shell flex min-h-dvh flex-col">
           <header className="border-b border-border py-5">
+            {/* A real <a>, not next/link. This file renders its own <html>
+                and <body> outside the application shell, so there is no router
+                to hand a client navigation to — the way back is a fresh
+                document load. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/"
               className="inline-flex items-center rounded-sm"

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 
-import { copy } from '@/content/copy';
 import { requireUserPage } from '@/server/auth/guards';
 import { NewPropertyForm } from './new-property-form';
 

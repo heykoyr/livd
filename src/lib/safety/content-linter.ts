@@ -199,8 +199,11 @@ const AGGRESSIVE =
  */
 function normalise(text: string): string {
   return text
-    .replace(/[​-‍﻿]/g, '')
-    .replace(/[０-９]/g, (d) => String(d.charCodeAt(0) - 0xff10))
+    // Written as escapes on purpose. These characters are invisible in an
+    // editor, and a stray normalisation or a careless paste would silently
+    // disarm the filter with nothing to see in the diff.
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[\uFF10-\uFF19]/g, (d) => String(d.charCodeAt(0) - 0xff10))
     .normalize('NFKC');
 }
 
