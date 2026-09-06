@@ -173,6 +173,22 @@ review's status.**
 `expires_at`. **RLS grants `select` to `service_role` only.** No authenticated
 user, including the record's own subject, can read this table through the API.
 
+Since 0012 a record also carries `submitted_by`, `evidence_sha256`,
+`evidence_mime`, `evidence_bytes`, `checks` and `decided_at`. The hash is what
+makes "has this exact document already been used by four different residents"
+answerable without anyone reading it. `checks` holds the automated findings
+verbatim, so the moderation queue shows a person the same thing the code saw.
+A partial unique index allows one pending request per review.
+
+The document itself lives in the private `verification-evidence` bucket, keyed
+by a UUID that encodes nothing. `storage.objects` carries RLS and no policy is
+written for that bucket, so anon and authenticated are denied outright — the
+only reader is server code holding the service role, after a moderator guard,
+through a signed URL that lasts five minutes. `evidence_ref` is that key and
+never a URL: a URL in a row is a URL in a backup. The adapter does not map it
+onto the domain object at all, so no route, component or log can render it by
+accident.
+
 **`property_flags`** — `property_id`, `kind` (`review_burst`, `rating_anomaly`,
 `new_account_concentration`), `severity` 1–3, the window examined, `observed`
 (the arithmetic that raised it), `detail`, and a moderator's `status`,

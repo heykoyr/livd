@@ -1,3 +1,5 @@
+import type { VerificationCheck } from '@/types/domain';
+
 /**
  * Server Action state shapes and their initial values.
  *
@@ -115,3 +117,21 @@ export interface OwnerResponseState {
 }
 
 export const initialOwnerResponseState: OwnerResponseState = { status: 'idle', error: null };
+
+/**
+ * A verification submission.
+ *
+ * `checks` carries the blocking reasons back to the person when a submission is
+ * refused. A refusal nobody can act on is indistinguishable from a bug.
+ */
+export interface VerificationSubmitState {
+  error: string | null;
+  message: string | null;
+  checks: VerificationCheck[];
+}
+
+export const initialVerificationSubmitState: VerificationSubmitState = {
+  error: null,
+  message: null,
+  checks: [],
+};

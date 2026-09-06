@@ -31,7 +31,11 @@ import type {
   UserProfile,
   PropertyFlag,
   PropertyFlagStatus,
+  VerificationCheck,
   VerificationLevel,
+  VerificationMethod,
+  VerificationOutcome,
+  VerificationRecord,
 } from '@/types/domain';
 import type {
   AdminOverview,
@@ -51,6 +55,7 @@ import {
   toModerationAction,
   toProperty,
   toPropertyFlag,
+  toVerificationRecord,
   toReport,
   toReview,
   toUserProfile,
@@ -58,6 +63,7 @@ import {
   type ModerationActionRow,
   type ProfileRow,
   type PropertyFlagRow,
+  type VerificationRecordRow,
   type PropertyRow,
   type ReportRow,
   type ReviewRow,
@@ -88,6 +94,18 @@ function unwrap<T>(result: { data: T | null; error: { message: string } | null }
   }
   return result.data;
 }
+
+/** The private bucket verification evidence lives in. Created in 0012. */
+const EVIDENCE_BUCKET = 'verification-evidence';
+
+/**
+ * How long a moderator's link to a piece of evidence stays valid.
+ *
+ * Minutes rather than hours: a tenancy agreement carries a name, an address and
+ * a signature, and the person who handed it over did so in order to stay
+ * anonymous.
+ */
+const EVIDENCE_LINK_SECONDS = 300;
 
 export class SupabaseRepository implements LivdRepository {
   /**
@@ -927,6 +945,209 @@ export class SupabaseRepository implements LivdRepository {
   }
 
   /* ---------------------------------------------------------------------
+   * Residency verification
+   * ------------------------------------------------------------------ */
+
+  async gatherVerificationContext(input: {
+    reviewId: string;
+    submitterId: string;
+    evidenceSha256: string;
+  }) {
+    const admin = this.admin();
+
+    const review = await this.getReviewById(input.reviewId);
+    if (!review || review.authorId !== input.submitterId) return null;
+
+    const property = await this.getPropertyById(review.propertyId);
+    if (!property) return null;
+
+    const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+
+    const [profile, claimed, priors, recent] = await Promise.all([
+      admin.from('profiles').select('created_at').eq('id', input.submitterId).maybeSingle(),
+      // An owner cannot verify themselves as a resident of their own building.
+      admin
+        .from('property_claims')
+        .select('id')
+        .eq('property_id', review.propertyId)
+        .eq('claimant_id', input.submitterId)
+        .eq('status', 'approved')
+        .maybeSingle(),
+      // The same document, offered before — by anyone.
+      admin
+        .from('verification_records')
+        .select('submitted_by')
+        .eq('evidence_sha256', input.evidenceSha256),
+      admin
+        .from('verification_records')
+        .select('*', { count: 'exact', head: true })
+        .eq('submitted_by', input.submitterId)
+        .gte('created_at', weekAgo),
+    ]);
+
+    return {
+      review,
+      property,
+      submitterCreatedAt:
+        (profile.data as { created_at?: string } | null)?.created_at ?? new Date().toISOString(),
+      submitterOwnsProperty: Boolean(claimed.data),
+      priorSubmitterIds: ((priors.data ?? []) as Array<{ submitted_by: string | null }>)
+        .map((row) => row.submitted_by)
+        .filter((id): id is string => Boolean(id)),
+      recentSubmissionCount: recent.count ?? 0,
+    };
+  }
+
+  async recordVerificationSubmission(input: {
+    reviewId: string;
+    submitterId: string;
+    method: VerificationMethod;
+    checks: VerificationCheck[];
+    file: { data: Uint8Array; type: string; bytes: number; sha256: string };
+  }): Promise<VerificationRecord> {
+    const admin = this.admin();
+
+    // An opaque key. Nothing in it identifies the property, the reviewer or the
+    // review — a bucket listing should say nothing even to whoever can list it.
+    const key = crypto.randomUUID();
+
+    const uploaded = await admin.storage
+      .from(EVIDENCE_BUCKET)
+      .upload(key, input.file.data, { contentType: input.file.type, upsert: false });
+
+    if (uploaded.error) {
+      throw new Error(`verification upload: ${uploaded.error.message}`);
+    }
+
+    const { data, error } = await admin
+      .from('verification_records')
+      .insert({
+        subject_type: 'review',
+        subject_id: input.reviewId,
+        submitted_by: input.submitterId,
+        method: input.method,
+        evidence_ref: key,
+        evidence_sha256: input.file.sha256,
+        evidence_mime: input.file.type,
+        evidence_bytes: input.file.bytes,
+        checks: input.checks,
+        outcome: 'pending',
+      })
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      // The row is the record. An object with no row pointing at it is
+      // unreachable, and would sit in the bucket forever.
+      await admin.storage.from(EVIDENCE_BUCKET).remove([key]);
+      throw new Error(`recordVerificationSubmission: ${error?.message ?? 'no row returned'}`);
+    }
+
+    return toVerificationRecord(data as unknown as VerificationRecordRow);
+  }
+
+  async listPendingVerifications() {
+    const admin = this.admin();
+
+    const { data, error } = await admin
+      .from('verification_records')
+      .select('*')
+      .eq('outcome', 'pending')
+      .eq('subject_type', 'review')
+      .order('created_at', { ascending: true });
+
+    if (error) throw new Error(`listPendingVerifications: ${error.message}`);
+
+    const rows = (data ?? []) as unknown as VerificationRecordRow[];
+
+    const entries = await Promise.all(
+      rows.map(async (row) => {
+        const review = await this.getReviewById(row.subject_id);
+        if (!review) return null;
+        const property = await this.getPropertyById(review.propertyId);
+        if (!property) return null;
+        return { record: toVerificationRecord(row), review, property };
+      }),
+    );
+
+    return entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  }
+
+  async listVerificationsForReview(reviewId: string): Promise<VerificationRecord[]> {
+    const admin = this.admin();
+
+    const { data, error } = await admin
+      .from('verification_records')
+      .select('*')
+      .eq('subject_type', 'review')
+      .eq('subject_id', reviewId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw new Error(`listVerificationsForReview: ${error.message}`);
+    return ((data ?? []) as unknown as VerificationRecordRow[]).map(toVerificationRecord);
+  }
+
+  async decideVerification(
+    recordId: string,
+    outcome: Extract<VerificationOutcome, 'approved' | 'rejected'>,
+    actorId: string,
+    notes: string,
+  ): Promise<void> {
+    const admin = this.admin();
+
+    const { data, error } = await admin
+      .from('verification_records')
+      .update({ outcome, reviewed_by: actorId, notes, decided_at: new Date().toISOString() })
+      .eq('id', recordId)
+      .eq('outcome', 'pending')
+      .select('subject_id')
+      .single();
+
+    if (error || !data) {
+      throw new Error(`decideVerification: ${error?.message ?? 'no pending record'}`);
+    }
+
+    const reviewId = (data as unknown as { subject_id: string }).subject_id;
+
+    if (outcome === 'approved') {
+      // Rejection deliberately does not mark the review disputed. Failing to
+      // produce a document is not evidence of having lied.
+      await this.setReviewVerification(reviewId, 'verified_resident', actorId);
+    }
+
+    await this.recordModerationAction({
+      actorId,
+      subjectType: 'review',
+      subjectId: reviewId,
+      action: `verification_${outcome}`,
+      reason: notes,
+      previousStatus: 'pending',
+      newStatus: outcome,
+    });
+  }
+
+  async createVerificationEvidenceLink(recordId: string): Promise<string | null> {
+    const admin = this.admin();
+
+    const { data } = await admin
+      .from('verification_records')
+      .select('evidence_ref')
+      .eq('id', recordId)
+      .maybeSingle();
+
+    const key = (data as { evidence_ref?: string | null } | null)?.evidence_ref;
+    if (!key) return null;
+
+    // Minutes, not hours. Long enough to read a document, short enough that a
+    // link pasted into a chat window is worth nothing by the time anyone tries it.
+    const signed = await admin.storage
+      .from(EVIDENCE_BUCKET)
+      .createSignedUrl(key, EVIDENCE_LINK_SECONDS);
+
+    return signed.data?.signedUrl ?? null;
+  }
+
+  /* ---------------------------------------------------------------------
    * Automated signals
    * ------------------------------------------------------------------ */
 
@@ -1455,6 +1676,7 @@ export class SupabaseRepository implements LivdRepository {
       pendingModerationCount,
       openReportCount,
       openFlagCount,
+      pendingVerificationCount,
       pendingClaimCount,
       userCount,
       reviewsLast30Days,
@@ -1464,6 +1686,7 @@ export class SupabaseRepository implements LivdRepository {
       count('reviews', (q) => (q as never as { eq: Function }).eq('status', 'pending_moderation')),
       count('review_reports', (q) => (q as never as { eq: Function }).eq('status', 'open')),
       count('property_flags', (q) => (q as never as { eq: Function }).eq('status', 'open')),
+      count('verification_records', (q) => (q as never as { eq: Function }).eq('outcome', 'pending')),
       count('property_claims', (q) => (q as never as { eq: Function }).eq('status', 'pending')),
       count('profiles'),
       count('reviews', (q) => (q as never as { gte: Function }).gte('created_at', thirtyDaysAgo)),
@@ -1475,6 +1698,7 @@ export class SupabaseRepository implements LivdRepository {
       pendingModerationCount,
       openReportCount,
       openFlagCount,
+      pendingVerificationCount,
       pendingClaimCount,
       userCount,
       reviewsLast30Days,

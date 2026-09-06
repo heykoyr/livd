@@ -33,6 +33,12 @@ export default async function AdminDashboard() {
       hint: 'properties whose review activity does not fit their own history',
     },
     {
+      href: '/admin/verification',
+      label: copy.admin.verificationQueue,
+      count: overview.pendingVerificationCount,
+      hint: 'residents waiting to be recognised as having lived there',
+    },
+    {
       href: '/admin/claims',
       label: copy.admin.claims,
       count: overview.pendingClaimCount,

@@ -10,6 +10,7 @@ import type {
   PropertyClaim,
   PropertyFlagKind,
   PropertyFlagStatus,
+  VerificationRecord,
   Review,
   ReviewReport,
   SavedProperty,
@@ -29,6 +30,13 @@ import { generateSeed } from './seed';
  * one.
  */
 
+export interface StoredVerification extends VerificationRecord {
+  /** Filename under `.data/verification`. Never leaves this module. */
+  evidenceRef: string;
+  /** SHA-256 of the file, for "who else has submitted this exact document". */
+  evidenceSha256: string;
+}
+
 export interface LocalDatabase {
   version: number;
   properties: Property[];
@@ -38,6 +46,13 @@ export interface LocalDatabase {
   claims: PropertyClaim[];
   ownerResponses: OwnerResponse[];
   moderationActions: ModerationAction[];
+  /**
+   * Verification requests. `StoredVerification` carries two fields the domain
+   * type does not — the object reference and the file hash — because both are
+   * needed to answer "has this exact document been used before" and neither
+   * should ever reach a component.
+   */
+  verifications: StoredVerification[];
   /**
    * Decisions on burst-detection flags.
    *
@@ -83,6 +98,7 @@ function emptyDatabase(): LocalDatabase {
     claims: [],
     ownerResponses: [],
     moderationActions: [],
+    verifications: [],
     flagDecisions: [],
     saved: [],
     helpfulVotes: [],

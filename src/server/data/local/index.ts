@@ -1,5 +1,8 @@
 import 'server-only';
 
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { LIMITS, showDemoData } from '@/config/site';
 import { buildPropertyIntelligence, emptyIntelligence } from '@/lib/intelligence';
 import { matchScore, normaliseForSearch } from '@/lib/search/matching';
@@ -23,7 +26,11 @@ import type {
   UserProfile,
   PropertyFlag,
   PropertyFlagStatus,
+  VerificationCheck,
   VerificationLevel,
+  VerificationMethod,
+  VerificationOutcome,
+  VerificationRecord,
 } from '@/types/domain';
 import { detectPropertyFlags } from '@/lib/safety/burst-detection';
 
@@ -40,7 +47,7 @@ import type {
   ReviewListResult,
 } from '../repository';
 import { toPublicReview } from '../public-review';
-import { getDatabase, mutate, type LocalDatabase } from './store';
+import { getDatabase, mutate, type LocalDatabase, type StoredVerification } from './store';
 
 /**
  * File-backed repository.
@@ -772,6 +779,158 @@ export class LocalRepository implements LivdRepository {
   }
 
   /* ---------------------------------------------------------------------
+   * Residency verification
+   * ------------------------------------------------------------------ */
+
+  async gatherVerificationContext(input: {
+    reviewId: string;
+    submitterId: string;
+    evidenceSha256: string;
+  }) {
+    const database = await getDatabase();
+
+    const review = database.reviews.find((r) => r.id === input.reviewId);
+    if (!review || review.authorId !== input.submitterId) return null;
+
+    const property = database.properties.find((p) => p.id === review.propertyId);
+    if (!property) return null;
+
+    const submitter = database.users.find((u) => u.id === input.submitterId);
+    const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+
+    return {
+      review,
+      property,
+      submitterCreatedAt: submitter?.createdAt ?? nowIso(),
+      submitterOwnsProperty: database.claims.some(
+        (claim) =>
+          claim.propertyId === review.propertyId &&
+          claim.claimantId === input.submitterId &&
+          claim.status === 'approved',
+      ),
+      priorSubmitterIds: database.verifications
+        .filter((record) => record.evidenceSha256 === input.evidenceSha256)
+        .map((record) => record.submittedBy)
+        .filter((id): id is string => Boolean(id)),
+      recentSubmissionCount: database.verifications.filter(
+        (record) => record.submittedBy === input.submitterId && record.createdAt >= weekAgo,
+      ).length,
+    };
+  }
+
+  async recordVerificationSubmission(input: {
+    reviewId: string;
+    submitterId: string;
+    method: VerificationMethod;
+    checks: VerificationCheck[];
+    file: { data: Uint8Array; type: string; bytes: number; sha256: string };
+  }): Promise<VerificationRecord> {
+    const id = `verification-${shortId(12)}`;
+
+    // Beside the store rather than in it: an 8MB document base64-encoded into
+    // the JSON would be rewritten on every unrelated mutation.
+    const evidenceRef = await writeEvidenceFile(id, input.file.data);
+
+    return mutate((database) => {
+      const record: StoredVerification = {
+        id,
+        subjectType: 'review',
+        subjectId: input.reviewId,
+        submittedBy: input.submitterId,
+        method: input.method,
+        outcome: 'pending',
+        checks: input.checks,
+        evidenceRef,
+        evidenceSha256: input.file.sha256,
+        evidenceMime: input.file.type,
+        evidenceBytes: input.file.bytes,
+        notes: null,
+        reviewedBy: null,
+        decidedAt: null,
+        createdAt: nowIso(),
+      };
+
+      database.verifications.push(record);
+      return toPublicVerification(record);
+    });
+  }
+
+  async listPendingVerifications() {
+    const database = await getDatabase();
+    const reviewsById = new Map(database.reviews.map((r) => [r.id, r]));
+    const propertiesById = new Map(database.properties.map((p) => [p.id, p]));
+
+    return database.verifications
+      .filter((record) => record.outcome === 'pending' && record.subjectType === 'review')
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .flatMap((record) => {
+        const review = reviewsById.get(record.subjectId);
+        const property = review ? propertiesById.get(review.propertyId) : undefined;
+        return review && property
+          ? [{ record: toPublicVerification(record), review, property }]
+          : [];
+      });
+  }
+
+  async listVerificationsForReview(reviewId: string): Promise<VerificationRecord[]> {
+    const database = await getDatabase();
+    return database.verifications
+      .filter((record) => record.subjectType === 'review' && record.subjectId === reviewId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map(toPublicVerification);
+  }
+
+  async decideVerification(
+    recordId: string,
+    outcome: Extract<VerificationOutcome, 'approved' | 'rejected'>,
+    actorId: string,
+    notes: string,
+  ): Promise<void> {
+    const reviewId = await mutate((database) => {
+      const record = database.verifications.find(
+        (r) => r.id === recordId && r.outcome === 'pending',
+      );
+      if (!record) throw new Error('No pending verification request with that id');
+
+      record.outcome = outcome;
+      record.reviewedBy = actorId;
+      record.notes = notes;
+      record.decidedAt = nowIso();
+
+      database.moderationActions.push({
+        id: `action-${shortId(12)}`,
+        actorId,
+        subjectType: 'review',
+        subjectId: record.subjectId,
+        action: `verification_${outcome}`,
+        reason: notes,
+        previousStatus: 'pending',
+        newStatus: outcome,
+        createdAt: nowIso(),
+      });
+
+      return record.subjectId;
+    });
+
+    if (outcome === 'approved') {
+      // Rejection deliberately leaves the level alone. Failing to produce a
+      // document is not evidence of having lied.
+      await this.setReviewVerification(reviewId, 'verified_resident', actorId);
+    }
+  }
+
+  async createVerificationEvidenceLink(recordId: string): Promise<string | null> {
+    const database = await getDatabase();
+    const record = database.verifications.find((r) => r.id === recordId);
+    if (!record?.evidenceRef) return null;
+
+    // No object storage here to sign a URL against, so the file is inlined for
+    // the moderator's own page render. It never becomes an address anyone else
+    // could follow, which is the property that matters.
+    return readEvidenceAsDataUrl(record.evidenceRef, record.evidenceMime);
+  }
+
+  /* ---------------------------------------------------------------------
    * Automated signals
    * ------------------------------------------------------------------ */
 
@@ -1210,11 +1369,48 @@ export class LocalRepository implements LivdRepository {
         .length,
       openReportCount: database.reports.filter((r) => r.status === 'open').length,
       openFlagCount: openFlags.length,
+      pendingVerificationCount: database.verifications.filter((v) => v.outcome === 'pending')
+        .length,
       pendingClaimCount: database.claims.filter((c) => c.status === 'pending').length,
       userCount: database.users.filter((u) => !u.id.startsWith('demo-')).length,
       reviewsLast30Days: database.reviews.filter((r) => r.createdAt >= thirtyDaysAgo).length,
     };
   }
+}
+
+/* -------------------------------------------------------------------------
+ * Verification evidence, on disk
+ *
+ * A tenancy agreement carries a name, an address and a signature. Even in a
+ * development store it is kept out of the JSON document — partly so an 8MB
+ * file is not rewritten on every unrelated mutation, and partly so the one
+ * place it lives is a path that can be deleted.
+ * ---------------------------------------------------------------------- */
+
+const EVIDENCE_DIR = join(process.cwd(), '.data', 'verification');
+
+async function writeEvidenceFile(id: string, data: Uint8Array): Promise<string> {
+  await mkdir(EVIDENCE_DIR, { recursive: true });
+  const path = join(EVIDENCE_DIR, id);
+  await writeFile(path, data);
+  return id;
+}
+
+async function readEvidenceAsDataUrl(ref: string, mime: string | null): Promise<string | null> {
+  try {
+    const data = await readFile(join(EVIDENCE_DIR, ref));
+    return `data:${mime ?? 'application/octet-stream'};base64,${data.toString('base64')}`;
+  } catch {
+    // The store was reset while a record survived, or the file was removed by
+    // hand. A moderator sees "evidence unavailable" rather than a crash.
+    return null;
+  }
+}
+
+/** Strips the object reference and the hash before anything leaves the adapter. */
+function toPublicVerification(record: StoredVerification): VerificationRecord {
+  const { evidenceRef: _ref, evidenceSha256: _hash, ...rest } = record;
+  return rest;
 }
 
 /* -------------------------------------------------------------------------

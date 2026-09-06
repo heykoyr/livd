@@ -7,6 +7,7 @@ import { LIMITS } from '@/config/site';
 import { copy } from '@/content/copy';
 import { formatRelativeTime, formatTenure, propertyDisplayName } from '@/lib/format';
 import { requireUserPage } from '@/server/auth/guards';
+import { VerifyResidency } from '@/components/property/verify-residency';
 import { getRepository } from '@/server/data';
 import type { ReviewStatus } from '@/types/domain';
 
@@ -57,9 +58,10 @@ export default async function MyReviewsPage() {
     );
   }
 
-  const properties = await Promise.all(
-    reviews.map((review) => repository.getPropertyById(review.propertyId)),
-  );
+  const [properties, verifications] = await Promise.all([
+    Promise.all(reviews.map((review) => repository.getPropertyById(review.propertyId))),
+    Promise.all(reviews.map((review) => repository.listVerificationsForReview(review.id))),
+  ]);
 
   return (
     <div className="container-shell py-12 md:py-16">
@@ -123,6 +125,13 @@ export default async function MyReviewsPage() {
                   <p className="prose-measure mt-4 whitespace-pre-line text-body text-ink-muted">
                     {review.body}
                   </p>
+                )}
+
+                {review.status === 'published' && (
+                  <VerifyResidency
+                    reviewId={review.id}
+                    outcome={verifications[index]?.[0]?.outcome ?? null}
+                  />
                 )}
 
                 <p className="mt-4 border-t border-border pt-3 text-micro text-ink-subtle">

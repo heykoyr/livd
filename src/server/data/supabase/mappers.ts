@@ -7,6 +7,7 @@ import type {
   Review,
   ReviewReport,
   UserProfile,
+  VerificationRecord,
 } from '@/types/domain';
 
 /**
@@ -216,6 +217,47 @@ export function toPropertyFlag(row: PropertyFlagRow): PropertyFlag {
     status: row.status,
     reviewedBy: row.reviewed_by,
     reviewedAt: row.reviewed_at,
+    createdAt: row.created_at,
+  };
+}
+
+export interface VerificationRecordRow {
+  id: string;
+  subject_type: VerificationRecord['subjectType'];
+  subject_id: string;
+  submitted_by: string | null;
+  method: VerificationRecord['method'];
+  outcome: VerificationRecord['outcome'];
+  checks: VerificationRecord['checks'] | null;
+  evidence_mime: string | null;
+  evidence_bytes: number | null;
+  notes: string | null;
+  reviewed_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+}
+
+/**
+ * Note what is not mapped: `evidence_ref`.
+ *
+ * The object key stays inside the adapter, so no route, component or log can
+ * render it by accident. Evidence reaches a moderator only through a signed
+ * URL minted per view.
+ */
+export function toVerificationRecord(row: VerificationRecordRow): VerificationRecord {
+  return {
+    id: row.id,
+    subjectType: row.subject_type,
+    subjectId: row.subject_id,
+    submittedBy: row.submitted_by,
+    method: row.method,
+    outcome: row.outcome,
+    checks: row.checks ?? [],
+    evidenceMime: row.evidence_mime,
+    evidenceBytes: row.evidence_bytes,
+    notes: row.notes,
+    reviewedBy: row.reviewed_by,
+    decidedAt: row.decided_at,
     createdAt: row.created_at,
   };
 }

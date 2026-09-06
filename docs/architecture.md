@@ -176,6 +176,7 @@ list and search ordering.
 | Owner self-review block | Checked in the submit action against `property_claims` |
 | Burst detection | `src/lib/safety/burst-detection.ts` holds the rules; `livd_detect_property_flags` is the same three tests in SQL, run hourly by pg_cron. Raises `property_flags` for a moderator at `/admin/flags`; never changes a review, a status or a score |
 | Moderation queue | `review_reports` + `moderation_actions`, full audit trail, admin-only RLS |
+| Residency verification | Resident uploads at `/account/reviews`; `src/lib/safety/verification-checks.ts` settles what a machine can; a moderator decides at `/admin/verification`. Evidence lives in a private bucket with no policy for any client role, and reaches a moderator through a five-minute signed URL |
 | Authorisation | `requireUser` / `requireRole` guards; RLS as the second, authoritative layer |
 
 **Defence in depth is the rule.** Every write is checked in the Server Action

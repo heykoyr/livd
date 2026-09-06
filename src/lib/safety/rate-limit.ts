@@ -61,6 +61,8 @@ export const RATE_LIMITS = {
   search: { limit: 120, windowSeconds: 60 },
   authRequest: { limit: 6, windowSeconds: 900 },
   ownerResponse: { limit: 20, windowSeconds: 3600 },
+  /** Each one costs a moderator a document to read. Tight on purpose. */
+  verificationSubmit: { limit: 5, windowSeconds: 86_400 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS;

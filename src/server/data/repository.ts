@@ -18,7 +18,11 @@ import type {
   UserProfile,
   PropertyFlag,
   PropertyFlagStatus,
+  VerificationCheck,
   VerificationLevel,
+  VerificationMethod,
+  VerificationOutcome,
+  VerificationRecord,
 } from '@/types/domain';
 
 /**
@@ -107,6 +111,7 @@ export interface AdminOverview {
   pendingModerationCount: number;
   openReportCount: number;
   openFlagCount: number;
+  pendingVerificationCount: number;
   pendingClaimCount: number;
   userCount: number;
   reviewsLast30Days: number;
@@ -180,6 +185,68 @@ export interface LivdRepository {
     actorId: string,
     resolution: string,
   ): Promise<void>;
+
+  /* --- Residency verification --- */
+
+  /**
+   * Everything the automated checks need to judge a submission, gathered in one
+   * round trip. Returns null if the review does not exist or is not this
+   * person's to verify.
+   *
+   * The checks themselves live in `src/lib/safety/verification-checks.ts` and
+   * are run by the Server Action, not here — the data layer answers questions,
+   * it does not hold opinions.
+   */
+  gatherVerificationContext(input: {
+    reviewId: string;
+    submitterId: string;
+    evidenceSha256: string;
+  }): Promise<{
+    review: Review;
+    property: Property;
+    submitterCreatedAt: string;
+    submitterOwnsProperty: boolean;
+    /** Accounts that previously submitted a file with this same hash. */
+    priorSubmitterIds: string[];
+    recentSubmissionCount: number;
+  } | null>;
+
+  /** Stores the evidence privately and opens a pending record. */
+  recordVerificationSubmission(input: {
+    reviewId: string;
+    submitterId: string;
+    method: VerificationMethod;
+    checks: VerificationCheck[];
+    file: { data: Uint8Array; type: string; bytes: number; sha256: string };
+  }): Promise<VerificationRecord>;
+
+  listPendingVerifications(): Promise<
+    Array<{ record: VerificationRecord; review: Review; property: Property }>
+  >;
+
+  /** What a resident is allowed to know about their own requests. */
+  listVerificationsForReview(reviewId: string): Promise<VerificationRecord[]>;
+
+  /**
+   * Records the decision and, on approval, sets the review's verification
+   * level. Rejection leaves the level alone rather than marking the review
+   * disputed: failing to prove residency is not the same as being caught
+   * lying about it.
+   */
+  decideVerification(
+    recordId: string,
+    outcome: Extract<VerificationOutcome, 'approved' | 'rejected'>,
+    actorId: string,
+    notes: string,
+  ): Promise<void>;
+
+  /**
+   * A short-lived link to the evidence, for a moderator who is deciding.
+   *
+   * Minted per view and never stored. The object key never leaves the adapter,
+   * so no route or component can address the file directly.
+   */
+  createVerificationEvidenceLink(recordId: string): Promise<string | null>;
 
   /* --- Automated signals --- */
 

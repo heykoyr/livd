@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { FormError, Input } from '@/components/ui/field';
@@ -13,6 +13,10 @@ import {
   setReviewVerification,
   setUserRole,
 } from '@/server/actions/moderation';
+import {
+  decideVerification,
+  getVerificationEvidenceLink,
+} from '@/server/actions/verification';
 
 /**
  * Moderation controls.
@@ -234,5 +238,118 @@ export function FlagControls({ flagId }: { flagId: string }) {
 
       <Feedback state={state} />
     </form>
+  );
+}
+
+export function VerificationControlsForRecord({ recordId }: { recordId: string }) {
+  const [state, formAction, pending] = useActionState(decideVerification, initialModerationState);
+
+  return (
+    <form action={formAction} className="flex flex-col gap-3">
+      <input type="hidden" name="recordId" value={recordId} />
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-label font-medium text-ink">What did the document show?</span>
+        <Input
+          name="notes"
+          required
+          minLength={3}
+          maxLength={500}
+          placeholder="Tenancy agreement, address and dates match the review."
+        />
+      </label>
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" name="outcome" value="approved" size="sm" loading={pending}>
+          Verify this resident
+        </Button>
+        <Button
+          type="submit"
+          name="outcome"
+          value="rejected"
+          variant="secondary"
+          size="sm"
+          loading={pending}
+        >
+          Not enough
+        </Button>
+      </div>
+
+      <p className="text-micro text-ink-subtle">
+        Verifying multiplies this review&rsquo;s weight in the property&rsquo;s score. Rejecting
+        leaves the review exactly as it is and still published — failing to produce a document is
+        not evidence of having lied.
+      </p>
+
+      <Feedback state={state} />
+    </form>
+  );
+}
+
+/**
+ * Fetches the evidence only when a moderator asks for it.
+ *
+ * The link lasts minutes and is never rendered into the page's HTML, so a
+ * cached page, a screenshot or a tab left open overnight does not carry a
+ * tenancy agreement with it.
+ */
+export function EvidenceViewer({ recordId, mime }: { recordId: string; mime: string | null }) {
+  const [link, setLink] = useState<string | null>(null);
+  const [state, setState] = useState<'idle' | 'loading' | 'missing'>('idle');
+
+  async function reveal(): Promise<void> {
+    setState('loading');
+    const url = await getVerificationEvidenceLink(recordId);
+    if (!url) {
+      setState('missing');
+      return;
+    }
+    setLink(url);
+    setState('idle');
+  }
+
+  if (link) {
+    return (
+      <figure className="flex flex-col gap-2">
+        {mime === 'application/pdf' ? (
+          <object data={link} type="application/pdf" className="h-[28rem] w-full rounded-md border border-border">
+            <a href={link} className="text-label text-brand underline underline-offset-4">
+              Open the document
+            </a>
+          </object>
+        ) : (
+          // A plain <img>, deliberately: this is a signed URL to a private
+          // bucket that expires in minutes, and next/image would proxy and
+          // cache it — the opposite of what evidence needs.
+          <img
+            src={link}
+            alt="Submitted residency evidence"
+            className="max-h-[28rem] w-auto rounded-md border border-border object-contain"
+          />
+        )}
+        <figcaption className="text-micro text-ink-subtle">
+          This link expires in a few minutes. Reload the page to see it again.
+        </figcaption>
+      </figure>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        onClick={reveal}
+        loading={state === 'loading'}
+      >
+        Show the document
+      </Button>
+      <p className="text-micro text-ink-subtle">
+        {state === 'missing'
+          ? 'The file could not be retrieved.'
+          : 'Opened on request, and only for as long as it takes to read.'}
+      </p>
+    </div>
   );
 }

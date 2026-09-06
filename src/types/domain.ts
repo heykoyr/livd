@@ -349,6 +349,65 @@ export interface PropertyClaim {
 }
 
 /* -------------------------------------------------------------------------
+ * Residency verification
+ * ---------------------------------------------------------------------- */
+
+export type VerificationCheckCode =
+  | 'evidence_reused_by_another_account'
+  | 'evidence_already_submitted'
+  | 'submitter_owns_the_property'
+  | 'tenancy_predates_the_building'
+  | 'tenancy_in_the_future'
+  | 'account_created_after_move_out'
+  | 'many_recent_submissions'
+  | 'unsupported_file_type'
+  | 'file_too_large'
+  | 'file_empty';
+
+/** `blocking` refuses the submission. `note` travels with it to a moderator. */
+export type VerificationCheckSeverity = 'blocking' | 'note';
+
+export interface VerificationCheck {
+  code: VerificationCheckCode;
+  severity: VerificationCheckSeverity;
+  /** One sentence, written for the moderator who will read it. */
+  detail: string;
+}
+
+export type VerificationOutcome = 'pending' | 'approved' | 'rejected' | 'withdrawn';
+
+export type VerificationMethod =
+  | 'tenancy_agreement'
+  | 'utility_bill'
+  | 'correspondence'
+  | 'other';
+
+/**
+ * One request to be recognised as a former or current resident.
+ *
+ * Note what is absent: the object key of the uploaded document. It stays
+ * inside the data adapter so that no route, component or log can render it by
+ * accident. The evidence reaches a moderator only through a signed URL minted
+ * per view, and reaches nobody else at all.
+ */
+export interface VerificationRecord {
+  id: string;
+  subjectType: 'review' | 'claim' | 'user';
+  subjectId: string;
+  submittedBy: string | null;
+  method: VerificationMethod;
+  outcome: VerificationOutcome;
+  /** What the automated checks found. Advisory; nothing here decided anything. */
+  checks: VerificationCheck[];
+  evidenceMime: string | null;
+  evidenceBytes: number | null;
+  notes: string | null;
+  reviewedBy: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
+
+/* -------------------------------------------------------------------------
  * Automated trust-and-safety signals
  * ---------------------------------------------------------------------- */
 

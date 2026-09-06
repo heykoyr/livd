@@ -432,6 +432,7 @@ export const copy = {
     queue: 'Moderation queue',
     reports: 'Reports',
     flags: 'Signals',
+    verificationQueue: 'Residency proof',
     properties: 'Properties',
     reviews: 'Reviews',
     users: 'Users',
