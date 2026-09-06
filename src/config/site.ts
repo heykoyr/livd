@@ -12,9 +12,29 @@ export const SITE = {
   tagline: "Know what it's really like to live there.",
   description:
     'Livd is a property intelligence platform built on real resident experiences. Read what people who actually lived there say — before you commit.',
-  url: (process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000').replace(/\/$/, ''),
+  url: resolveSiteUrl(),
   locale: 'en',
 } as const;
+
+/**
+ * The origin this deployment is actually reachable at.
+ *
+ * `NEXT_PUBLIC_SITE_URL` wins wherever it is set: it is the only value that
+ * survives a custom domain. A Vercel preview has no custom domain and gets a
+ * generated hostname instead, so `VERCEL_URL` is how it learns its own — with
+ * no fallback, every canonical link, the OpenGraph URL and the whole sitemap
+ * on a preview would point somewhere else entirely. Only ever consumed on the
+ * server, in metadata, `robots.txt` and `sitemap.xml`.
+ */
+function resolveSiteUrl(): string {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL;
+  if (explicit) return explicit.replace(/\/+$/, '');
+
+  const vercel = process.env.VERCEL_URL;
+  if (vercel) return `https://${vercel.replace(/\/+$/, '')}`;
+
+  return 'http://localhost:3000';
+}
 
 export type DataBackend = 'local' | 'supabase';
 
