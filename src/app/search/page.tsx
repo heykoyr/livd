@@ -96,6 +96,11 @@ export default async function SearchPage({
         />
       ) : (
         <>
+          {/* The results are a section, and each card's name is an <h3>. Without
+              a heading here the document jumps h1 to h3 — the count above is a
+              <p> because it is a live region, not a title. */}
+          <h2 className="sr-only">{copy.search.resultCount(results.total)}</h2>
+
           <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {results.items.map((summary) => (
               <li key={summary.property.id}>

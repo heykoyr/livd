@@ -93,6 +93,10 @@ function PageLink({
   children: React.ReactNode;
 }) {
   if (disabled) {
+    // Deliberately below 4.5:1, and deliberately not a fix. WCAG 1.4.3 exempts
+    // inactive interface components, and this one is `aria-hidden` and not
+    // focusable — it is the shape of a control that is not there. axe reports
+    // it because it cannot tell an inert control from a low-contrast one.
     return (
       <span
         aria-hidden="true"

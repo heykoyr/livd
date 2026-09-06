@@ -182,8 +182,11 @@ export function ConfidenceChip({
     >
       <ConfidenceGlyph confidence={confidence} />
       {copy.score.confidenceShort[confidence]}
+      {/* No opacity on the count. Dimming it to 80% blended the token toward
+          the chip background and dropped it to 3.6:1 — and the count is the
+          evidence behind the confidence word, not decoration. */}
       {reviewCount !== undefined && (
-        <span className="tabular font-normal opacity-80">
+        <span className="tabular font-normal">
           · {reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}
         </span>
       )}

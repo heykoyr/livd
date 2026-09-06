@@ -207,13 +207,23 @@ flat, the reverse. Neither is a special case in the code.
 
 ## Verified
 
-- 116 tests, weighted toward scoring, the safety linter and the international
-  layer.
+- Tests weighted toward scoring, the safety linter, rate limiting, burst
+  detection, the colour palette and the international layer.
 - Zero axe-core violations across 13 pages in a production build.
-- Zero contrast failures across six pages in both light and dark themes,
-  measured against real computed styles.
+- Contrast checked in a real browser, both themes, and asserted per token pair
+  by `tests/design/contrast.test.ts`. The one violation axe still reports is a
+  disabled pagination control, which WCAG 1.4.3 exempts as an inactive
+  component and which is `aria-hidden` besides.
 - Every public route returns 200, every authenticated route redirects, and the
   sitemap contains no seeded data.
+
+> An earlier version of this list claimed zero contrast failures "measured
+> against real computed styles". That was wrong. `npm run audit:a11y` runs axe
+> through jsdom, which computes no layout and resolves no custom properties, so
+> it cannot evaluate contrast at all — a fact its own source comment records.
+> Run properly in a browser it found thirty-five failures in light mode and
+> nineteen in dark. They are fixed, and the palette is now covered by a test
+> that runs on every commit.
 
 ---
 

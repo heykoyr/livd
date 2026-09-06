@@ -8,9 +8,18 @@ import { JSDOM, VirtualConsole } from 'jsdom';
  * components in isolation — most real violations come from how pages compose,
  * not from a primitive in a test harness.
  *
- * Colour-contrast rules are skipped: jsdom does not compute layout or resolve
- * CSS custom properties, so axe cannot evaluate them here. Contrast is verified
- * against the running browser instead.
+ * Colour-contrast rules are skipped, and this is a real limit rather than a
+ * preference: jsdom computes no layout and resolves no CSS custom properties,
+ * so every colour reads as a keyword axe cannot compare. Trusting this script
+ * for contrast is how six tokens stayed below 4.5:1 from the day the palette
+ * was written until someone ran axe in a browser.
+ *
+ * What covers it now: `tests/design/contrast.test.ts` asserts every token pair
+ * the design uses, reading the values straight out of `globals.css`. For a
+ * whole-page check, serve `node_modules/axe-core/axe.min.js` from `public/`
+ * (the CSP allows `script-src 'self'` and nothing else), load a page with the
+ * theme already set so nothing is mid-transition, and run `axe.run(document)`
+ * in the console.
  *
  * Usage: node scripts/audit-a11y.mjs [baseUrl]
  */

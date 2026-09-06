@@ -49,7 +49,7 @@
   --color-border-strong: #cfc9bd;
   --color-ink: #17191a;
   --color-ink-muted: #5c5f5b;
-  --color-ink-subtle: #84877f;
+  --color-ink-subtle: #6d7069;
   --color-ink-inverse: #fbfaf8;
 
   /* --- Brand ----------------------------------------------------------- */
@@ -58,16 +58,20 @@
   --color-brand-soft: #e8efeb;
   --color-brand-border: #c3d5cd;
   --color-brand-ink: #0c241f;
-  --color-accent: #b0562a;
+  --color-accent: #aa5329;
   --color-accent-soft: #f6ece5;
 
-  /* --- Sentiment scale (scores) ---------------------------------------- */
+  /* --- Sentiment scale (scores) ----------------------------------------
+     Every one of these is rendered at 13px somewhere — category scores on a
+     property card, badges on a review — so 4.5:1 applies, not the 3:1 that
+     the large numeral in the dial would allow. `tests/design/contrast.test.ts`
+     holds them to it. */
   --color-score-strong: #2c6b58;
-  --color-score-good: #5b8c5a;
-  --color-score-mixed: #b08a2e;
-  --color-score-weak: #b4693a;
+  --color-score-good: #4c754c;
+  --color-score-mixed: #876923;
+  --color-score-weak: #9c5b33;
   --color-score-poor: #a34430;
-  --color-score-unknown: #a3a69f;
+  --color-score-unknown: #6d7068;
 
   /* --- Status ---------------------------------------------------------- */
   --color-positive: #2c6b58;
@@ -119,7 +123,7 @@
   --color-border-strong: #3c403c;
   --color-ink: #f2f1ed;
   --color-ink-muted: #a3a69f;
-  --color-ink-subtle: #7b7e77;
+  --color-ink-subtle: #83867f;
   --color-ink-inverse: #0d0e0d;
 
   --color-brand: #d8e4de;
@@ -135,7 +139,7 @@
   --color-score-mixed: #d4ae5c;
   --color-score-weak: #dd9366;
   --color-score-poor: #d97a63;
-  --color-score-unknown: #7b7e77;
+  --color-score-unknown: #83867f;
 
   --color-positive: #67b39a;
   --color-positive-soft: #16241f;

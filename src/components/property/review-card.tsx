@@ -157,7 +157,9 @@ function RatingPill({ rating, band }: { rating: number; band: string }) {
       )}
     >
       <span className="text-title-md font-medium tabular leading-none">{rating}</span>
-      <span className="text-micro opacity-70">/5</span>
+      {/* Full token colour. `opacity-70` blended the score colour into the
+          pill's tinted background and landed at 2.6:1. */}
+      <span className="text-micro">/5</span>
       <span className="sr-only">overall rating</span>
     </span>
   );

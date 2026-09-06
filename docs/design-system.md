@@ -76,7 +76,7 @@ evergreen brand and a clay accent.
 | `border-strong` | `#CFC9BD` | `#3C403C` |
 | `ink` | `#17191A` | `#F2F1ED` |
 | `ink-muted` | `#5C5F5B` | `#A3A69F` |
-| `ink-subtle` | `#84877F` | `#7B7E77` |
+| `ink-subtle` | `#6D7069` | `#83867F` |
 
 ### Brand and accent
 
@@ -85,7 +85,7 @@ evergreen brand and a clay accent.
 | `brand` | `#12312A` | `#D8E4DE` | Primary buttons, logotype, focus |
 | `brand-hover` | `#0C241F` | `#C3D5CD` | |
 | `brand-soft` | `#E8EFEB` | `#1C2E28` | Selected states, quiet fills |
-| `accent` | `#B0562A` | `#E09365` | Emphasis and data highlight — used sparingly |
+| `accent` | `#AA5329` | `#E09365` | Emphasis and data highlight — used sparingly |
 
 Deep evergreen reads as considered and institutional without the eco cliché a
 mid-tone green carries. Clay supplies warmth without tipping into alarm.
@@ -99,9 +99,9 @@ score is also stated numerically and in words.
 | Token | Light | Meaning |
 | --- | --- | --- |
 | `score-strong` | `#2C6B58` | 80–100 |
-| `score-good` | `#5B8C5A` | 65–79 |
-| `score-mixed` | `#B08A2E` | 50–64 |
-| `score-weak` | `#B4693A` | 35–49 |
+| `score-good` | `#4C754C` | 65–79 |
+| `score-mixed` | `#876923` | 50–64 |
+| `score-weak` | `#9C5B33` | 35–49 |
 | `score-poor` | `#A34430` | 0–34 |
 
 ### Status
@@ -109,8 +109,29 @@ score is also stated numerically and in words.
 `positive #2C6B58` · `caution #9A6B18` · `critical #A34430` · `info #35566B`,
 each with a soft background variant.
 
-Dark mode is a full token remap, not an inversion. Both themes are verified at
-4.5:1 for text and 3:1 for interface boundaries.
+Dark mode is a full token remap, not an inversion.
+
+**Contrast.** Every pair the design actually puts together is asserted in
+`tests/design/contrast.test.ts`, which reads the values out of `globals.css` so
+the check cannot drift from the palette: body text at 4.5:1 on all four neutral
+surfaces, each tone on its own soft background, each score band on the tint its
+rating pill uses, and the focus ring at 3:1.
+
+Two rules fall out of that and are worth stating rather than rediscovering:
+
+- **`ink-subtle` is for neutral surfaces only.** It is the third step of the
+  neutral scale, and on every soft tint it lands between 3.9:1 and 4.5:1.
+  Pushing it far enough to clear them would collapse it into `ink-muted`. A chip
+  that needs secondary neutral text uses `ink-muted`, which clears every tint
+  comfortably.
+- **Opacity is not a shade.** `opacity-70` on coloured text blends it toward
+  whatever is behind it; two places did this and measured 2.6:1. Reach for a
+  token, or a different weight.
+
+These values were retuned once, in September 2026, after axe was first run in a
+real browser rather than through jsdom. Six tokens had been below 4.5:1 since
+the palette was written. Hue and saturation were held constant; only lightness
+moved, by the least each needed.
 
 ---
 

@@ -67,7 +67,13 @@ export function ReviewFilters({
               )}
             >
               {tab.label}
-              <span className="ml-1.5 tabular text-ink-subtle">{tab.count}</span>
+              {/* Subtle ink is tuned for the neutral surfaces and only
+                  reaches 4.3:1 on the brand tint, so the active chip
+                  carries its own foreground. Weight still separates the
+                  count from the label. */}
+              <span className={cn('ml-1.5 tabular', active ? 'text-brand-ink' : 'text-ink-subtle')}>
+                {tab.count}
+              </span>
             </Link>
           );
         })}
