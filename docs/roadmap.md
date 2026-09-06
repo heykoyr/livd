@@ -49,6 +49,16 @@ axe-core audit against a production build, four violations fixed · contrast
 verified in both themes against real computed styles · mobile pass · every
 route checked · production guards corrected.
 
+### Deployment ✅
+Supabase project provisioned, eight migrations applied, and the demonstration
+data loaded into it — 16 properties, 222 reviews and 3,558 child rows, every
+one marked `is_demo`. Deployed to Vercel at
+<https://livd-koyrstudio.vercel.app>, rebuilding on every push to `main`.
+Verified against the live site: every public route 200, every authenticated
+route redirecting to sign-in, canonical and OpenGraph URLs on the real origin,
+no seeded property in the sitemap and every one of them `noindex`, and zero
+axe violations across thirteen pages.
+
 ---
 
 ## Known limitations
@@ -79,6 +89,21 @@ in `docs/architecture.md` §7; the scheduled job is not written.
 **Before launch.** Verification pipeline · Postgres-backed rate limiting ·
 burst detection job · legal review of the three policy pages in each launch
 market · an email provider for magic links · error monitoring.
+
+Three of those have become concrete since the deployment:
+
+- **`SUPABASE_SERVICE_ROLE_KEY` is not set**, on Vercel or locally. Visitors are
+  unaffected — every public read and every submission goes through RLS as the
+  anon or authenticated role — but `/admin` cannot act on the moderation queue
+  until it is added.
+- **Sign-in has never been exercised end to end in production.** It uses
+  Supabase's built-in email sender, which is rate-limited and not deliverable
+  enough to launch on; the seeded accounts use the reserved `.invalid` domain
+  and can never receive mail. This is the same item as "an email provider for
+  magic links", and it is the one path no automated check covers.
+- **`LIVD_SHOW_DEMO_DATA=true` in production**, which is what makes the seeded
+  properties visible at all. It has to be turned off the moment real reviews
+  exist, or the two will sit side by side.
 
 **Soon after.** Privacy-safe map discovery, area-level rather than unit-level ·
 grounded AI summarisation of review corpora, behind the existing
