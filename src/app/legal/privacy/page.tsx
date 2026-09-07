@@ -74,9 +74,10 @@ export default function PrivacyPage() {
           returned — because the product needs to know which places it has no data on.
         </p>
         <p>
-          It does not record who searched, and it does not store the query itself, only a hash
-          of it. Your search history cannot be reconstructed against you, because it is not
-          stored in a form that would allow it.
+          It does not record who searched — no account, no address, nothing that could be
+          joined back to a person. The query itself is stored only as a salted hash. There is
+          no search history to reconstruct, because nothing is written that would tie one
+          search to the next.
         </p>
       </ProseSection>
 

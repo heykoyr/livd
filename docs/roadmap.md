@@ -71,26 +71,45 @@ its missing state inline with `noindex` — trading the 404 status for a page
 that is readable and accessible. Revisit when the framework renders the
 boundary inside the layout.
 
-**Verification is a framework, not yet a pipeline.** The levels exist, weigh
-the score correctly, and are settable by a moderator. The evidence upload and
-automated checks behind `verified_resident` are the next piece of work.
-
-**Rate limiting is in-process.** Correct for a single-region MVP, wrong for
-multiple instances. `RateLimitStore` exists so this becomes a Postgres or Redis
-implementation without touching a call site.
-
-**Burst detection is specified, not implemented.** The schema and the plan are
-in `docs/architecture.md` §7; the scheduled job is not written.
+**Reviews outlive their authors on the page, and do not in the schema.** All
+three legal pages say a deleted account leaves its reviews standing,
+permanently unlinked. `reviews.author_id` is `on delete cascade`, so deleting a
+profile would delete them. Account deletion is not built, so nothing triggers
+it yet — but the published promise and the database disagree, and one of them
+has to move. `docs/legal-review.md` §4.1 sets out the two ways that resolves.
+It is the one item on this list that could require a schema change.
 
 ---
 
 ## Next
 
-**Before launch.** Verification pipeline · Postgres-backed rate limiting ·
-burst detection job · legal review of the three policy pages in each launch
-market · an email provider for magic links · error monitoring.
+**Before launch.** An email provider for magic links · error monitoring ·
+a legal entity, a contact route and counsel's review of the three policy pages.
 
-Three of those have become concrete since the deployment:
+The other three pre-launch items are done:
+
+- **Verification is a pipeline.** A resident uploads at `/account/reviews`,
+  `src/lib/safety/verification-checks.ts` settles what a machine can settle, and
+  a moderator decides at `/admin/verification`. Evidence lives in a private
+  bucket with no policy for any client role and reaches a moderator through a
+  five-minute signed URL. Nothing grants a level automatically. Migration 0012.
+- **Rate limiting counts in Postgres**, on a sliding window under a per-actor
+  advisory lock, rather than once per warm serverless instance. Falls back to
+  in-process counting if the store is unreachable, because a database blip
+  should not stop every write in the product. Migration 0009.
+- **Burst detection runs hourly on pg_cron**, comparing each property against
+  its own rate rather than a global constant, and raising flags at
+  `/admin/flags` that no code ever acts on. Migrations 0010 and 0011.
+
+The legal item cannot be finished here — it needs counsel in each market — so
+what exists instead is `docs/legal-review.md`: the brief they would otherwise
+spend a day assembling, plus the disclosures that are visibly absent and the
+three questions specific enough to this product that a template will not answer
+them. Two of its findings are engineering work, not legal work: the erasure
+contradiction above, and the fact that several policy promises point at a
+contact route the product does not have.
+
+Still true since the deployment:
 
 - **`SUPABASE_SERVICE_ROLE_KEY` is not set**, on Vercel or locally. Visitors are
   unaffected — every public read and every submission goes through RLS as the

@@ -1,6 +1,4 @@
 import type { Metadata } from 'next';
-import { createHash } from 'node:crypto';
-
 import { PropertyCard } from '@/components/property/property-card';
 import { SearchCombobox } from '@/components/search/search-combobox';
 import { SearchFilters } from '@/components/search/search-filters';
@@ -9,6 +7,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { EmptyState } from '@/components/ui/primitives';
 import { copy } from '@/content/copy';
 import { buildSearchHref, parseSearchFilters } from '@/lib/validation/search';
+import { saltedHash } from '@/lib/safety/rate-limit';
 import { getRepository } from '@/server/data';
 
 export const dynamic = 'force-dynamic';
@@ -44,10 +43,16 @@ export default async function SearchPage({
 
   // Analytics: a hash and a count, never the raw query attached to a person.
   // What the product needs to know is which places it has no data for.
+  //
+  // Salted, because a search is a street name or a building — a space small
+  // enough that an unsalted digest is reversible by anyone who can read the
+  // column. Nothing here identifies who searched, and that is what actually
+  // protects the person; the salt is what stops the row disclosing *what* was
+  // searched to someone reading a backup.
   if (filters.query.length > 0) {
     void repository
       .recordSearch({
-        queryHash: createHash('sha256').update(filters.query.toLowerCase()).digest('hex').slice(0, 24),
+        queryHash: saltedHash(filters.query.toLowerCase()).slice(0, 24),
         countryCode: filters.countryCode,
         locality: filters.locality,
         resultCount: results.total,

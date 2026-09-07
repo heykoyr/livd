@@ -162,8 +162,20 @@ let warnedAboutFallback = false;
  * anyone reading the table, including us.
  */
 export function hashActor(identifier: string): string {
+  return saltedHash(identifier).slice(0, 32);
+}
+
+/**
+ * A salted digest of some short string.
+ *
+ * The salt is what does the work. An unsalted hash of anything drawn from a
+ * small space — an IP address, a search for a street name — is reversible by
+ * anyone who can read the column and think of a wordlist, which is not a hash
+ * so much as an obfuscation.
+ */
+export function saltedHash(value: string): string {
   const salt = process.env.LIVD_SESSION_SECRET ?? 'livd-development-salt';
-  return createHash('sha256').update(`${salt}:${identifier}`).digest('hex').slice(0, 32);
+  return createHash('sha256').update(`${salt}:${value}`).digest('hex');
 }
 
 /* -------------------------------------------------------------------------
