@@ -385,6 +385,9 @@ export const copy = {
     sending: 'Sending',
     linkSentTitle: 'Check your email',
     linkSentBody: (email: string) => `We sent a sign-in link to ${email}. It expires in 15 minutes.`,
+    linkFailedTitle: 'That link did not work',
+    linkFailedBody:
+      'Sign-in links expire, and each one can only be used once. Enter your email and we will send another.',
     continueWithGoogle: 'Continue with Google',
     or: 'or',
     whyAccount: 'Why do I need an account?',

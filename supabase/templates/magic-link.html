@@ -1,0 +1,222 @@
+<!--
+  Livd — magic link email
+  ============================================================================
+
+  Paste into Supabase: Authentication → Emails → Magic Link.
+  Subject line: Your sign-in link
+
+  This file is the source of truth. The dashboard has no API for templates, so
+  the copy here and the copy live can drift; change this file first, then paste.
+
+  Why it is written the way it is:
+
+  * Tables, not flexbox or grid. Outlook on Windows renders through Word, which
+    has no support for either. A single-column table is the only layout every
+    client agrees on.
+  * Inline styles on every element. Gmail strips <style> blocks in some views,
+    so anything that matters cannot live in a stylesheet. The <style> block
+    below carries only the dark-mode hints and the one media query, both of
+    which degrade to the inline values when removed.
+  * Web-safe fonts with the Livd serif first. Newsreader will not load in an
+    email client; Georgia is the closest thing that is already installed
+    everywhere, and it keeps the editorial feel the site has.
+  * No images. Nothing to block, nothing to fail to load, nothing that makes a
+    sign-in email look like marketing. The wordmark is set as type.
+  * {{ .ConfirmationURL }} is Supabase's own token. It carries the PKCE code and
+    the redirect Livd asked for. Do not construct a URL by hand here — that is
+    what would break single use and expiry.
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
+    <title>Your sign-in link</title>
+    <style>
+      /* Apple Mail and iOS Mail honour this; Gmail does not, which is why the
+         light palette is also inline on every element. */
+      @media (prefers-color-scheme: dark) {
+        .livd-canvas { background-color: #0d0e0d !important; }
+        .livd-card { background-color: #161816 !important; border-color: #2a2d2a !important; }
+        .livd-ink { color: #f2f1ed !important; }
+        .livd-muted { color: #a3a69f !important; }
+        .livd-subtle { color: #83867f !important; }
+        .livd-rule { border-color: #2a2d2a !important; }
+        .livd-button { background-color: #d8e4de !important; color: #0d0e0d !important; }
+      }
+      @media only screen and (max-width: 600px) {
+        .livd-pad { padding-left: 24px !important; padding-right: 24px !important; }
+        .livd-title { font-size: 26px !important; }
+      }
+    </style>
+  </head>
+
+  <body
+    class="livd-canvas"
+    style="margin:0; padding:0; background-color:#fbfaf8; -webkit-font-smoothing:antialiased;"
+  >
+    <!-- Preheader: the grey line a client shows next to the subject. Hidden in
+         the body itself by the zero dimensions. -->
+    <div
+      style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#fbfaf8; opacity:0;"
+    >
+      Use the button in this email to sign in to Livd. The link expires in 15 minutes.
+    </div>
+
+    <table
+      role="presentation"
+      cellpadding="0"
+      cellspacing="0"
+      border="0"
+      width="100%"
+      class="livd-canvas"
+      style="background-color:#fbfaf8;"
+    >
+      <tr>
+        <td align="center" style="padding:40px 16px;">
+          <table
+            role="presentation"
+            cellpadding="0"
+            cellspacing="0"
+            border="0"
+            width="100%"
+            style="max-width:520px; width:100%;"
+          >
+            <!-- Wordmark -->
+            <tr>
+              <td class="livd-pad" style="padding:0 8px 24px 8px;">
+                <span
+                  class="livd-ink"
+                  style="font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:22px; letter-spacing:-0.02em; color:#17191a;"
+                  >Livd<span style="color:#aa5329;">.</span></span
+                >
+              </td>
+            </tr>
+
+            <!-- The card -->
+            <tr>
+              <td
+                class="livd-card"
+                style="background-color:#ffffff; border:1px solid #e5e1d9; border-radius:12px;"
+              >
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <tr>
+                    <td class="livd-pad" style="padding:40px 40px 0 40px;">
+                      <h1
+                        class="livd-ink livd-title"
+                        style="margin:0; font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:30px; line-height:1.15; letter-spacing:-0.021em; font-weight:400; color:#17191a;"
+                      >
+                        Your sign-in link
+                      </h1>
+
+                      <p
+                        class="livd-muted"
+                        style="margin:16px 0 0 0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; line-height:1.6; color:#5c5f5b;"
+                      >
+                        Use the button below to securely sign in to Livd.
+                      </p>
+                    </td>
+                  </tr>
+
+                  <!-- CTA. The bulletproof-button pattern: a table cell with the
+                       background, an anchor filling it, and VML for Outlook. -->
+                  <tr>
+                    <td class="livd-pad" style="padding:28px 40px 0 40px;">
+                      <!--[if mso]>
+                        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                          href="{{ .ConfirmationURL }}" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="17%" stroke="f" fillcolor="#12312a">
+                          <w:anchorlock/>
+                          <center style="color:#fbfaf8;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:500;">Sign in to Livd</center>
+                        </v:roundrect>
+                      <![endif]-->
+                      <!--[if !mso]><!-- -->
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                          <td
+                            class="livd-button"
+                            align="center"
+                            bgcolor="#12312a"
+                            style="background-color:#12312a; border-radius:8px;"
+                          >
+                            <a
+                              href="{{ .ConfirmationURL }}"
+                              target="_blank"
+                              class="livd-button"
+                              style="display:inline-block; padding:14px 28px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; font-weight:500; line-height:20px; color:#fbfaf8; text-decoration:none; border-radius:8px;"
+                              >Sign in to Livd</a
+                            >
+                          </td>
+                        </tr>
+                      </table>
+                      <!--<![endif]-->
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td class="livd-pad" style="padding:28px 40px 0 40px;">
+                      <p
+                        class="livd-muted"
+                        style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:14px; line-height:1.6; color:#5c5f5b;"
+                      >
+                        This link expires in 15 minutes and can only be used once. If you did not
+                        ask to sign in, you can ignore this email — nothing will happen.
+                      </p>
+                    </td>
+                  </tr>
+
+                  <!-- The link as text, for clients that strip the button. -->
+                  <tr>
+                    <td class="livd-pad" style="padding:24px 40px 40px 40px;">
+                      <table
+                        role="presentation"
+                        cellpadding="0"
+                        cellspacing="0"
+                        border="0"
+                        width="100%"
+                      >
+                        <tr>
+                          <td
+                            class="livd-rule"
+                            style="border-top:1px solid #e5e1d9; padding-top:20px;"
+                          >
+                            <p
+                              class="livd-subtle"
+                              style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.5; color:#6d7069;"
+                            >
+                              If the button does not work, paste this into your browser:
+                            </p>
+                            <p style="margin:8px 0 0 0; word-break:break-all;">
+                              <a
+                                href="{{ .ConfirmationURL }}"
+                                target="_blank"
+                                style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.5; color:#12312a;"
+                                >{{ .ConfirmationURL }}</a
+                              >
+                            </p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="livd-pad" style="padding:24px 8px 0 8px;">
+                <p
+                  class="livd-subtle"
+                  style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.6; color:#6d7069;"
+                >
+                  Livd — know what it&rsquo;s really like to live there.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

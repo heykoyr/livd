@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 
 import { copy } from '@/content/copy';
 import { resolveDataBackend } from '@/config/site';
+import { safeNextPath } from '@/lib/auth/safe-redirect';
 import { getCurrentUser } from '@/server/auth/session';
 import { SignInForm } from './sign-in-form';
 
@@ -16,14 +17,14 @@ export const dynamic = 'force-dynamic';
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; error?: string }>;
 }) {
   const params = await searchParams;
   const user = await getCurrentUser();
 
-  // Only same-origin paths are accepted as a return destination, so the `next`
-  // parameter cannot be used to bounce a signed-in user off-site.
-  const next = params.next?.startsWith('/') && !params.next.startsWith('//') ? params.next : '/';
+  // One rule, shared with the action that sends the link and the callback that
+  // completes it — see `src/lib/auth/safe-redirect.ts`.
+  const next = safeNextPath(params.next);
 
   if (user) redirect(next);
 
@@ -34,6 +35,18 @@ export default async function SignInPage({
           {copy.auth.signInTitle}
         </h1>
         <p className="mt-3 text-body text-ink-muted">{copy.auth.signInLead}</p>
+
+        {/* A link that has expired or been used already lands back here. Saying
+            nothing would look like the sign-in simply failed for no reason. */}
+        {params.error === 'link' && (
+          <div
+            role="status"
+            className="mt-6 rounded-lg border border-caution/25 bg-caution-soft p-5"
+          >
+            <h2 className="text-label font-semibold text-caution">{copy.auth.linkFailedTitle}</h2>
+            <p className="mt-1.5 text-label text-ink-muted">{copy.auth.linkFailedBody}</p>
+          </div>
+        )}
 
         <SignInForm next={next} isLocalAdapter={resolveDataBackend() === 'local'} />
 

@@ -3,7 +3,8 @@
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
-import { resolveDataBackend } from '@/config/site';
+import { SITE, resolveDataBackend } from '@/config/site';
+import { safeNextPath } from '@/lib/auth/safe-redirect';
 import { copy } from '@/content/copy';
 import { checkRateLimit } from '@/lib/safety/rate-limit';
 import { createLocalSession, destroySession } from '@/server/auth/session';
@@ -21,7 +22,10 @@ import type { AuthActionState } from './action-state';
 
 const emailSchema = z.object({
   email: z.string().trim().toLowerCase().email('Enter a valid email address.').max(320),
-  next: z.string().startsWith('/').max(500).optional(),
+  // Validated rather than merely shaped: `safeNextPath` is the same rule the
+  // sign-in page and the callback apply, so a destination cannot be smuggled
+  // in at one end of the round trip and honoured at the other.
+  next: z.string().optional().transform((value) => safeNextPath(value)),
 });
 
 export async function requestSignIn(
@@ -51,12 +55,16 @@ export async function requestSignIn(
     const { createServerSupabaseClient } = await import('@/server/auth/supabase-client');
     const supabase = await createServerSupabaseClient();
 
+    // An absolute URL, always. The previous form fell back to `''` when
+    // NEXT_PUBLIC_SITE_URL was unset, producing a relative `emailRedirectTo`
+    // that Supabase discards in favour of the project's own Site URL — which
+    // is how a production email came to point at localhost. `SITE.url` resolves
+    // the configured origin, then VERCEL_URL, then localhost, so there is no
+    // arrangement of environment variables that yields a relative value.
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/auth/callback?next=${
-          encodeURIComponent(next ?? '/')
-        }`,
+        emailRedirectTo: `${SITE.url}/auth/callback?next=${encodeURIComponent(next)}`,
       },
     });
 
@@ -72,7 +80,7 @@ export async function requestSignIn(
   const user = await repository.upsertUser({ email });
   await createLocalSession(user.id);
 
-  redirect(next ?? '/');
+  redirect(next);
 }
 
 export async function signOut(): Promise<void> {
