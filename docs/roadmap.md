@@ -115,11 +115,14 @@ Still true since the deployment:
   unaffected — every public read and every submission goes through RLS as the
   anon or authenticated role — but `/admin` cannot act on the moderation queue
   until it is added.
-- **Sign-in has never been exercised end to end in production.** It uses
-  Supabase's built-in email sender, which is rate-limited and not deliverable
-  enough to launch on; the seeded accounts use the reserved `.invalid` domain
-  and can never receive mail. This is the same item as "an email provider for
-  magic links", and it is the one path no automated check covers.
+- **Custom SMTP is the last thing standing between the auth email and the
+  product.** The magic-link flow itself is fixed and live — Site URL, callback,
+  session refresh, all verified on 7 September 2026. But Supabase's built-in
+  sender disables the Subject and Body fields outright, so the branded template
+  in `supabase/templates/magic-link.html` cannot be applied and the sender still
+  reads "Supabase Auth". One setting gates all three, and it needs a domain Livd
+  controls with SPF and DKIM. The built-in sender is also rate-limited to a few
+  emails an hour and is not something to launch on.
 - **`LIVD_SHOW_DEMO_DATA=true` in production**, which is what makes the seeded
   properties visible at all. It has to be turned off the moment real reviews
   exist, or the two will sit side by side.
