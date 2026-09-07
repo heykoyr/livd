@@ -68,9 +68,33 @@ export async function requestSignIn(
       },
     });
 
-    // Deliberately not reporting "no such account": whether an address is
-    // registered is not something an unauthenticated visitor should learn.
-    if (error) return { error: copy.errors.genericBody, sentTo: null };
+    if (error) {
+      // Log it. The generic message below tells people the failure "is already
+      // logged", and until this line existed that was not true — a production
+      // sign-in outage had to be diagnosed by reading Supabase's own auth logs
+      // through the management API, because Livd had recorded nothing at all.
+      //
+      // The email address is not logged. Which addresses tried to sign in is
+      // exactly the kind of record this product exists not to keep.
+      console.error('[livd] sign-in link request failed', {
+        status: error.status,
+        code: error.code,
+        message: error.message,
+      });
+
+      // A send-rate limit is worth naming. It is a property of the email
+      // provider, not of the account, so saying so discloses nothing about
+      // whether the address is registered — and "try again shortly" is
+      // something the person can act on, where "something went wrong" is not.
+      if (error.status === 429 || error.code?.includes('rate_limit')) {
+        return { error: copy.auth.tooManyLinks, sentTo: null };
+      }
+
+      // Everything else stays generic. Deliberately not reporting "no such
+      // account": whether an address is registered is not something an
+      // unauthenticated visitor should learn.
+      return { error: copy.errors.genericBody, sentTo: null };
+    }
 
     return { error: null, sentTo: email };
   }

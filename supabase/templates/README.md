@@ -79,7 +79,16 @@ Two things follow from that, and they are the same thing:
 
 - The built-in sender is rate-limited to a handful of emails per hour and is
   explicitly not intended for production. `docs/roadmap.md` has listed "an
-  email provider for magic links" as a pre-launch item since Phase 7.
+  email provider for magic links" as a pre-launch item since Phase 7. This is
+  not theoretical: on 7 September 2026, testing the newly-fixed flow hit it
+  four times inside four minutes —
+
+  ```
+  429: email rate limit exceeded   (over_email_send_rate_limit)   POST /otp
+  ```
+
+  Livd surfaces that specifically now rather than as a generic failure, but
+  the limit itself only lifts with custom SMTP.
 - Custom SMTP is what changes the sender name.
 
 **When SMTP is configured, set:**

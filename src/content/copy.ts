@@ -385,6 +385,8 @@ export const copy = {
     sending: 'Sending',
     linkSentTitle: 'Check your email',
     linkSentBody: (email: string) => `We sent a sign-in link to ${email}. It expires in 15 minutes.`,
+    tooManyLinks:
+      'Too many sign-in emails have been requested recently. Wait a few minutes and try again — this is a limit on our email provider, not on your account.',
     linkFailedTitle: 'That link did not work',
     linkFailedBody:
       'Sign-in links expire, and each one can only be used once. Enter your email and we will send another.',
