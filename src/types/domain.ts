@@ -6,6 +6,10 @@
  * which is what keeps the two interchangeable.
  */
 
+import type { ResidentRecency } from '@/config/verification';
+
+export type { ResidentRecency };
+
 /* -------------------------------------------------------------------------
  * Location & money
  * ---------------------------------------------------------------------- */
@@ -87,7 +91,32 @@ export interface Property {
 
 export type ResidencyStatus = 'current' | 'former';
 
-export type VerificationLevel = 'unverified' | 'verified_resident' | 'disputed';
+/**
+ * How much Livd has been able to establish about a review's author.
+ *
+ * Ordered by strength, and deliberately not a boolean:
+ *
+ *   `unverified`        Nothing was checked. Every review written before the
+ *                       verification system existed is here, and so is every
+ *                       review whose author chose not to verify. Neither is
+ *                       labelled as verified anywhere, and neither is penalised.
+ *   `location_verified` The author was at the property when they wrote. Real
+ *                       evidence of presence; not evidence of a tenancy, and
+ *                       never described as such.
+ *   `verified_resident` A moderator read a document tying this person to this
+ *                       address.
+ *   `disputed`          Authenticity is contested. Contributes nothing to the
+ *                       score until it is resolved.
+ *
+ * Set by the server alone. A client cannot assert one: the database derives it
+ * on insert from the verification record the review points at, and refuses any
+ * value the client supplies.
+ */
+export type VerificationLevel =
+  | 'unverified'
+  | 'location_verified'
+  | 'verified_resident'
+  | 'disputed';
 
 export type ReviewStatus =
   | 'published'
@@ -129,6 +158,17 @@ export interface Review {
    */
   noticedManagementChange: boolean | null;
   verificationLevel: VerificationLevel;
+  /**
+   * The property verification this review's level was derived from, if any.
+   *
+   * Server-set and immutable. It is what ties a verification to *this* property
+   * and *this* author: the database refuses an insert whose verification names
+   * a different property or a different person, so a check passed at one
+   * address cannot be carried to a review of another.
+   */
+  verificationId: string | null;
+  /** When that verification happened. Never rendered more precisely than a relative time. */
+  verifiedAt: string | null;
   status: ReviewStatus;
   safetyFlags: string[];
   helpfulCount: number;
@@ -148,8 +188,18 @@ export interface PublicReview {
   propertyId: string;
   residencyStatus: ResidencyStatus;
   verificationLevel: VerificationLevel;
+  /**
+   * How current this experience is — derived on read, never stored.
+   *
+   * Note what is *not* here: no verification timestamp, no coordinates, no
+   * distance, no accuracy. A reader needs to know an experience is recent and
+   * was checked. Nothing else about the check is theirs to know.
+   */
+  recency: ResidentRecency;
   /** e.g. "Verified former resident" */
   attribution: string;
+  /** e.g. "Current resident · Location verified" — the full trust line. */
+  trustLabel: string;
   /** e.g. "Lived here 2 years · left 2024" */
   tenureLabel: string;
   tenureMonths: number;
@@ -195,6 +245,25 @@ export interface CategoryScore {
   /** Number of reviews that rated this category. */
   sampleSize: number;
   confidence: ConfidenceBand;
+}
+
+/**
+ * How representative a property's evidence is of living there *today*.
+ *
+ * Counts only. Nothing here is a score and nothing here feeds the Livd Score —
+ * freshness is context a reader applies for themselves.
+ */
+export interface ResidentFreshness {
+  current: number;
+  recent: number;
+  former: number;
+  older: number;
+  /** Reviews written inside the activity window, whatever their verification. */
+  reviewsInActivityWindow: number;
+  /** Reviews carrying either level of verification. */
+  verifiedCount: number;
+  locationVerifiedCount: number;
+  residentVerifiedCount: number;
 }
 
 export type TrendDirection = 'improving' | 'stable' | 'declining' | 'unknown';
@@ -261,6 +330,14 @@ export interface PropertyIntelligence {
   timeline: TimelineEntry[];
   currentResidentCount: number;
   formerResidentCount: number;
+  /**
+   * How representative this property's evidence is of living there today.
+   *
+   * Counts, not a score. Nothing here feeds the Livd Score — freshness is
+   * context a reader applies for themselves, not a second number competing
+   * with the one they came for.
+   */
+  freshness: ResidentFreshness;
   lastReviewAt: string | null;
   /** Median reported rent, when enough residents reported one. */
   reportedRent: { median: Money; period: RentPeriod; sampleSize: number } | null;
@@ -405,6 +482,72 @@ export interface VerificationRecord {
   reviewedBy: string | null;
   decidedAt: string | null;
   createdAt: string;
+}
+
+/* -------------------------------------------------------------------------
+ * Property verification
+ * ---------------------------------------------------------------------- */
+
+/**
+ * How a property verification was established.
+ *
+ * A union rather than a boolean because the architecture has to hold more than
+ * one answer. `location` is the only method implemented; the others are the
+ * shapes the model is built to accept — a lease, a utility account, a landlord
+ * or an existing resident vouching — and each would produce the same kind of
+ * record with a different level attached.
+ */
+export type PropertyVerificationMethod =
+  | 'location'
+  | 'lease'
+  | 'utility'
+  | 'landlord'
+  | 'invitation';
+
+export type PropertyVerificationStatus = 'verified' | 'failed';
+
+/**
+ * Why an attempt did not succeed. Coarse on purpose: a reason code carries no
+ * distance, so refusals cannot be used to search for a property's true
+ * position, and a moderator reading the trail learns what went wrong without
+ * learning where anyone was.
+ */
+export type PropertyVerificationFailureReason =
+  | 'property_has_no_coordinates'
+  | 'invalid_position'
+  | 'accuracy_too_low'
+  | 'fix_too_old'
+  | 'outside_area'
+  | 'implausible_movement';
+
+/**
+ * One verification attempt, successful or not.
+ *
+ * This is the audit trail, and its most important property is what it does not
+ * contain: no latitude, no longitude, no accuracy, no distance, no IP address,
+ * no device string. Coordinates reach the server as arguments to a decision and
+ * are gone when it returns. What survives is the fact that a decision was made,
+ * about whom, about which property, by what method, and when.
+ */
+export interface PropertyVerification {
+  id: string;
+  userId: string;
+  propertyId: string;
+  method: PropertyVerificationMethod;
+  status: PropertyVerificationStatus;
+  /** Null when the attempt succeeded. */
+  failureReason: PropertyVerificationFailureReason | null;
+  /** After this, the verification can no longer be attached to a new review. */
+  expiresAt: string;
+  createdAt: string;
+}
+
+/** What the review wizard needs to know about the caller's standing at a property. */
+export interface VerificationStanding {
+  /** False when the property has no coordinates, so the step is not offered. */
+  canVerifyLocation: boolean;
+  /** A live, unexpired verification this person may attach to a review. */
+  activeVerification: PropertyVerification | null;
 }
 
 /* -------------------------------------------------------------------------

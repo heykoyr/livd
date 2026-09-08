@@ -1,0 +1,32 @@
+-- ===========================================================================
+-- Livd — 0013 · A third verification level
+--
+-- This migration does one thing, and it is alone in a file for a reason.
+--
+-- Postgres permits `alter type ... add value` inside a transaction from 12
+-- onwards, but the new label cannot be *used* in the same transaction — and
+-- with `check_function_bodies` on, a SQL function that mentions it is validated
+-- at creation time and would fail. Every migration runner wraps a file in a
+-- transaction, so the label has to land and commit before 0014 can build
+-- anything on it.
+--
+-- What the level means:
+--
+--   unverified         Nothing was checked. Every review written before this
+--                      system existed is here, permanently and legitimately,
+--                      and so is every review whose author chose not to verify.
+--                      Neither is labelled verified anywhere, and neither is
+--                      penalised for it.
+--   location_verified  The author was at the property. Evidence of presence,
+--                      which is real; not evidence of a tenancy, which it is
+--                      never described as.
+--   verified_resident  A moderator read a document tying this person to this
+--                      address.
+--   disputed           Authenticity is contested.
+--
+-- Ordered rather than appended, so the enum sorts by strength and a query can
+-- say `verification_level > 'unverified'` and mean it.
+-- ===========================================================================
+
+alter type verification_level
+  add value if not exists 'location_verified' after 'unverified';
