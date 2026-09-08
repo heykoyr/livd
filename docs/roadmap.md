@@ -148,6 +148,16 @@ Still true since the deployment:
   properties visible at all. It has to be turned off the moment real reviews
   exist, or the two will sit side by side.
 
+**Geocoding coverage.** The geocoder is live and gated to building-level
+precision, which is the right trade — a wrong coordinate offers a verification
+step that a real resident cannot pass, and a missing one offers no step at all.
+The consequence is that coverage follows OpenStreetMap's building data, so
+properties in Lagos and Dubai largely will not be location-verifiable while
+Berlin and Austin will. Two ways to close that when it matters: a commercial
+geocoder with better building coverage behind the same `Geocoder` interface, or
+letting an approved property claimant place their own building on a map, which
+is a different trust question and needs its own thinking.
+
 **Soon after.** Privacy-safe map discovery, area-level rather than unit-level ·
 grounded AI summarisation of review corpora, behind the existing
 `VerdictGenerator` interface · rent trend intelligence · property manager

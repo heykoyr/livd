@@ -125,9 +125,18 @@ LIVD_GEOCODER=nominatim
 LIVD_GEOCODER_CONTACT=you@example.com    # required by Nominatim's usage policy
 ```
 
-Both are optional and off by default. Without them, a property added by a
-contributor has no coordinate and simply does not offer the verification step —
-everything else about it works normally.
+Both are optional. Without them, a property added by a contributor has no
+coordinate and simply does not offer the verification step — everything else
+about it works normally.
+
+With them, coverage follows OpenStreetMap's building data rather than being
+universal, because the geocoder refuses anything less precise than a building.
+Nominatim answers a Lagos street address with the *road*, a feature spanning
+1.7km, and a point along it can sit most of a kilometre from the property — so
+storing it would mean offering a verification step that a real resident cannot
+pass. Refusing is the better failure: no coordinate, no step, no false
+accusation. Measured against real addresses, Berlin, Austin and London resolve
+to buildings; Lagos and Cape Town resolve only to roads and are refused.
 
 The anon key is safe in a browser — Row Level Security is what protects the
 data, not the secrecy of that key. `SUPABASE_SERVICE_ROLE_KEY` bypasses every
