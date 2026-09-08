@@ -33,6 +33,8 @@ export function makeReview(overrides: Partial<Review> = {}): Review {
     secondaryDepartureReasons: [],
     noticedManagementChange: null,
     verificationLevel: 'unverified',
+    verificationId: null,
+    verifiedAt: null,
     status: 'published',
     safetyFlags: [],
     helpfulCount: 0,
