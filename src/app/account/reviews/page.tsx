@@ -8,6 +8,7 @@ import { copy } from '@/content/copy';
 import { formatRelativeTime, formatTenure, propertyDisplayName } from '@/lib/format';
 import { requireUserPage } from '@/server/auth/guards';
 import { VerifyResidency } from '@/components/property/verify-residency';
+import { VerificationBadge } from '@/components/property/verify-location';
 import { getRepository } from '@/server/data';
 import type { ReviewStatus } from '@/types/domain';
 
@@ -115,6 +116,11 @@ export default async function MyReviewsPage() {
                     >
                       {STATUS_LABEL[review.status]}
                     </Badge>
+                    {/* Their own review, so the level it carries is shown
+                        plainly. Still no timestamp: "verified 7 September at
+                        4:13pm" is a record of where somebody was at a moment,
+                        and it is no more theirs to be shown than anyone's. */}
+                    <VerificationBadge level={review.verificationLevel} />
                     <span className="text-title-md tabular text-ink">
                       {review.overallRating}/5
                     </span>

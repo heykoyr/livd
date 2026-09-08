@@ -17,6 +17,7 @@ const SECTIONS = [
   { href: '/admin/reports', label: copy.admin.reports },
   { href: '/admin/flags', label: copy.admin.flags },
   { href: '/admin/verification', label: copy.admin.verificationQueue },
+  { href: '/admin/verification-attempts', label: copy.admin.verificationAttempts },
   { href: '/admin/claims', label: copy.admin.claims },
   { href: '/admin/users', label: copy.admin.users },
 ];

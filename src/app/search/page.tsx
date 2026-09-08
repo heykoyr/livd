@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { PropertyCard } from '@/components/property/property-card';
 import { SearchCombobox } from '@/components/search/search-combobox';
+import { NearbyProperties } from '@/components/search/nearby-properties';
 import { SearchFilters } from '@/components/search/search-filters';
 import { ButtonLink } from '@/components/ui/button';
 import { Pagination } from '@/components/ui/pagination';
@@ -123,6 +124,11 @@ export default async function SearchPage({
           />
         </>
       )}
+
+      {/* Below the results, never above them, and never triggered by arriving
+          here. Search is the primary way to use Livd and must not look as
+          though it needs a location to work — because it does not. */}
+      <NearbyProperties />
     </div>
   );
 }
