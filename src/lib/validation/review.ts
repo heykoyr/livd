@@ -90,6 +90,17 @@ export const reviewDraftSchema = z
       .nullable(),
     rentPeriod: z.enum(['month', 'year']).nullable(),
 
+    /**
+     * The location verification the reviewer is claiming, if any.
+     *
+     * An id, and never a level. The client cannot say "verified"; the most it
+     * can do is name a record, and the store then checks that the record is
+     * this person's, is for this property, and has not expired. A crafted
+     * request naming somebody else's verification is refused rather than
+     * downgraded — see `livd_derive_review_verification` in migration 0014.
+     */
+    verificationId: z.string().min(1).max(80).nullable().default(null),
+
     confirmedGuidelines: z.literal(true, {
       message: 'Please confirm you understand the guidelines.',
     }),

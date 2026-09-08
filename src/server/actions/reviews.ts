@@ -13,6 +13,7 @@ import { checkDualRateLimit } from '@/lib/safety/rate-limit';
 import { newPropertySchema, reviewDraftSchema } from '@/lib/validation/review';
 import { AuthorisationError, requireUser } from '@/server/auth/guards';
 import { getRepository } from '@/server/data';
+import { getGeocoder } from '@/server/geo/geocoder';
 import { invalidateProperty } from '@/server/data/cache';
 import type { ReviewStatus } from '@/types/domain';
 import { originIdentifier } from './reports';
@@ -35,6 +36,13 @@ import { originIdentifier } from './reports';
  * Every one of these is also enforced by a database constraint or an RLS policy.
  * This layer exists to produce a useful message; the database is what makes the
  * rule true.
+ *
+ * The verification is the clearest example of that division. This action passes
+ * an id straight through without inspecting it, because inspecting it here
+ * would achieve nothing: a request that skipped this action entirely would
+ * still meet the trigger in migration 0014, which is what actually resolves an
+ * id to a level after checking it belongs to this author and this property. A
+ * check here would be a second opinion that could drift from the real one.
  */
 
 /** Maps a linter code to the specific fix the writer needs to make. */
@@ -172,29 +180,48 @@ export async function submitReview(
 
   /* --- Persist ------------------------------------------------------- */
 
-  await repository.createReview(
-    {
-      propertyId: property.id,
-      residencyStatus: draft.residencyStatus,
-      movedInMonth: draft.movedInMonth,
-      movedOutMonth: draft.movedOutMonth,
-      overallRating: draft.overallRating,
-      categoryRatings: draft.categoryRatings,
-      positiveTags: draft.positiveTags,
-      problemTags: draft.problemTags,
-      primaryDepartureReason: draft.primaryDepartureReason,
-      secondaryDepartureReasons: draft.secondaryDepartureReasons,
-      noticedManagementChange: draft.noticedManagementChange,
-      body: draft.body,
-      wouldRecommend: draft.wouldRecommend,
-      rentAmountMinor: draft.rentAmountMinor,
-      rentCurrency: draft.rentCurrency,
-      rentPeriod: draft.rentPeriod,
-      status,
-      safetyFlags: safety.flagCodes,
-    },
-    user.id,
-  );
+  let review;
+  try {
+    review = await repository.createReview(
+      {
+        propertyId: property.id,
+        residencyStatus: draft.residencyStatus,
+        movedInMonth: draft.movedInMonth,
+        movedOutMonth: draft.movedOutMonth,
+        overallRating: draft.overallRating,
+        categoryRatings: draft.categoryRatings,
+        positiveTags: draft.positiveTags,
+        problemTags: draft.problemTags,
+        primaryDepartureReason: draft.primaryDepartureReason,
+        secondaryDepartureReasons: draft.secondaryDepartureReasons,
+        noticedManagementChange: draft.noticedManagementChange,
+        body: draft.body,
+        wouldRecommend: draft.wouldRecommend,
+        rentAmountMinor: draft.rentAmountMinor,
+        rentCurrency: draft.rentCurrency,
+        rentPeriod: draft.rentPeriod,
+        status,
+        safetyFlags: safety.flagCodes,
+      // Passed through untouched. The store resolves it to a level, or refuses
+      // it — see the note above.
+        verificationId: draft.verificationId,
+      },
+      user.id,
+    );
+  } catch (error) {
+    // The one write that can fail for a reason worth distinguishing: a
+    // verification that is not this person's or not this property's. Both the
+    // database trigger and the local store refuse it rather than downgrading
+    // quietly, because a mismatch is an attempt rather than an accident. An
+    // expired verification is a different matter and never reaches here — it
+    // publishes without a badge.
+    console.error('[livd] review submission failed', error);
+    return {
+      ...initialReviewSubmitState,
+      status: 'error',
+      error: copy.errors.genericBody,
+    };
+  }
 
   // Read-your-own-writes: the author is about to land on the property page and
   // must see their own review there.
@@ -204,6 +231,11 @@ export async function submitReview(
     ...initialReviewSubmitState,
     status: status === 'published' ? 'published' : 'pending',
     propertySlug: property.slug,
+    // What actually happened to the verification, rather than what was asked
+    // for. Someone whose check expired while they were writing is told so on
+    // the confirmation screen instead of quietly not getting the badge they
+    // were expecting.
+    verificationLevel: review.verificationLevel,
   };
 }
 
@@ -271,6 +303,15 @@ export async function createProperty(
     redirect(`/review?property=${existing.slug}&existing=1`);
   }
 
-  const property = await repository.createProperty(input, user.id);
+  // Best effort, and never in the way. A coordinate is what makes a property
+  // location-verifiable, so it is worth six seconds of a contributor's time to
+  // try for one — but a geocoder that is slow, rate-limited, down or simply
+  // wrong about the address must not cost Livd the contribution. `geocode`
+  // never throws and returns null for everything it cannot resolve; the
+  // property is created either way, and one without a coordinate is an
+  // ordinary property that does not offer the verification step.
+  const coordinates = await getGeocoder().geocode(input);
+
+  const property = await repository.createProperty({ ...input, coordinates }, user.id);
   redirect(`/review?property=${property.slug}&new=1`);
 }

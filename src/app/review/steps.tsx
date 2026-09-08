@@ -17,6 +17,7 @@ import { LIMITS } from '@/config/site';
 import { copy } from '@/content/copy';
 import { cn } from '@/lib/utils';
 import type { WizardDraft } from './wizard-types';
+import { VerifyLocation } from '@/components/property/verify-location';
 import { PropertyPicker } from './property-picker';
 
 /**
@@ -47,7 +48,24 @@ export function PropertyStep({ draft, update }: StepProps) {
 }
 
 /* -------------------------------------------------------------------------
- * 2. Residency
+ * 2. Verify (offered only where the property has a location to check against)
+ * ---------------------------------------------------------------------- */
+
+export function VerifyStep({ draft, update }: StepProps) {
+  if (!draft.property) return <p className="text-body text-ink-muted">Choose a property first.</p>;
+
+  return (
+    <VerifyLocation
+      propertyId={draft.property.id}
+      propertyName={draft.property.name}
+      verified={draft.verificationId !== null}
+      onVerified={(verificationId) => update({ verificationId })}
+    />
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * 3. Residency
  * ---------------------------------------------------------------------- */
 
 export function ResidencyStep({ draft, update, error }: StepProps) {

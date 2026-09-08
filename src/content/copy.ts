@@ -254,6 +254,27 @@ export const copy = {
         title: 'Which property did you live in?',
         lead: 'Search for the address. If it is not listed, you can add it.',
       },
+      verify: {
+        title: 'Verify this property',
+        lead: 'Help keep Livd trustworthy. We check that reviewers have a real connection to the property they write about.',
+        // Said before the permission prompt, not after it. Somebody deciding
+        // whether to hand over their location is entitled to know what happens
+        // to it while they are still deciding.
+        explainer:
+          'Your location is used once, to confirm which building you are at. It is never shown publicly, never shared with the property owner, and not stored.',
+        cta: 'Verify location',
+        working: 'Checking',
+        skip: 'Continue without verifying',
+        skipNote:
+          'Your review is published either way. Verifying adds a badge and counts for a little more in the property’s score.',
+        successTitle: 'Property verified',
+        successBody: 'You are at this property. You can share your experience now.',
+        againLater: 'You can verify from your account later if you would rather.',
+        // Never "we know you live here". Being at a building is evidence of
+        // presence; it is not evidence of a tenancy, and the wording has to
+        // hold that line in the one place people actually read.
+        honestNote: 'This confirms you are at the property, not that you live here.',
+      },
       residency: {
         title: 'Do you live there now?',
         lead: 'Former residents can tell the next renter something nobody else can — why you left.',
@@ -334,8 +355,126 @@ export const copy = {
     pendingTitle: 'Your review has been submitted for review',
     pendingBody:
       'A moderator will look at it shortly. This happens with a small number of reviews and does not mean anything is wrong.',
+    verificationExpired:
+      'Your location check had expired by the time you published, so this review does not carry a verification badge. You can verify it from your account.',
     editWindow: (hours: number) =>
       `You can correct this review for the next ${hours} hours. After that it becomes part of the property’s permanent record.`,
+  },
+
+  verification: {
+    /* --- Badges and labels --- */
+    locationVerified: 'Location verified',
+    residentVerified: 'Resident verified',
+    unverifiedNote: 'Not verified',
+    disputed: 'Authenticity disputed',
+
+    recency: {
+      current: 'Current resident',
+      recent: 'Recent resident',
+      former: 'Former resident',
+      older: 'Earlier resident',
+    },
+
+    recencyExplainer: {
+      current: 'Living there now, and confirmed recently.',
+      recent: 'Their experience ended within the last six months.',
+      former: 'Their experience ended within the last two years.',
+      older: 'Their experience is more than two years old.',
+    },
+
+    /* --- What a badge means, for anyone who asks --- */
+    locationVerifiedMeaning:
+      'Livd confirmed this reviewer was at the property. That is evidence of a real connection to the building. It is not proof of a tenancy, and Livd does not claim it is.',
+    residentVerifiedMeaning:
+      'A moderator checked a document connecting this reviewer to this address.',
+    legacyMeaning:
+      'Written before Livd verified reviewers. It has not been checked, and it is not labelled as though it had been.',
+
+    /* --- Property freshness --- */
+    freshnessTitle: 'How current this is',
+    freshnessLead:
+      'How recently residents described this property — which is what tells you whether the picture below is still the one you would move into.',
+    freshness: {
+      fresh: 'Recent resident experiences',
+      moderate: 'Some recent experiences',
+      limited: 'Mostly older experiences',
+      none: 'No resident experiences yet',
+    },
+    freshnessExplainer: {
+      fresh: (n: number, days: number) =>
+        `${n} ${n === 1 ? 'resident has' : 'residents have'} described this property in the last ${days} days.`,
+      moderate: (n: number, days: number) =>
+        n > 0
+          ? `${n} ${n === 1 ? 'resident has' : 'residents have'} described this property in the last ${days} days. Most of what follows is older.`
+          : 'Most of what follows describes the last two years rather than the last few months.',
+      limited:
+        'Most of what follows is more than two years old. Buildings change hands and standards move, so read it as history rather than as now.',
+      none: 'Nobody has written about this property yet.',
+    },
+    recentlyReviewed: (relative: string) => `A resident shared an experience ${relative}.`,
+    recentActivity: (n: number, days: number) =>
+      `${n} ${n === 1 ? 'resident' : 'residents'} shared an experience in the last ${days} days.`,
+
+    /* --- Evidence quality, for the property page --- */
+    evidenceTitle: 'Evidence quality',
+    evidenceCounts: (total: number, verified: number) =>
+      `${total} resident ${total === 1 ? 'experience' : 'experiences'}, ${verified} verified`,
+    evidenceLimited:
+      'Limited resident evidence. There is not enough here to be confident about, and Livd would rather say so than imply otherwise.',
+
+    /* --- Errors, each with a way forward --- */
+    errors: {
+      permissionDeniedTitle: 'Location access is off',
+      permissionDeniedBody:
+        'Livd needs location access to confirm which property you are at. You can turn it on in your browser settings and try again — or continue without verifying.',
+      unavailableTitle: 'We could not get your location',
+      unavailableBody:
+        'Check that location services are on for your browser, then try again.',
+      timeoutTitle: 'That took too long',
+      timeoutBody:
+        'Your device did not return a location in time. Try again, ideally near a window or outside.',
+      outsideAreaTitle: 'You are outside the verification area',
+      outsideAreaBody:
+        'Move closer to the property and try again. If you are not there right now, you can continue without verifying.',
+      accuracyTitle: 'We could not confidently verify this location',
+      accuracyBody:
+        'Your device is not sure where it is. Try again from somewhere with a clearer signal — outside, or near a window.',
+      fixTooOldTitle: 'That location reading was out of date',
+      fixTooOldBody: 'Try again so we can take a fresh reading.',
+      noCoordinatesTitle: 'This property cannot be verified yet',
+      noCoordinatesBody:
+        'Livd does not have a precise enough location for this property. Your review is published without a verification badge, and nothing else about it changes.',
+      implausibleTitle: 'We could not verify this location',
+      implausibleBody:
+        'Something about that check did not add up. Try again in a few minutes.',
+      unsupportedTitle: 'This browser cannot share a location',
+      unsupportedBody:
+        'Verification needs a browser that supports location. You can still publish your review without it.',
+      retry: 'Try again',
+    },
+
+    rateLimited:
+      'Too many attempts in a short time. Wait a few minutes and try again.',
+    serverError:
+      'Something went wrong on our side while checking. Your review is unaffected — try again, or continue without verifying.',
+
+    /* --- Nearby discovery --- */
+    nearbyTitle: 'Properties near you',
+    nearbyLead:
+      'Uses your location once to find nearby properties. Nothing is stored and nothing is shared.',
+    nearbyCta: 'Show properties near me',
+    nearbyWorking: 'Looking',
+    nearbyEmpty:
+      'No Livd properties within a short walk. Search by address instead — most of the world is not on Livd yet.',
+    nearbyUnavailable:
+      'We could not look up properties near you just now. Search by address instead.',
+    nearbyDistance: (label: string) => `${label} away`,
+
+    /* --- Account --- */
+    historyTitle: 'Property verifications',
+    historyLead:
+      'Every location check on your account. Livd records that a check happened and what it decided — never where you were.',
+    historyEmpty: 'You have not verified a property yet.',
   },
 
   safety: {
@@ -438,6 +577,7 @@ export const copy = {
     reports: 'Reports',
     flags: 'Signals',
     verificationQueue: 'Residency proof',
+    verificationAttempts: 'Location checks',
     properties: 'Properties',
     reviews: 'Reviews',
     users: 'Users',

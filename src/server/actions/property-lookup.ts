@@ -22,6 +22,15 @@ export interface WizardProperty {
   context: string;
   countryCode: string;
   isDemo: boolean;
+  /**
+   * Whether this property can be location-verified at all.
+   *
+   * A boolean, deliberately — not the coordinate it is derived from. The
+   * wizard needs to know whether to offer the step; it does not need to know
+   * where the building is, and shipping a coordinate to the client for a
+   * yes/no question would put one in a page's payload for no reason.
+   */
+  canVerifyLocation: boolean;
 }
 
 export async function resolvePropertyBySlug(slug: string): Promise<WizardProperty | null> {
@@ -38,5 +47,6 @@ export async function resolvePropertyBySlug(slug: string): Promise<WizardPropert
     context: propertyContextLine(property.address),
     countryCode: property.address.countryCode,
     isDemo: property.isDemo,
+    canVerifyLocation: property.coordinates !== null,
   };
 }

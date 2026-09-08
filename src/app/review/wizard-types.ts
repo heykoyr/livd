@@ -26,6 +26,13 @@ export interface WizardDraft {
   rentAmount: string;
   rentCurrency: string;
   rentPeriod: 'month' | 'year';
+  /**
+   * The location verification this draft holds, if the reviewer chose to do
+   * one. An id only: the wizard has no way to express "verified" and no reason
+   * to, because the server decides that from the record and would ignore a
+   * claim anyway.
+   */
+  verificationId: string | null;
   confirmedGuidelines: boolean;
 }
 
@@ -48,12 +55,14 @@ export function emptyDraft(property: WizardProperty | null): WizardDraft {
     rentAmount: '',
     rentCurrency: '',
     rentPeriod: 'month',
+    verificationId: null,
     confirmedGuidelines: false,
   };
 }
 
 export type StepId =
   | 'property'
+  | 'verify'
   | 'residency'
   | 'dates'
   | 'overall'
@@ -77,6 +86,15 @@ export function stepsFor(draft: WizardDraft, propertyPreselected: boolean): Step
 
   if (!propertyPreselected) steps.push('property');
 
+  // Verification comes before the writing, not after it. Someone who spends
+  // four minutes describing three years of their life and is only then asked
+  // to prove anything has been treated badly, and a failure at that point
+  // reads as the product rejecting their review rather than as a step that did
+  // not work. It is offered only where it could succeed: a property with no
+  // coordinates cannot be checked, and a step that can only fail is worse than
+  // no step.
+  if (draft.property?.canVerifyLocation) steps.push('verify');
+
   steps.push('residency', 'dates', 'overall', 'categories', 'positives', 'problems');
 
   if (draft.residencyStatus === 'former') steps.push('departure');
@@ -97,6 +115,10 @@ export function toSubmitPayload(draft: WizardDraft): Record<string, unknown> {
 
   return {
     propertyId: draft.property?.id ?? '',
+    // Dropped if the reviewer changed property after verifying — the server
+    // would refuse the mismatch, and sending it would turn a legitimate change
+    // of mind into an error page.
+    verificationId: draft.verificationId,
     residencyStatus: draft.residencyStatus,
     movedInMonth: draft.movedInMonth,
     movedOutMonth: draft.residencyStatus === 'former' ? draft.movedOutMonth : null,

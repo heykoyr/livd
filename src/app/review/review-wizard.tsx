@@ -18,6 +18,7 @@ import { submitReview } from '@/server/actions/reviews';
 import {
   ConfirmStep,
   CategoriesStep,
+  VerifyStep,
   DatesStep,
   DepartureStep,
   OverallStep,
@@ -40,6 +41,7 @@ const DRAFT_KEY = 'livd-review-draft';
 
 const STEP_META: Record<StepId, { title: string; lead: string }> = {
   property: copy.review.steps.property,
+  verify: copy.review.steps.verify,
   residency: copy.review.steps.residency,
   dates: copy.review.steps.dates,
   overall: copy.review.steps.overall,
@@ -53,6 +55,7 @@ const STEP_META: Record<StepId, { title: string; lead: string }> = {
 
 const STEP_COMPONENTS: Record<StepId, (props: StepProps) => React.ReactElement> = {
   property: PropertyStep,
+  verify: VerifyStep,
   residency: ResidencyStep,
   dates: DatesStep,
   overall: OverallStep,
@@ -108,9 +111,18 @@ export function ReviewWizard({
       const stored = localStorage.getItem(DRAFT_KEY);
       if (!stored) return;
       const parsed = JSON.parse(stored) as WizardDraft;
+      const property = initialProperty ?? parsed.property;
       // A preselected property wins: the reviewer arrived from its page and
-      // means that one, whatever an older draft says.
-      setDraft({ ...parsed, property: initialProperty ?? parsed.property });
+      // means that one, whatever an older draft says. A verification the draft
+      // was carrying is only kept if it still belongs to the property being
+      // reviewed — and even then the server re-checks that it has not expired,
+      // which is why a stale one here costs a badge rather than a submission.
+      setDraft({
+        ...parsed,
+        property,
+        verificationId:
+          property && property.id === parsed.property?.id ? parsed.verificationId : null,
+      });
     } catch {
       // Corrupt or unavailable storage is not worth surfacing.
     } finally {
@@ -140,7 +152,16 @@ export function ReviewWizard({
   /* --- Navigation --- */
 
   const update = useCallback((patch: Partial<WizardDraft>) => {
-    setDraft((current) => ({ ...current, ...patch }));
+    setDraft((current) => {
+      const next = { ...current, ...patch };
+      // A verification belongs to the property it was taken at. Changing the
+      // property has to drop it, or the server refuses the submission and a
+      // legitimate change of mind arrives as an error.
+      if (patch.property && patch.property.id !== current.property?.id) {
+        next.verificationId = null;
+      }
+      return next;
+    });
     setStepError(null);
   }, []);
 
@@ -168,11 +189,12 @@ export function ReviewWizard({
   /* --- Terminal states --- */
 
   if (state.status === 'published' || state.status === 'pending') {
-    return <SubmissionResult state={state} />;
+    return <SubmissionResult state={state} draftWasVerified={draft.verificationId !== null} />;
   }
 
   const isLast = index === steps.length - 1;
   const payload = JSON.stringify(toSubmitPayload(draft));
+  const skippingVerification = stepId === 'verify' && draft.verificationId === null;
 
   return (
     <div className="mx-auto w-full max-w-2xl">
@@ -245,11 +267,26 @@ export function ReviewWizard({
             </Button>
           </form>
         ) : (
-          <Button size="lg" onClick={next}>
-            {copy.review.next}
+          <Button
+            size="lg"
+            // On the verification step the way past is a first-class choice,
+            // not a consolation. It says what it does, and it steps down to
+            // secondary so the primary action on the screen is unambiguous —
+            // rather than two large buttons competing while somebody decides
+            // whether to hand over their location.
+            variant={skippingVerification ? 'secondary' : 'primary'}
+            onClick={next}
+          >
+            {skippingVerification ? copy.review.steps.verify.skip : copy.review.next}
           </Button>
         )}
       </div>
+
+      {skippingVerification && (
+        <p className="mt-4 text-micro text-ink-subtle">
+          {copy.review.steps.verify.skipNote}
+        </p>
+      )}
 
       <p className="mt-6 text-micro text-ink-subtle">
         Your progress is saved in this browser only. Nothing is sent to Livd until you publish.
@@ -297,7 +334,13 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
  * Result
  * ---------------------------------------------------------------------- */
 
-function SubmissionResult({ state }: { state: ReviewSubmitState }) {
+function SubmissionResult({
+  state,
+  draftWasVerified,
+}: {
+  state: ReviewSubmitState;
+  draftWasVerified: boolean;
+}) {
   const published = state.status === 'published';
 
   return (
@@ -334,6 +377,30 @@ function SubmissionResult({ state }: { state: ReviewSubmitState }) {
         {published ? copy.review.successBody : copy.review.pendingBody}
       </p>
 
+      {published && state.verificationLevel === 'location_verified' && (
+        <p className="mt-5 inline-flex items-center gap-2 rounded-full border border-positive/25 bg-positive-soft px-3 py-1.5 text-label font-medium text-positive">
+          <svg viewBox="0 0 12 12" className="size-3" fill="none" aria-hidden="true">
+            <path
+              d="m2 6.3 2.3 2.3L10 2.9"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          {copy.verification.locationVerified}
+        </p>
+      )}
+
+      {published && state.verificationLevel === 'unverified' && draftWasVerified && (
+        // The one case worth saying out loud: they did verify, and it expired
+        // while they were writing. Quietly dropping the badge they had earned
+        // would look like the check had failed.
+        <p className="mt-5 text-label text-ink-muted">
+          {copy.review.verificationExpired}
+        </p>
+      )}
+
       {published && (
         <p className="mt-4 text-label text-ink-subtle">
           {copy.review.editWindow(LIMITS.reviewEditWindowHours)}
@@ -366,6 +433,10 @@ function validateStep(stepId: StepId, draft: WizardDraft): string | null {
   switch (stepId) {
     case 'property':
       return draft.property ? null : 'Choose the property you lived in.';
+
+    // No case for 'verify'. Verification is never required, so the step has
+    // nothing to validate — the reviewer either did it or continued past it,
+    // and both are complete answers.
 
     case 'residency':
       return draft.residencyStatus ? null : 'Let us know whether you still live there.';
