@@ -149,6 +149,16 @@ UK and "apartment" in the US.
 `src/lib/intelligence/scoring.ts` — pure, dependency-free, and the most heavily
 tested file in the repository.
 
+Verification multiplies a review's weight: 1.0 unchecked, **1.3 location
+verified**, 1.8 residency verified by a moderator, 0 disputed. The middle value
+is a judgement and a deliberately modest one — presence at an address rules out
+the reviewer who has never been to the building, which is real, and says nothing
+about whether they held a tenancy there, which is what the 1.8 is for. Recency
+is a separate, *derived* dimension: `src/lib/intelligence/recency.ts` buckets an
+experience as current, recent, former or older from its age, so nobody verifies
+once and stays a "current resident" for ever. Freshness is counts only and never
+feeds the score.
+
 ```
 reviews
   → per-review weight = recency(months) × verification × statusPenalty
@@ -177,6 +187,8 @@ list and search ordering.
 | Burst detection | `src/lib/safety/burst-detection.ts` holds the rules; `livd_detect_property_flags` is the same three tests in SQL, run hourly by pg_cron. Raises `property_flags` for a moderator at `/admin/flags`; never changes a review, a status or a score |
 | Moderation queue | `review_reports` + `moderation_actions`, full audit trail, admin-only RLS |
 | Residency verification | Resident uploads at `/account/reviews`; `src/lib/safety/verification-checks.ts` settles what a machine can; a moderator decides at `/admin/verification`. Evidence lives in a private bucket with no policy for any client role, and reaches a moderator through a five-minute signed URL |
+| Property verification | A location check in the review wizard. The decision is made inside Postgres by `livd_verify_property_location` so a client can ask for a verdict but never assert one; `src/lib/geo/proximity.ts` is the same rule for the local adapter, held to it by `tests/verification/parity.test.ts`. No coordinate is stored anywhere |
+| Review level integrity | `livd_derive_review_verification`, a BEFORE INSERT trigger, derives `verification_level` from the verification a review points at and refuses one belonging to another person or another property |
 | Authorisation | `requireUser` / `requireRole` guards; RLS as the second, authoritative layer |
 
 **Defence in depth is the rule.** Every write is checked in the Server Action
@@ -198,6 +210,9 @@ list and search ordering.
   `next.config.ts`.
 - User-submitted text is rendered as text. No `dangerouslySetInnerHTML` anywhere.
 - Verification evidence is unreadable by any client role.
+- A position is an argument, never a row. `property_verifications` has no
+  latitude, longitude, accuracy or distance column, so there is no location
+  history to leak, subpoena or lose.
 
 ---
 
@@ -224,6 +239,7 @@ No review author information — not even a pseudonym — appears in structured 
 | `tests/actions/` | Submit, report, save — authorisation and validation paths |
 | `tests/a11y/` | axe-core against rendered primitives and key screens |
 | `tests/components/` | Wizard behaviour, search combobox keyboard interaction |
+| `tests/verification/` | Proximity maths and its uncertainty budget · resident recency and freshness · TypeScript/SQL constant parity · what a public review does and does not carry · server-side enforcement against every spoofing path · the verification step's states |
 
 Highest-risk-first: scoring correctness, safety pipeline, authorisation.
 

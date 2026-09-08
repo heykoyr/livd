@@ -59,6 +59,27 @@ route redirecting to sign-in, canonical and OpenGraph URLs on the real origin,
 no seeded property in the sitemap and every one of them `noindex`, and zero
 axe violations across thirteen pages.
 
+### Phase 8 — Property verification & resident trust ✅
+A resident can confirm they are at a property before writing, and the review
+carries "Location verified" — the honest claim, since presence at a building is
+not proof of a tenancy and the product never says it is. The decision is made
+inside Postgres by `livd_verify_property_location`, so a client can ask for a
+verdict and never assert one; `livd_derive_review_verification` derives a
+review's level from the verification it points at and refuses one belonging to
+another person or another property. No coordinate is stored anywhere: a
+position is an argument to a function and is gone when it returns.
+
+Resident recency is derived rather than stored — current, recent, former,
+older — so nobody verifies once and stays a "current resident" for ever, and
+the property page says how representative its evidence is of living there
+today. Optional keyless geocoding gives newly added properties a coordinate.
+Opt-in "properties near you" on search, which asks for nothing until it is
+pressed. Migrations 0013–0016.
+
+It also closed a hole that predated it: `reviews` accepted an INSERT with any
+`verification_level` the client chose, so anyone holding the public anon key
+could publish a review at 1.8× weight with a "Verified" badge on it.
+
 ---
 
 ## Known limitations
@@ -131,6 +152,24 @@ Still true since the deployment:
 grounded AI summarisation of review corpora, behind the existing
 `VerdictGenerator` interface · rent trend intelligence · property manager
 profiles · additional locales, which the copy layer is already structured for.
+
+**Livd Pulse**, the natural next use of the verification model rather than a
+new one: a verified current resident answers a handful of category prompts —
+noise, maintenance, water, security, internet, neighbours, management, value —
+without writing a full review, and their answer refreshes how current the
+property's picture is. The pieces it needs already exist.
+`property_verification_method` has room for it, `residentRecency` already takes
+an explicit reference date so a check-in can move a review's recency without
+rewriting the review, and `ResidentFreshness` is the shape a Pulse panel would
+read. What is deliberately absent is any of the scoring: a Pulse response is
+not a review and must not be folded into the Livd Score without its own
+thinking about weight and abuse.
+
+**Verification methods beyond location.** `property_verification_method`
+already declares `lease`, `utility`, `landlord` and `invitation`. Each would
+produce the same record with a different level attached, and each needs its own
+decision about who adjudicates — which is why none is implemented rather than
+half-implemented.
 
 **Deferred on purpose.** Messaging between users · mobile applications ·
 payments · any monetisation that creates an incentive to distort what residents

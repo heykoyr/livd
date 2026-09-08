@@ -99,7 +99,7 @@ writes included — without provisioning anything.
 
 ### The production database
 
-A Supabase project is provisioned and all seven migrations are applied:
+A Supabase project is provisioned and all sixteen migrations are applied:
 
 | | |
 | --- | --- |
@@ -116,6 +116,18 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...        # Settings > API keys > anon
 SUPABASE_SERVICE_ROLE_KEY=...            # Settings > API keys > service_role
 LIVD_SESSION_SECRET=...                  # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
+Optionally, to give newly added properties a coordinate so residents can
+location-verify them:
+
+```
+LIVD_GEOCODER=nominatim
+LIVD_GEOCODER_CONTACT=you@example.com    # required by Nominatim's usage policy
+```
+
+Both are optional and off by default. Without them, a property added by a
+contributor has no coordinate and simply does not offer the verification step —
+everything else about it works normally.
 
 The anon key is safe in a browser — Row Level Security is what protects the
 data, not the secrecy of that key. `SUPABASE_SERVICE_ROLE_KEY` bypasses every
@@ -191,6 +203,21 @@ named individuals are refused before publication, with a specific instruction
 about what to change. The subject of a review is a building and the experience
 of living in it.
 
+**Verification is a signal, not a gate.** A resident can confirm they are at a
+property before writing, and the review carries "Location verified" — which is
+the honest claim, because being at a building is evidence of presence and not
+of a tenancy. Livd never says it knows you live there. A review published
+without verification is still published, still counted and still permanent;
+verification changes how much weight it carries, not whether it exists. The
+position itself is used for one comparison and never stored, so there is no
+location history in the database to leak.
+
+**Recency is part of the answer.** A five-star review from someone who left in
+2019 and one from someone who was in the lobby last week are different claims,
+and the property page now says which is which. The buckets are derived on read
+rather than stored, so nobody verifies once and remains a "current resident"
+for ever.
+
 **Owners can reply. They cannot remove.** There is no column in the schema and
 no policy in the database that would let a property owner alter a review's
 visibility — not a rule that a persistent request could change.
@@ -210,6 +237,15 @@ flat, the reverse. Neither is a special case in the code.
 - Tests weighted toward scoring, the safety linter, rate limiting, burst
   detection, the colour palette and the international layer.
 - Zero axe-core violations across 13 pages in a production build.
+- Verification enforcement exercised against the live database as an
+  `authenticated` client, not asserted from the policy text: a client cannot
+  insert its own verified row, cannot assert `verification_level` on a review,
+  cannot use a verification belonging to another account or another property,
+  and an approved property manager sees zero verification rows and zero
+  reviewer profiles.
+- The served HTML of a property page checked, signed out, for coordinates,
+  accuracy, distance, verification ids, verification timestamps, author ids,
+  emails, IP and device data. None present.
 - Contrast checked in a real browser, both themes, and asserted per token pair
   by `tests/design/contrast.test.ts`. The one violation axe still reports is a
   disabled pagination control, which WCAG 1.4.3 exempts as an inactive

@@ -120,7 +120,9 @@ list ordering never recompute scores: `review_count`, `verified_review_count`,
 | `would_recommend` | boolean |
 | `rent_amount_minor` / `rent_currency` | both nullable, both-or-neither constraint |
 | `rent_period` | `month` \| `year` |
-| `verification_level` | `unverified` \| `verified_resident` \| `disputed` |
+| `verification_level` | `unverified` \| `location_verified` \| `verified_resident` \| `disputed` — **server-derived, never accepted from a client** |
+| `verification_id` | FK → `property_verifications`, nullable. What the level was derived from |
+| `verified_at` | when that verification happened. Never rendered publicly above relative-time precision |
 | `status` | `published` \| `pending_moderation` \| `held` \| `removed` |
 | `safety_flags` | `text[]` from the content linter |
 | `tenancy_key` | generated `author + property + move-in year` |
@@ -188,6 +190,77 @@ through a signed URL that lasts five minutes. `evidence_ref` is that key and
 never a URL: a URL in a row is a URL in a backup. The adapter does not map it
 onto the domain object at all, so no route, component or log can render it by
 accident.
+
+---
+
+## Property verification
+
+**`property_verifications`** — `user_id`, `property_id`, `method`
+(`location` | `lease` | `utility` | `landlord` | `invitation`), `status`
+(`verified` | `failed`), `failure_reason`, `expires_at`, `created_at`.
+
+The column list is the argument. There is no latitude, no longitude, no
+accuracy, no distance, no IP address and no user agent, because a position is
+an *argument* to `livd_verify_property_location` and is gone when it returns.
+There is no location history in Livd because there is nowhere in the schema to
+put one.
+
+`failure_reason` is deliberately coarse — `outside_area`, never "214 metres
+outside". A refusal that reports the miss is a range-finder, and enough of them
+locate a building precisely.
+
+Failures are recorded as well as successes. Not to profile anyone, but because
+"this account failed forty checks against nine properties last night" is the
+shape of abuse and is unanswerable if only successes are kept.
+`livd_prune_property_verifications` runs nightly on pg_cron and clears anything
+older than 90 days that no review still points at.
+
+RLS: select for the row's own subject and for moderators. **No insert, update
+or delete policy exists for any client role**, and 0015 additionally revokes the
+write privileges Supabase grants by default — so the only writer is
+`livd_verify_property_location`, which decides before it writes. A property
+claimant is not mentioned anywhere in the file: "who verified themselves at my
+building" is a question the schema cannot answer for an owner.
+
+### The decision
+
+`livd_verify_property_location(property, lat, lon, accuracy, captured_at)` —
+`SECURITY DEFINER`, granted to `authenticated` and revoked from `anon`. It is
+the one deliberately browser-callable function in the schema, and the reason is
+that it *makes* a verdict rather than accepting one. A caller can ask; a caller
+cannot assert.
+
+Verified when `haversine(stored, reported) ≤ radius + grid + accuracy`, where:
+
+| Term | Value | Why |
+| --- | --- | --- |
+| radius | 150m | The building, its entrance, its car park and the pavement outside |
+| grid | ~79m, computed per property | `latitude`/`longitude` are `numeric(6,3)` and a trigger rounds them, so a stored coordinate names a ~110m cell rather than a point. Without this term the effective radius silently shrinks and residents in their own lobby are refused |
+| accuracy | `min(reported, 75)` | What the phone admits it does not know, capped so nobody widens the radius by declaring a bad fix |
+
+Refused before that if the fix is vaguer than 250m, older than 300s, or
+implies a speed above 1000 km/h against this account's last verification at a
+different property — which is computed between the two *properties'* published
+coordinates, so it needs no record of where anyone has been and creates none.
+
+The same arithmetic exists in `src/lib/geo/proximity.ts` for the local adapter.
+`tests/verification/parity.test.ts` reads this migration as text and asserts the
+constants match, because two copies of a rule drift and the failure is silent.
+
+### Deriving a review's level
+
+`livd_derive_review_verification`, a `BEFORE INSERT` trigger on `reviews`, is
+the single control that makes every badge on the site mean something. It reads
+the verification the review points at and refuses the insert unless it belongs
+to the same person and the same property. Expiry is forgiven — the review
+publishes without a badge rather than erroring in front of what someone just
+wrote.
+
+It also closes a hole that predates the feature. `reviews` accepted an INSERT
+with any `verification_level` the client chose: `reviews_insert_self`
+constrained the author and the ownership check but not that column, and
+`livd_guard_review_update` only ever ran on UPDATE. Anyone holding the public
+anon key could publish a review at 1.8× weight with a "Verified" badge on it.
 
 **`property_flags`** — `property_id`, `kind` (`review_burst`, `rating_anomaly`,
 `new_account_concentration`), `severity` 1–3, the window examined, `observed`
@@ -263,6 +336,7 @@ trigger on `reviews` and `review_category_ratings`.
 | `review_reports` | no | insert: authenticated; read: reporter (own) + moderators |
 | `moderation_actions` | no | insert: moderators; update/delete: nobody |
 | `verification_records` | no | service role only, read and write |
+| `property_verifications` | no | read: own + moderators. **Write: nobody** — rows come only from `livd_verify_property_location` |
 | `saved_properties` | no | owner only |
 | `owner_responses` | `status = 'published'` | approved claimant of the property only |
 
