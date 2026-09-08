@@ -63,6 +63,23 @@ export const RATE_LIMITS = {
   ownerResponse: { limit: 20, windowSeconds: 3600 },
   /** Each one costs a moderator a document to read. Tight on purpose. */
   verificationSubmit: { limit: 5, windowSeconds: 86_400 },
+  /**
+   * Location checks.
+   *
+   * Twelve an hour is far more than someone verifying the building they live
+   * in will ever need, and far fewer than a script walking a list of
+   * addresses. The database enforces a ceiling of its own inside
+   * `livd_verify_property_location`, because this limit only binds callers who
+   * come through the Server Action and the RPC is reachable by any signed-in
+   * session.
+   */
+  locationVerify: { limit: 12, windowSeconds: 3600 },
+  /**
+   * "Properties near me". Needs no account, so it is limited by origin alone
+   * and set generously — a real person may reasonably press it a few times
+   * while walking.
+   */
+  nearbyLookup: { limit: 30, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS;

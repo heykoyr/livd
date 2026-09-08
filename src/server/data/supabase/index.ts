@@ -31,6 +31,8 @@ import type {
   UserProfile,
   PropertyFlag,
   PropertyFlagStatus,
+  PropertyVerification,
+  VerificationStanding,
   VerificationCheck,
   VerificationLevel,
   VerificationMethod,
@@ -44,17 +46,20 @@ import type {
   DiscoveryOptions,
   LivdRepository,
   LocalitySummary,
+  NearbyProperty,
   ReviewListOptions,
   ReviewListResult,
 } from '../repository';
 import { toPublicReview } from '../public-review';
 import {
   PROPERTY_SELECT,
+  PROPERTY_VERIFICATION_SELECT,
   REVIEW_SELECT,
   toClaim,
   toModerationAction,
   toProperty,
   toPropertyFlag,
+  toPropertyVerification,
   toVerificationRecord,
   toReport,
   toReview,
@@ -63,6 +68,7 @@ import {
   type ModerationActionRow,
   type ProfileRow,
   type PropertyFlagRow,
+  type PropertyVerificationRow,
   type VerificationRecordRow,
   type PropertyRow,
   type ReportRow,
@@ -231,6 +237,11 @@ export class SupabaseRepository implements LivdRepository {
           postal_code: input.postalCode,
           country_code: input.countryCode.toUpperCase(),
           property_type: input.propertyType,
+          // Rounded again by `properties_round_coordinates` (0003) whatever is
+          // sent, so a coordinate is never unit-precise however precise the
+          // geocoder was. Null is the ordinary case, not an error.
+          latitude: input.coordinates?.latitude ?? null,
+          longitude: input.coordinates?.longitude ?? null,
           status: 'active',
           created_by: createdBy,
         })
@@ -581,7 +592,12 @@ export class SupabaseRepository implements LivdRepository {
     if (options.residency && options.residency !== 'all') {
       query = query.eq('residency_status', options.residency);
     }
-    if (options.verifiedOnly) query = query.eq('verification_level', 'verified_resident');
+    if (options.verifiedOnly) {
+      // "Verified" in the interface means any level of verification. A filter
+      // labelled verified that silently excluded location-verified reviews
+      // would be a lie in the UI rather than a subtlety in the query.
+      query = query.in('verification_level', ['verified_resident', 'location_verified']);
+    }
     if (!showDemoData()) query = query.eq('is_demo', false);
 
     switch (options.sort ?? 'recent') {
@@ -686,6 +702,13 @@ export class SupabaseRepository implements LivdRepository {
           noticed_management_change: input.noticedManagementChange,
           status: input.status,
           safety_flags: input.safetyFlags,
+          // An id, never a level. `livd_derive_review_verification` (0014)
+          // resolves it to a level after checking the verification belongs to
+          // this author and this property, and refuses the insert if it does
+          // not. Sending `verification_level` from here would be sending it
+          // from the browser's session — which is exactly what that trigger
+          // exists to disregard.
+          verification_id: input.verificationId,
         })
         .select('id')
         .single(),
@@ -941,6 +964,203 @@ export class SupabaseRepository implements LivdRepository {
         review: toReview(typed.reviews, TAG_POLARITY),
         property: toProperty(typed.reviews.properties),
       };
+    });
+  }
+
+  /* ---------------------------------------------------------------------
+   * Property verification (location)
+   *
+   * The one place in this adapter where the decision is not made in
+   * TypeScript. `livd_verify_property_location` (migration 0014) takes the
+   * position as arguments, does the arithmetic and writes the verdict, which
+   * is what makes it impossible for a caller to assert one — and what lets the
+   * feature work on a deployment with no service-role key, because the
+   * function is SECURITY DEFINER and the table beneath it has no write policy
+   * for any client role.
+   * ------------------------------------------------------------------ */
+
+  async getVerificationStanding(
+    userId: string,
+    propertyId: string,
+  ): Promise<VerificationStanding> {
+    const supabase = await this.client();
+
+    // Coordinates are public property data, so this read needs no session.
+    const { data: property } = await this.publicClient()
+      .from('properties')
+      .select('latitude, longitude')
+      .eq('id', propertyId)
+      .maybeSingle();
+
+    const coordinates = property as { latitude: number | null; longitude: number | null } | null;
+
+    const { data, error } = await supabase
+      .from('property_verifications')
+      .select(PROPERTY_VERIFICATION_SELECT)
+      .eq('user_id', userId)
+      .eq('property_id', propertyId)
+      .eq('status', 'verified')
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) throw new Error(`getVerificationStanding: ${error.message}`);
+
+    const rows = (data ?? []) as unknown as PropertyVerificationRow[];
+
+    return {
+      canVerifyLocation:
+        typeof coordinates?.latitude === 'number' && typeof coordinates?.longitude === 'number',
+      activeVerification: rows[0] ? toPropertyVerification(rows[0]) : null,
+    };
+  }
+
+  async verifyPropertyLocation(input: {
+    userId: string;
+    propertyId: string;
+    latitude: number;
+    longitude: number;
+    accuracyMeters: number;
+    capturedAtMs: number;
+  }): Promise<PropertyVerification> {
+    const supabase = await this.client();
+
+    // The caller's own session, not the service role. RLS and the function's
+    // own `auth.uid()` check are what tie the resulting row to this person;
+    // `input.userId` only labels the object that comes back.
+    const { data, error } = await supabase.rpc('livd_verify_property_location', {
+      target_property_id: input.propertyId,
+      reported_latitude: input.latitude,
+      reported_longitude: input.longitude,
+      reported_accuracy_meters: input.accuracyMeters,
+      fix_captured_at: new Date(input.capturedAtMs).toISOString(),
+    });
+
+    if (error) throw new Error(`verifyPropertyLocation: ${error.message}`);
+
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | {
+          verification_id: string;
+          status: PropertyVerification['status'];
+          failure_reason: PropertyVerification['failureReason'];
+          expires_at: string | null;
+        }
+      | undefined;
+
+    if (!row) throw new Error('verifyPropertyLocation: no verdict returned');
+
+    return {
+      id: row.verification_id,
+      userId: input.userId,
+      propertyId: input.propertyId,
+      method: 'location',
+      status: row.status,
+      failureReason: row.failure_reason,
+      expiresAt: row.expires_at ?? new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  async listPropertyVerifications(
+    userId: string,
+    limit = 20,
+  ): Promise<PropertyVerification[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase
+      .from('property_verifications')
+      .select(PROPERTY_VERIFICATION_SELECT)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw new Error(`listPropertyVerifications: ${error.message}`);
+    return ((data ?? []) as unknown as PropertyVerificationRow[]).map(toPropertyVerification);
+  }
+
+  async listRecentVerificationAttempts(
+    limit = 50,
+  ): Promise<Array<{ verification: PropertyVerification; property: Property }>> {
+    // The caller's own session, not the service role: RLS grants this select
+    // to moderators only, so an ordinary account reading through here sees its
+    // own rows and nothing else even if a guard above were ever forgotten.
+    const supabase = await this.client();
+
+    const { data, error } = await supabase
+      .from('property_verifications')
+      .select(PROPERTY_VERIFICATION_SELECT)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw new Error(`listRecentVerificationAttempts: ${error.message}`);
+
+    const rows = (data ?? []) as unknown as PropertyVerificationRow[];
+    const propertyIds = [...new Set(rows.map((row) => row.property_id))];
+    if (propertyIds.length === 0) return [];
+
+    const { data: properties } = await this.publicClient()
+      .from('properties')
+      .select(PROPERTY_SELECT)
+      .in('id', propertyIds);
+
+    const byId = new Map(
+      ((properties ?? []) as unknown as PropertyRow[]).map((row) => [row.id, toProperty(row)]),
+    );
+
+    return rows.flatMap((row) => {
+      const property = byId.get(row.property_id);
+      return property ? [{ verification: toPropertyVerification(row), property }] : [];
+    });
+  }
+
+  async propertiesNear(input: {
+    latitude: number;
+    longitude: number;
+    radiusMeters: number;
+    limit?: number;
+  }): Promise<NearbyProperty[]> {
+    // No session: this is public property data, the result is shareable
+    // between visitors, and attaching a user to it would be attaching a person
+    // to a position.
+    const supabase = this.publicClient();
+
+    const { data, error } = await supabase.rpc('livd_properties_near', {
+      origin_latitude: input.latitude,
+      origin_longitude: input.longitude,
+      radius_meters: input.radiusMeters,
+      result_limit: input.limit ?? 12,
+    });
+
+    if (error) throw new Error(`propertiesNear: ${error.message}`);
+
+    const rows = (data ?? []) as Array<{ property_id: string; distance_meters: number }>;
+    if (rows.length === 0) return [];
+
+    const { data: properties } = await supabase
+      .from('properties')
+      .select(PROPERTY_SELECT)
+      .in(
+        'id',
+        rows.map((row) => row.property_id),
+      );
+
+    const summaries = await this.summarise(
+      ((properties ?? []) as unknown as PropertyRow[]).map(toProperty),
+    );
+    const byId = new Map(summaries.map((summary) => [summary.property.id, summary]));
+
+    return rows.flatMap((row) => {
+      const summary = byId.get(row.property_id);
+      return summary
+        ? [
+            {
+              summary,
+              // Rounded before it leaves the data layer: a metre-precise
+              // distance to a known building is a position.
+              distanceMeters: Math.round(Number(row.distance_meters) / 10) * 10,
+            },
+          ]
+        : [];
     });
   }
 

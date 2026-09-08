@@ -10,6 +10,7 @@ import type {
   PropertyClaim,
   PropertyFlagKind,
   PropertyFlagStatus,
+  PropertyVerification,
   VerificationRecord,
   Review,
   ReviewReport,
@@ -53,6 +54,15 @@ export interface LocalDatabase {
    * should ever reach a component.
    */
   verifications: StoredVerification[];
+  /**
+   * Location-verification attempts.
+   *
+   * Holds exactly what the Postgres table holds, which is to say no coordinate,
+   * no accuracy and no distance — the position is an argument to the decision
+   * and is gone when it returns. There is no location history in this file
+   * because there is nowhere in the shape to put one.
+   */
+  propertyVerifications: PropertyVerification[];
   /**
    * Decisions on burst-detection flags.
    *
@@ -99,6 +109,7 @@ function emptyDatabase(): LocalDatabase {
     ownerResponses: [],
     moderationActions: [],
     verifications: [],
+    propertyVerifications: [],
     flagDecisions: [],
     saved: [],
     helpfulVotes: [],

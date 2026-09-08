@@ -940,6 +940,11 @@ export function generateSeed(): SeedData {
         ? composeBody(random, categoryRatings, overallRating)
         : null;
 
+      // Demonstration data predates the location-verification system and is
+      // labelled honestly as what it is: a moderator-verified residency or
+      // nothing. Fabricating a location verification for a property nobody has
+      // ever stood outside would be inventing the exact evidence this feature
+      // exists to establish.
       const verificationLevel =
         random() < profile.verifiedShare ? 'verified_resident' : 'unverified';
 
@@ -984,6 +989,8 @@ export function generateSeed(): SeedData {
           referenceYear >= profile.managementChangeYear &&
           random() < 0.55,
         verificationLevel,
+        verificationId: null,
+        verifiedAt: null,
         status: 'published',
         safetyFlags: [],
         helpfulCount: Math.floor(random() * 14),

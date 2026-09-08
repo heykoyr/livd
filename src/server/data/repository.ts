@@ -18,6 +18,8 @@ import type {
   UserProfile,
   PropertyFlag,
   PropertyFlagStatus,
+  PropertyVerification,
+  VerificationStanding,
   VerificationCheck,
   VerificationLevel,
   VerificationMethod,
@@ -52,6 +54,16 @@ export interface CreatePropertyInput {
   postalCode: string | null;
   countryCode: string;
   propertyType: Property['propertyType'];
+  /**
+   * Resolved by the geocoder, when one is configured and it succeeded.
+   *
+   * Optional and frequently absent, which is the normal case rather than an
+   * error: a property with no coordinate simply cannot be location-verified,
+   * and the review wizard does not offer the step for it. The database rounds
+   * whatever is stored here to three decimal places, so this never becomes a
+   * unit-precise position however precise the geocoder was.
+   */
+  coordinates?: { latitude: number; longitude: number } | null;
 }
 
 export interface CreateReviewInput {
@@ -74,6 +86,16 @@ export interface CreateReviewInput {
   /** Set by the submit action from the content linter. */
   status: ReviewStatus;
   safetyFlags: string[];
+  /**
+   * The location verification this review is claiming, if any.
+   *
+   * An id, never a level. The store derives the level from the record — after
+   * checking it belongs to this author and this property — so that a caller
+   * who has not verified anything cannot assert that they have. Against
+   * Postgres that check is a BEFORE INSERT trigger; the local adapter performs
+   * the identical one in TypeScript.
+   */
+  verificationId: string | null;
 }
 
 export interface ReviewListOptions {
@@ -94,6 +116,16 @@ export interface ReviewListResult {
 export interface DiscoveryOptions {
   limit?: number;
   countryCode?: string | null;
+}
+
+export interface NearbyProperty {
+  summary: PropertySummary;
+  /**
+   * Distance from the visitor, in metres. Computed per request from a position
+   * that is never stored, and rounded before it leaves the data layer — a
+   * metre-precise distance to a known building is a position.
+   */
+  distanceMeters: number;
 }
 
 export interface LocalitySummary {
@@ -185,6 +217,65 @@ export interface LivdRepository {
     actorId: string,
     resolution: string,
   ): Promise<void>;
+
+  /* --- Property verification (location) --- */
+
+  /**
+   * What this person may claim about this property right now.
+   *
+   * Answers two questions the review wizard needs before it renders: can this
+   * property be verified at all (it cannot without coordinates), and does the
+   * caller already hold a live verification for it — so somebody who verified,
+   * wandered off and came back is not asked to do it twice.
+   */
+  getVerificationStanding(userId: string, propertyId: string): Promise<VerificationStanding>;
+
+  /**
+   * Decides whether a position is at a property, and records the outcome.
+   *
+   * The position is an argument. Nothing in the returned record carries a
+   * coordinate, an accuracy or a distance, and nothing is written that does —
+   * see the note on `PropertyVerification`.
+   *
+   * Against Postgres the arithmetic runs inside `livd_verify_property_location`
+   * rather than here, so a browser holding the public key cannot assert a
+   * verdict by calling the table directly. The local adapter runs the same rule
+   * from `src/lib/geo/proximity.ts`.
+   */
+  verifyPropertyLocation(input: {
+    userId: string;
+    propertyId: string;
+    latitude: number;
+    longitude: number;
+    accuracyMeters: number;
+    capturedAtMs: number;
+  }): Promise<PropertyVerification>;
+
+  /** A person's own verification history. Theirs to see; nobody else's. */
+  listPropertyVerifications(userId: string, limit?: number): Promise<PropertyVerification[]>;
+
+  /**
+   * Recent attempts across all accounts, for a moderator investigating abuse.
+   *
+   * Carries a user id, because "which account is doing this" is the question
+   * being asked. It carries no location, because that is not.
+   */
+  listRecentVerificationAttempts(
+    limit?: number,
+  ): Promise<Array<{ verification: PropertyVerification; property: Property }>>;
+
+  /**
+   * Properties within a radius of a point.
+   *
+   * For the opt-in "near you" surface. The position is used for one query and
+   * discarded; no row anywhere records that this visitor was here.
+   */
+  propertiesNear(input: {
+    latitude: number;
+    longitude: number;
+    radiusMeters: number;
+    limit?: number;
+  }): Promise<NearbyProperty[]>;
 
   /* --- Residency verification --- */
 

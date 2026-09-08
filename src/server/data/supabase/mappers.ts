@@ -4,6 +4,7 @@ import type {
   PropertyClaim,
   PropertyFlag,
   PropertyTypeKey,
+  PropertyVerification,
   Review,
   ReviewReport,
   UserProfile,
@@ -85,6 +86,8 @@ export interface ReviewRow {
   rent_period: Review['rentPeriod'];
   noticed_management_change: boolean | null;
   verification_level: Review['verificationLevel'];
+  verification_id: string | null;
+  verified_at: string | null;
   status: Review['status'];
   safety_flags: string[] | null;
   helpful_count: number;
@@ -131,6 +134,8 @@ export function toReview(row: ReviewRow, tagPolarity: Map<string, 'positive' | '
     secondaryDepartureReasons: departures.filter((d) => !d.is_primary).map((d) => d.reason_key),
     noticedManagementChange: row.noticed_management_change,
     verificationLevel: row.verification_level,
+    verificationId: row.verification_id,
+    verifiedAt: row.verified_at,
     status: row.status,
     safetyFlags: row.safety_flags ?? [],
     helpfulCount: row.helpful_count,
@@ -316,11 +321,49 @@ export function toModerationAction(row: ModerationActionRow): ModerationAction {
   };
 }
 
+/* -------------------------------------------------------------------------
+ * Property verification
+ * ---------------------------------------------------------------------- */
+
+export interface PropertyVerificationRow {
+  id: string;
+  user_id: string;
+  property_id: string;
+  method: PropertyVerification['method'];
+  status: PropertyVerification['status'];
+  failure_reason: PropertyVerification['failureReason'];
+  expires_at: string;
+  created_at: string;
+}
+
+/**
+ * Note how short this is, and that no field was left out.
+ *
+ * The table holds no coordinate, no accuracy and no distance, so there is
+ * nothing here for a mapper to have to remember to strip.
+ */
+export function toPropertyVerification(row: PropertyVerificationRow): PropertyVerification {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    propertyId: row.property_id,
+    method: row.method,
+    status: row.status,
+    failureReason: row.failure_reason,
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+  };
+}
+
+export const PROPERTY_VERIFICATION_SELECT =
+  'id, user_id, property_id, method, status, failure_reason, expires_at, created_at';
+
 /** The nested select used everywhere a full review is needed. */
 export const REVIEW_SELECT = `
   id, property_id, author_id, residency_status, moved_in_month, moved_out_month,
   tenure_months, overall_rating, body, would_recommend, rent_amount_minor,
   rent_currency, rent_period, noticed_management_change, verification_level,
+  verification_id, verified_at,
   status, safety_flags, helpful_count, is_demo, created_at, updated_at,
   review_category_ratings ( category_key, rating ),
   review_departure_reasons ( reason_key, is_primary ),

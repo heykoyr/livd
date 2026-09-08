@@ -26,6 +26,9 @@ import type {
   UserProfile,
   PropertyFlag,
   PropertyFlagStatus,
+  PropertyVerification,
+  PropertyVerificationFailureReason,
+  VerificationStanding,
   VerificationCheck,
   VerificationLevel,
   VerificationMethod,
@@ -33,6 +36,9 @@ import type {
   VerificationRecord,
 } from '@/types/domain';
 import { detectPropertyFlags } from '@/lib/safety/burst-detection';
+import { VERIFICATION_LIFETIME } from '@/config/verification';
+import { haversineMeters, isValidCoordinates } from '@/lib/geo/distance';
+import { decideProximity, isImplausibleMovement } from '@/lib/geo/proximity';
 
 /** Matches `p_cooldown_days` in `livd_detect_property_flags`. */
 const FLAG_DECISION_COOLDOWN_DAYS = 7;
@@ -43,6 +49,7 @@ import type {
   DiscoveryOptions,
   LivdRepository,
   LocalitySummary,
+  NearbyProperty,
   ReviewListOptions,
   ReviewListResult,
 } from '../repository';
@@ -179,7 +186,15 @@ export class LocalRepository implements LivdRepository {
           countryCode: input.countryCode.toUpperCase(),
         },
         propertyType: input.propertyType,
-        coordinates: null,
+        // Rounded here as well as by the database trigger, so the two adapters
+        // store the same thing and a coordinate is never unit-precise in
+        // either. Three decimal places is about 110m.
+        coordinates: input.coordinates
+          ? {
+              latitude: Math.round(input.coordinates.latitude * 1000) / 1000,
+              longitude: Math.round(input.coordinates.longitude * 1000) / 1000,
+            }
+          : null,
         unitCount: null,
         yearBuilt: null,
         status: 'active',
@@ -477,7 +492,14 @@ export class LocalRepository implements LivdRepository {
       reviews = reviews.filter((review) => review.residencyStatus === options.residency);
     }
     if (options.verifiedOnly) {
-      reviews = reviews.filter((review) => review.verificationLevel === 'verified_resident');
+      // "Verified" in the interface means any level of verification. A filter
+      // labelled verified that silently excluded location-verified reviews
+      // would be a lie in the UI rather than a subtlety in the store.
+      reviews = reviews.filter(
+        (review) =>
+          review.verificationLevel === 'verified_resident' ||
+          review.verificationLevel === 'location_verified',
+      );
     }
 
     switch (options.sort ?? 'recent') {
@@ -549,7 +571,7 @@ export class LocalRepository implements LivdRepository {
         primaryDepartureReason: input.primaryDepartureReason,
         secondaryDepartureReasons: input.secondaryDepartureReasons,
         noticedManagementChange: input.noticedManagementChange,
-        verificationLevel: 'unverified',
+        ...deriveReviewVerification(database, input, authorId),
         status: input.status,
         safetyFlags: input.safetyFlags,
         helpfulCount: 0,
@@ -776,6 +798,164 @@ export class LocalRepository implements LivdRepository {
         createdAt: nowIso(),
       });
     });
+  }
+
+  /* ---------------------------------------------------------------------
+   * Property verification (location)
+   * ------------------------------------------------------------------ */
+
+  async getVerificationStanding(
+    userId: string,
+    propertyId: string,
+  ): Promise<VerificationStanding> {
+    const database = await getDatabase();
+    const property = database.properties.find((p) => p.id === propertyId);
+
+    return {
+      canVerifyLocation: Boolean(
+        property?.coordinates && isValidCoordinates(property.coordinates),
+      ),
+      activeVerification: liveVerificationFor(database, userId, propertyId),
+    };
+  }
+
+  async verifyPropertyLocation(input: {
+    userId: string;
+    propertyId: string;
+    latitude: number;
+    longitude: number;
+    accuracyMeters: number;
+    capturedAtMs: number;
+  }): Promise<PropertyVerification> {
+    const database = await getDatabase();
+    const property = database.properties.find((p) => p.id === input.propertyId);
+    if (!property) throw new Error('No such property');
+
+    const now = new Date();
+
+    // Same rule the Postgres function applies, from the same module. Neither
+    // is a translation of the other: both call `decideProximity`, and
+    // migration 0014 mirrors it in SQL because the production decision has to
+    // happen somewhere a browser cannot reach.
+    const decision = decideProximity({
+      propertyCoordinates: property.coordinates,
+      countryCode: property.address.countryCode,
+      position: {
+        latitude: input.latitude,
+        longitude: input.longitude,
+        accuracyMeters: input.accuracyMeters,
+        capturedAtMs: input.capturedAtMs,
+      },
+      now,
+    });
+
+    let reason: PropertyVerificationFailureReason | null = decision.verified
+      ? null
+      : decision.reason;
+
+    // Could the same person really have been at both? Computed between the two
+    // properties' own published coordinates, so it needs no record of where
+    // anyone has been and creates none.
+    if (reason === null) {
+      const previous = database.propertyVerifications
+        .filter(
+          (v) =>
+            v.userId === input.userId &&
+            v.status === 'verified' &&
+            v.propertyId !== input.propertyId &&
+            now.getTime() - new Date(v.createdAt).getTime() < 3_600_000,
+        )
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+
+      const previousProperty = previous
+        ? database.properties.find((p) => p.id === previous.propertyId)
+        : undefined;
+
+      if (
+        previous &&
+        previousProperty?.coordinates &&
+        property.coordinates &&
+        isImplausibleMovement({
+          previousPropertyCoordinates: previousProperty.coordinates,
+          currentPropertyCoordinates: property.coordinates,
+          elapsedSeconds: (now.getTime() - new Date(previous.createdAt).getTime()) / 1000,
+        })
+      ) {
+        reason = 'implausible_movement';
+      }
+    }
+
+    return mutate((db) => {
+      const record: PropertyVerification = {
+        id: `verify-${shortId(12)}`,
+        userId: input.userId,
+        propertyId: input.propertyId,
+        method: 'location',
+        status: reason === null ? 'verified' : 'failed',
+        failureReason: reason,
+        expiresAt: new Date(
+          now.getTime() + VERIFICATION_LIFETIME.attachWindowMinutes * 60_000,
+        ).toISOString(),
+        createdAt: now.toISOString(),
+      };
+
+      db.propertyVerifications.push(record);
+      return record;
+    });
+  }
+
+  async listPropertyVerifications(
+    userId: string,
+    limit = 20,
+  ): Promise<PropertyVerification[]> {
+    const database = await getDatabase();
+    return database.propertyVerifications
+      .filter((v) => v.userId === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  }
+
+  async listRecentVerificationAttempts(
+    limit = 50,
+  ): Promise<Array<{ verification: PropertyVerification; property: Property }>> {
+    const database = await getDatabase();
+    const propertiesById = new Map(database.properties.map((p) => [p.id, p]));
+
+    return database.propertyVerifications
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit)
+      .flatMap((verification) => {
+        const property = propertiesById.get(verification.propertyId);
+        return property ? [{ verification, property }] : [];
+      });
+  }
+
+  async propertiesNear(input: {
+    latitude: number;
+    longitude: number;
+    radiusMeters: number;
+    limit?: number;
+  }): Promise<NearbyProperty[]> {
+    const database = await getDatabase();
+    const origin = { latitude: input.latitude, longitude: input.longitude };
+    if (!isValidCoordinates(origin)) return [];
+
+    return visibleProperties(database)
+      .flatMap((property) => {
+        if (!property.coordinates || !isValidCoordinates(property.coordinates)) return [];
+        const distance = haversineMeters(property.coordinates, origin);
+        if (distance > input.radiusMeters) return [];
+        return [
+          {
+            summary: summaryFor(database, property),
+            // Rounded before it leaves the data layer: a metre-precise
+            // distance to a known building is a position.
+            distanceMeters: Math.round(distance / 10) * 10,
+          },
+        ];
+      })
+      .sort((a, b) => a.distanceMeters - b.distanceMeters)
+      .slice(0, input.limit ?? 12);
   }
 
   /* ---------------------------------------------------------------------
@@ -1376,6 +1556,77 @@ export class LocalRepository implements LivdRepository {
       reviewsLast30Days: database.reviews.filter((r) => r.createdAt >= thirtyDaysAgo).length,
     };
   }
+}
+
+/* -------------------------------------------------------------------------
+ * Deriving a review's verification level
+ *
+ * The TypeScript twin of `livd_derive_review_verification` in migration 0014.
+ * Both exist for the same reason: a review must not be able to claim a level
+ * its author did not earn, and the store — not the caller — is what decides.
+ * ---------------------------------------------------------------------- */
+
+/** A live, unexpired location verification this person may still attach. */
+function liveVerificationFor(
+  database: LocalDatabase,
+  userId: string,
+  propertyId: string,
+): PropertyVerification | null {
+  const now = Date.now();
+  const reuseWindowMs = VERIFICATION_LIFETIME.reuseWindowMinutes * 60_000;
+
+  return (
+    database.propertyVerifications
+      .filter(
+        (v) =>
+          v.userId === userId &&
+          v.propertyId === propertyId &&
+          v.status === 'verified' &&
+          new Date(v.expiresAt).getTime() > now &&
+          now - new Date(v.createdAt).getTime() <= reuseWindowMs,
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null
+  );
+}
+
+function deriveReviewVerification(
+  database: LocalDatabase,
+  input: CreateReviewInput,
+  authorId: string,
+): Pick<Review, 'verificationLevel' | 'verificationId' | 'verifiedAt'> {
+  const unverified = {
+    verificationLevel: 'unverified' as VerificationLevel,
+    verificationId: null,
+    verifiedAt: null,
+  };
+
+  if (!input.verificationId) return unverified;
+
+  const record = database.propertyVerifications.find((v) => v.id === input.verificationId);
+
+  // Not this person's, or not this property's. Verify property A, submit a
+  // review of property B, and this throws — the same refusal the database
+  // trigger raises, rather than a quiet downgrade that would let the attempt
+  // look successful.
+  if (
+    !record ||
+    record.userId !== authorId ||
+    record.propertyId !== input.propertyId ||
+    record.status !== 'verified'
+  ) {
+    throw new Error('That verification does not belong to this review.');
+  }
+
+  // Expiry is ordinary and is forgiven. Someone who verified, was interrupted
+  // and came back three hours later gets a published review without a badge,
+  // never an error in front of what they have just written.
+  if (new Date(record.expiresAt).getTime() <= Date.now()) return unverified;
+
+  return {
+    verificationLevel: record.method === 'location' ? 'location_verified' : 'unverified',
+    verificationId: record.id,
+    verifiedAt: record.createdAt,
+  };
 }
 
 /* -------------------------------------------------------------------------
