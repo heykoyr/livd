@@ -21,6 +21,7 @@
  */
 
 import { CATEGORY_DEFINITIONS, getCategory } from '@/config/categories';
+import { VERIFICATION_WEIGHTS } from '@/config/verification';
 import type {
   CategoryScore,
   ConfidenceBand,
@@ -59,6 +60,17 @@ export const SCORING = {
 
   /** A verified resident's review counts for 1.8 of an unverified one. */
   weightVerified: 1.8,
+  /**
+   * A review whose author was demonstrably at the property counts for 1.3.
+   *
+   * Between the two, and deliberately much nearer the bottom. Presence at an
+   * address rules out the reviewer who has never been to the building, which
+   * is real; it says nothing about whether they ever held a tenancy there,
+   * which is what the 1.8 is for. Defined once in
+   * `VERIFICATION_WEIGHTS.location` and mirrored here and in SQL —
+   * `tests/verification/parity.test.ts` keeps the three honest.
+   */
+  weightLocationVerified: VERIFICATION_WEIGHTS.location,
   weightUnverified: 1.0,
   /** A review under an authenticity dispute contributes nothing until resolved. */
   weightDisputed: 0,
@@ -147,9 +159,14 @@ export function verificationWeight(review: Pick<Review, 'verificationLevel'>): n
   switch (review.verificationLevel) {
     case 'verified_resident':
       return SCORING.weightVerified;
+    case 'location_verified':
+      return SCORING.weightLocationVerified;
     case 'disputed':
       return SCORING.weightDisputed;
     default:
+      // Including every review written before verification existed. A legacy
+      // review is not penalised for having predated the check — it simply
+      // carries no multiplier, which is what it carried yesterday.
       return SCORING.weightUnverified;
   }
 }

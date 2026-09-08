@@ -194,6 +194,62 @@ export function formatPercent(
 }
 
 /* -------------------------------------------------------------------------
+ * Distance
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Markets that measure short distances in feet and miles rather than metres.
+ *
+ * A short list rather than a rule, because there is no rule: the United States,
+ * the United Kingdom and a handful of others are genuinely mixed, and guessing
+ * from the locale would put miles in front of a reader in Berlin. Everywhere
+ * not named here gets metric, which is the honest default for most of the
+ * world and the one the internals use anyway.
+ *
+ * The UK is here on purpose: road distances are in miles and people describe
+ * walks the same way, whatever the shop scales say.
+ */
+const IMPERIAL_DISTANCE_MARKETS = new Set(['US', 'GB', 'LR', 'MM']);
+
+/**
+ * A walking distance, in the units the reader expects.
+ *
+ * Metres in, always — every geospatial calculation in Livd is metric, and this
+ * is the single point where that becomes a local unit. Deliberately coarse:
+ * "400m" rather than "412m", because the input has already been rounded in the
+ * data layer and a precise-looking figure would imply a precision the position
+ * behind it never had.
+ */
+export function formatDistance(meters: number, countryCode?: CountryCode | null): string {
+  const locale = localeFor(countryCode);
+  const imperial = countryCode
+    ? IMPERIAL_DISTANCE_MARKETS.has(countryCode.toUpperCase())
+    : false;
+
+  if (imperial) {
+    const feet = meters * 3.28084;
+    if (feet < 1000) {
+      return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(
+        Math.round(feet / 50) * 50,
+      )} ft`;
+    }
+    const miles = meters / 1609.344;
+    return `${new Intl.NumberFormat(locale, {
+      maximumFractionDigits: miles < 10 ? 1 : 0,
+    }).format(miles)} mi`;
+  }
+
+  if (meters < 1000) {
+    return `${new Intl.NumberFormat(locale).format(Math.round(meters / 10) * 10)} m`;
+  }
+
+  const km = meters / 1000;
+  return `${new Intl.NumberFormat(locale, {
+    maximumFractionDigits: km < 10 ? 1 : 0,
+  }).format(km)} km`;
+}
+
+/* -------------------------------------------------------------------------
  * Dates and durations
  * ---------------------------------------------------------------------- */
 

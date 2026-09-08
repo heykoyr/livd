@@ -9,6 +9,7 @@ import {
   ResidentVerdictPanel,
   TagFrequencyList,
 } from '@/components/property/intelligence';
+import { ResidentFreshnessPanel } from '@/components/property/freshness';
 import { PropertyHeader } from '@/components/property/property-header';
 import { PropertyMissing } from '@/components/property/property-missing';
 import { ReviewCard } from '@/components/property/review-card';
@@ -176,6 +177,13 @@ export default async function PropertyPage({
                   </Card>
                 )}
 
+                <Section id="freshness" className="scroll-mt-24">
+                  <ResidentFreshnessPanel
+                    intelligence={intelligence}
+                    countryCode={countryCode}
+                  />
+                </Section>
+
                 {checks.length > 0 && (
                   <Section
                     id="check"
@@ -309,6 +317,9 @@ function PropertySidebar({
   isClaimed: boolean;
 }) {
   const sections: Array<{ href: string; label: string }> = [
+    ...(intelligence.reviewCount > 0
+      ? [{ href: '#freshness', label: copy.verification.freshnessTitle }]
+      : []),
     ...(intelligence.reviewCount > 0
       ? [{ href: '#check', label: copy.property.checksTitle }]
       : []),

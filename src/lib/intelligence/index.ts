@@ -14,6 +14,7 @@ import type {
   Review,
 } from '@/types/domain';
 import { computeDepartures, computeTagFrequencies } from './departures';
+import { EMPTY_FRESHNESS, computeResidentFreshness } from './recency';
 import {
   computeCategoryScores,
   computeOverallScore,
@@ -24,6 +25,7 @@ import { computeTimeline } from './timeline';
 
 export * from './scoring';
 export * from './departures';
+export * from './recency';
 export * from './timeline';
 export * from './verdict';
 
@@ -64,6 +66,7 @@ export function buildPropertyIntelligence(
     timeline: computeTimeline(reviews),
     currentResidentCount: reviews.filter((r) => r.residencyStatus === 'current').length,
     formerResidentCount: reviews.filter((r) => r.residencyStatus === 'former').length,
+    freshness: computeResidentFreshness(reviews, now),
     lastReviewAt,
     reportedRent: computeReportedRent(reviews),
   };
@@ -87,6 +90,7 @@ export function emptyIntelligence(propertyId: string): PropertyIntelligence {
     timeline: [],
     currentResidentCount: 0,
     formerResidentCount: 0,
+    freshness: EMPTY_FRESHNESS,
     lastReviewAt: null,
     reportedRent: null,
   };

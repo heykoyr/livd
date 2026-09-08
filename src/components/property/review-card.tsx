@@ -7,15 +7,22 @@ import { formatRelativeTime, formatRent } from '@/lib/format';
 import { ratingToScore, scoreBand } from '@/lib/intelligence/scoring';
 import { cn } from '@/lib/utils';
 import type { PublicReview } from '@/types/domain';
+import { VerificationBadge } from './verify-location';
 import { ReportReviewButton } from './report-review';
 
 /**
  * A single resident review.
  *
- * Note what identifies the author: whether they lived there, for how long, and
- * whether that was verified. Nothing else. There is no name, no handle, no
- * avatar and no link to a profile — because there is no profile, and the
- * `PublicReview` shape this component consumes has no author field to leak.
+ * Note what identifies the author: whether they lived there, for how long, how
+ * recently, and whether that was verified. Nothing else. There is no name, no
+ * handle, no avatar and no link to a profile — because there is no profile, and
+ * the `PublicReview` shape this component consumes has no author field to leak.
+ *
+ * The verification line is deliberately quiet. It is a subtitle, not a banner:
+ * the review is what the reader came for, and a badge that shouts turns a trust
+ * signal into a ranking. The precise moment of verification never appears —
+ * "Verified 7 September at 4:13pm" would place a person at an address to the
+ * minute — and neither does the record behind it.
  */
 export function ReviewCard({
   review,
@@ -39,16 +46,11 @@ export function ReviewCard({
       <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-body font-medium text-ink">{review.attribution}</h3>
-            {review.verificationLevel === 'verified_resident' && (
-              <Badge tone="positive">
-                <CheckIcon />
-                Verified
-              </Badge>
-            )}
-            {review.verificationLevel === 'disputed' && (
-              <Badge tone="caution">Under review</Badge>
-            )}
+            {/* The full sentence — "Current resident · Location verified" —
+                lives in the heading, so recency and verification are readable
+                without reference to any badge, colour or icon. */}
+            <h3 className="text-body font-medium text-ink">{review.trustLabel}</h3>
+            <VerificationBadge level={review.verificationLevel} />
             {review.isDemo && <Badge tone="accent">{copy.property.demoBadge}</Badge>}
           </div>
           <p className="mt-1 text-label text-ink-muted">
@@ -162,19 +164,5 @@ function RatingPill({ rating, band }: { rating: number; band: string }) {
       <span className="text-micro">/5</span>
       <span className="sr-only">overall rating</span>
     </span>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 12 12" className="size-3" fill="none" aria-hidden="true">
-      <path
-        d="m2 6.3 2.3 2.3L10 2.9"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }
