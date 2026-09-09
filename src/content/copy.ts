@@ -530,6 +530,11 @@ export const copy = {
     linkFailedBody:
       'Sign-in links expire, and each one can only be used once. Enter your email and we will send another.',
     continueWithGoogle: 'Continue with Google',
+    googleWorking: 'Opening Google',
+    googleUnavailable:
+      'Google sign-in is not available on this build. Use your email address instead.',
+    googleFailed:
+      'We could not open Google just now. Try again, or use your email address instead.',
     or: 'or',
     whyAccount: 'Why do I need an account?',
     whyAccountBody:

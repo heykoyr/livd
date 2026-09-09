@@ -107,6 +107,82 @@ export async function requestSignIn(
   redirect(next);
 }
 
+/**
+ * Signing in with Google.
+ *
+ * Here because of a failure mode that no amount of care in the magic-link path
+ * could fix. Supabase's email links are single-use, and Gmail's security
+ * scanner follows every link it delivers within about fifteen seconds — so the
+ * token is spent before the person has opened the message. Every account on
+ * Livd shows the signature: email confirmed, session never created, a
+ * consistent fourteen-to-nineteen second gap.
+ *
+ * The usual remedy is to email a typed code instead of a link, which a scanner
+ * cannot use. Supabase only permits editing that email once custom SMTP is
+ * configured, and that needs a domain. OAuth needs neither: nothing is emailed,
+ * so there is nothing to intercept.
+ *
+ * This returns a URL rather than redirecting inside the action. `redirect`
+ * throws, and throwing out of a Server Action that has just set the PKCE
+ * verifier cookie loses the cookie — the browser follows the thrown redirect
+ * without ever committing the `Set-Cookie`. The exchange then fails at the
+ * callback for exactly the reason the whole magic-link flow was failing, which
+ * would be a bleak way to reintroduce the same bug.
+ */
+export async function startGoogleSignIn(
+  _previous: AuthActionState,
+  formData: FormData,
+): Promise<AuthActionState & { redirectTo?: string }> {
+  const next = safeNextPath(
+    typeof formData.get('next') === 'string' ? String(formData.get('next')) : undefined,
+  );
+
+  if (resolveDataBackend() !== 'supabase') {
+    // The local adapter signs its own cookie and has no OAuth provider to talk
+    // to. Saying so beats a button that silently does nothing.
+    return { error: copy.auth.googleUnavailable, sentTo: null };
+  }
+
+  // Keyed by origin rather than by email, because there is no email at this
+  // point — the whole appeal of this path is that Livd learns who you are only
+  // after Google has said so.
+  const { originIdentifier } = await import('./reports');
+  const limit = await checkRateLimit('authRequest', `oauth:${await originIdentifier()}`);
+  if (!limit.allowed) {
+    return { error: copy.errors.rateLimitedBody, sentTo: null };
+  }
+
+  const { createServerSupabaseClient } = await import('@/server/auth/supabase-client');
+  const supabase = await createServerSupabaseClient();
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      // The same absolute-URL rule as the magic link, and for the same reason:
+      // a relative value is discarded in favour of the project's Site URL.
+      redirectTo: `${SITE.url}/auth/callback?next=${encodeURIComponent(next)}`,
+      queryParams: {
+        // Ask Google to show the account chooser rather than silently reusing
+        // whichever account the browser last used. People share machines, and a
+        // review attributed to the wrong person is the one mistake this product
+        // cannot afford.
+        prompt: 'select_account',
+      },
+    },
+  });
+
+  if (error || !data?.url) {
+    console.error('[livd] Google sign-in could not start', {
+      status: error?.status,
+      code: error?.code,
+      message: error?.message,
+    });
+    return { error: copy.auth.googleFailed, sentTo: null };
+  }
+
+  return { error: null, sentTo: null, redirectTo: data.url };
+}
+
 export async function signOut(): Promise<void> {
   await destroySession();
   redirect('/');
