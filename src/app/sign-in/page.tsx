@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { copy } from '@/content/copy';
-import { resolveDataBackend } from '@/config/site';
+import { googleSignInEnabled, resolveDataBackend } from '@/config/site';
 import { safeNextPath } from '@/lib/auth/safe-redirect';
 import { getCurrentUser } from '@/server/auth/session';
 import { SignInForm } from './sign-in-form';
@@ -48,7 +48,11 @@ export default async function SignInPage({
           </div>
         )}
 
-        <SignInForm next={next} isLocalAdapter={resolveDataBackend() === 'local'} />
+        <SignInForm
+          next={next}
+          isLocalAdapter={resolveDataBackend() === 'local'}
+          googleEnabled={googleSignInEnabled()}
+        />
 
         <div className="mt-10 rounded-lg border border-border bg-surface-sunken/60 p-5">
           <h2 className="text-label font-semibold text-ink">{copy.auth.whyAccount}</h2>

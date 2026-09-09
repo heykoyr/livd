@@ -12,9 +12,17 @@ import { GoogleButton } from './google-button';
 export function SignInForm({
   next,
   isLocalAdapter,
+  googleEnabled,
 }: {
   next: string;
   isLocalAdapter: boolean;
+  /**
+   * Whether Google sign-in is actually configured — an OAuth client in Google
+   * Cloud and a matching secret in Supabase. Livd cannot see either, and a
+   * sign-in button that leads to an error page is worse than no button: it is
+   * the control a new visitor is most likely to press first.
+   */
+  googleEnabled: boolean;
 }) {
   const [state, formAction, pending] = useActionState(
     requestSignIn,
@@ -39,7 +47,7 @@ export function SignInForm({
       {/* Google first. Nothing is emailed on this path, so nothing can be
           consumed by a mail scanner before the person gets to it — which is
           currently the difference between signing in and not. */}
-      {!isLocalAdapter && (
+      {googleEnabled && !isLocalAdapter && (
         <>
           <GoogleButton next={next} />
 

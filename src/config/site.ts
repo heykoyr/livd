@@ -66,6 +66,23 @@ export function resolveDataBackend(): DataBackend {
   return supabaseConfigured ? 'supabase' : 'local';
 }
 
+/**
+ * Whether to offer "Continue with Google".
+ *
+ * A flag rather than an always-on button because the feature depends on
+ * configuration the application cannot see: an OAuth client in Google Cloud and
+ * a matching client ID and secret in Supabase. Livd has no way to ask whether
+ * those are in place, and a sign-in button that leads to an error page is worse
+ * than no button at all — it is the one control a new visitor is most likely to
+ * press first.
+ *
+ * Off unless `NEXT_PUBLIC_GOOGLE_SIGN_IN=true`. Public because the sign-in form
+ * is a client component and this decides whether it renders anything.
+ */
+export function googleSignInEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_GOOGLE_SIGN_IN === 'true';
+}
+
 /** Seeded sample data is shown, and labelled, only when this is on. */
 export function showDemoData(): boolean {
   return process.env.LIVD_SHOW_DEMO_DATA !== 'false';
