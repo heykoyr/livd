@@ -459,6 +459,35 @@ export interface AdminUserSummary {
   status: UserStatus;
   countryCode: CountryCode | null;
   createdAt: string;
+  reviewCount: number;
+  verifiedReviewCount: number;
+  /** Reports made about what this account wrote. Not a verdict on anything. */
+  reportsAgainst: number;
+  lastReviewAt: string | null;
+}
+
+/**
+ * How a directory listing was narrowed.
+ *
+ * `search` is either an id prefix or an email address, and which one it is
+ * decides who may run it: an internal identifier means nothing outside Livd,
+ * but typing an address into a box and getting a result confirms that address
+ * holds an account here. That is a disclosure — small, and exactly the kind a
+ * property owner's lawyer would go looking for — so it needs Trust & Safety
+ * authorisation. The database decides, by looking for an `@`.
+ */
+export interface AdminUserFilters {
+  page?: number;
+  pageSize?: number;
+  search?: string | null;
+  role?: UserRole | null;
+  status?: UserStatus | null;
+  /** True: has at least one verified review. False: has none. Null: either. */
+  hasVerifiedReviews?: boolean | null;
+  /** True: something they wrote has been reported. Null: either. */
+  hasReports?: boolean | null;
+  joinedAfter?: string | null;
+  minReviews?: number | null;
 }
 
 /** One page of the administrative user directory. */
@@ -467,6 +496,68 @@ export interface AdminUserPage {
   total: number;
   page: number;
   pageSize: number;
+}
+
+/**
+ * One account, in as much detail as a moderator is entitled to.
+ *
+ * Still masked. Everything here is either the account's own standing or a
+ * count of its activity — nothing that identifies the person. Revealing the
+ * address is a separate operation with its own authorisation and its own audit
+ * entry, and this type has no field for the result.
+ */
+export interface AdminUserDetail {
+  id: string;
+  maskedEmail: string;
+  role: UserRole;
+  status: UserStatus;
+  countryCode: CountryCode | null;
+  preferredLocale: string;
+  createdAt: string;
+  reviewCount: number;
+  publishedReviewCount: number;
+  removedReviewCount: number;
+  heldReviewCount: number;
+  verifiedReviewCount: number;
+  reportsAgainst: number;
+  reportsMade: number;
+  /** How many location checks this account has attempted. Never where. */
+  locationCheckCount: number;
+  residencySubmissions: number;
+  lastReviewAt: string | null;
+}
+
+/** One review by the account being investigated, with what happened to it. */
+export interface AdminUserReview {
+  reviewId: string;
+  propertyId: string;
+  propertySlug: string;
+  address: PropertyAddress;
+  overallRating: number;
+  residencyStatus: ResidencyStatus;
+  verificationLevel: VerificationLevel;
+  status: ReviewStatus;
+  createdAt: string;
+  reportCount: number;
+}
+
+/**
+ * One report about something the account wrote.
+ *
+ * The reporter is an id and nothing more. A moderator needs to see that the
+ * same account filed nine of these; they do not need to know whose account it
+ * is, and nothing here tells them.
+ */
+export interface AdminUserReport {
+  reportId: string;
+  reviewId: string;
+  reporterId: string | null;
+  reason: ReportReason;
+  detail: string | null;
+  status: ReportStatus;
+  resolution: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
 }
 
 export type ReportReason =

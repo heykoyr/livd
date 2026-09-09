@@ -1,5 +1,9 @@
 import type {
+  AdminUserDetail,
+  AdminUserFilters,
   AdminUserPage,
+  AdminUserReport,
+  AdminUserReview,
   ClaimStatus,
   UserRole,
   ModerationAction,
@@ -503,7 +507,29 @@ export interface LivdRepository {
    * anyone the layout guard admitted, which includes moderators, and recorded
    * nothing.
    */
-  listAdminUsers(options?: { page?: number; pageSize?: number }): Promise<AdminUserPage>;
+  listAdminUsers(filters?: AdminUserFilters): Promise<AdminUserPage>;
+
+  /**
+   * One account, as a moderator is entitled to see it.
+   *
+   * Masked, like the directory. Nothing here identifies the person — it is
+   * their standing and the shape of their activity, which is what an
+   * investigation actually runs on. Revealing the address is a separate
+   * operation with its own authorisation and its own audit entry.
+   */
+  getAdminUserDetail(userId: string): Promise<AdminUserDetail | null>;
+
+  /** What one account has written, and what happened to each of them. */
+  listAdminUserReviews(
+    userId: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ items: AdminUserReview[]; total: number; page: number; pageSize: number }>;
+
+  /** Reports about what one account wrote. The reporter stays an id. */
+  listAdminUserReports(
+    userId: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ items: AdminUserReport[]; total: number; page: number; pageSize: number }>;
 
   /**
    * Grants a role.

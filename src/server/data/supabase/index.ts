@@ -14,7 +14,11 @@ import {
   createServiceRoleClient,
 } from '@/server/auth/supabase-client';
 import type {
+  AdminUserDetail,
+  AdminUserFilters,
   AdminUserPage,
+  AdminUserReport,
+  AdminUserReview,
   ClaimStatus,
   ModerationAction,
   Property,
@@ -143,6 +147,66 @@ interface AdminUserDirectoryRow {
   status: UserProfile['status'];
   country_code: string | null;
   created_at: string;
+  review_count: number | string;
+  verified_review_count: number | string;
+  reports_against: number | string;
+  last_review_at: string | null;
+  total_count: number | string;
+}
+
+/** One row of `livd_admin_user_detail`. */
+interface AdminUserDetailRow {
+  id: string;
+  masked_email: string;
+  role: UserProfile['role'];
+  status: UserProfile['status'];
+  country_code: string | null;
+  preferred_locale: string;
+  created_at: string;
+  review_count: number | string;
+  published_review_count: number | string;
+  removed_review_count: number | string;
+  held_review_count: number | string;
+  verified_review_count: number | string;
+  reports_against: number | string;
+  reports_made: number | string;
+  location_check_count: number | string;
+  residency_submissions: number | string;
+  last_review_at: string | null;
+}
+
+/** One row of `livd_admin_user_reviews`. */
+interface AdminUserReviewRow {
+  review_id: string;
+  property_id: string;
+  property_slug: string;
+  building_name: string | null;
+  street_address: string | null;
+  neighbourhood: string | null;
+  locality: string;
+  admin_area: string | null;
+  postal_code: string | null;
+  country_code: string;
+  overall_rating: number;
+  residency_status: AdminUserReview['residencyStatus'];
+  verification_level: AdminUserReview['verificationLevel'];
+  status: AdminUserReview['status'];
+  created_at: string;
+  report_count: number | string;
+  total_count: number | string;
+}
+
+/** One row of `livd_admin_user_reports`. */
+interface AdminUserReportRow {
+  report_id: string;
+  review_id: string;
+  reporter_id: string | null;
+  reason: AdminUserReport['reason'];
+  detail: string | null;
+  status: AdminUserReport['status'];
+  resolution: string | null;
+  created_at: string;
+  resolved_at: string | null;
   total_count: number | string;
 }
 
@@ -1859,6 +1923,133 @@ export class SupabaseRepository implements LivdRepository {
   }
 
   /**
+   * One account, masked.
+   *
+   * Note what this cannot return. `livd_admin_user_detail` selects
+   * `livd_mask_email(u.email)` and never `u.email`, so there is no code path
+   * from this method to an address — not a guarded one, none at all. The reveal
+   * is a different function with a different authorisation and an audit entry
+   * of its own.
+   */
+  async getAdminUserDetail(userId: string): Promise<AdminUserDetail | null> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_admin_user_detail', {
+      target_user_id: userId,
+    });
+
+    if (error) throw new Error(`getAdminUserDetail: ${error.message}`);
+
+    const row = (Array.isArray(data) ? data[0] : data) as AdminUserDetailRow | undefined;
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      maskedEmail: row.masked_email,
+      role: row.role,
+      status: row.status,
+      countryCode: row.country_code,
+      preferredLocale: row.preferred_locale,
+      createdAt: row.created_at,
+      reviewCount: Number(row.review_count ?? 0),
+      publishedReviewCount: Number(row.published_review_count ?? 0),
+      removedReviewCount: Number(row.removed_review_count ?? 0),
+      heldReviewCount: Number(row.held_review_count ?? 0),
+      verifiedReviewCount: Number(row.verified_review_count ?? 0),
+      reportsAgainst: Number(row.reports_against ?? 0),
+      reportsMade: Number(row.reports_made ?? 0),
+      locationCheckCount: Number(row.location_check_count ?? 0),
+      residencySubmissions: Number(row.residency_submissions ?? 0),
+      lastReviewAt: row.last_review_at,
+    };
+  }
+
+  async listAdminUserReviews(
+    userId: string,
+    options: { page?: number; pageSize?: number } = {},
+  ): Promise<{ items: AdminUserReview[]; total: number; page: number; pageSize: number }> {
+    const pageSize = Math.min(Math.max(options.pageSize ?? ADMIN_PAGE_SIZE, 1), 100);
+    const page = Math.max(options.page ?? 1, 1);
+
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_admin_user_reviews', {
+      target_user_id: userId,
+      page_size: pageSize,
+      page_offset: (page - 1) * pageSize,
+    });
+
+    if (error) throw new Error(`listAdminUserReviews: ${error.message}`);
+
+    const rows = (data ?? []) as AdminUserReviewRow[];
+
+    return {
+      items: rows.map((row) => ({
+        reviewId: row.review_id,
+        propertyId: row.property_id,
+        propertySlug: row.property_slug,
+        // Components, not a rendered string: the admin console formats an
+        // address with the same per-country template as every other surface.
+        address: {
+          buildingName: row.building_name,
+          streetAddress: row.street_address,
+          neighbourhood: row.neighbourhood,
+          locality: row.locality,
+          adminArea: row.admin_area,
+          postalCode: row.postal_code,
+          countryCode: row.country_code,
+        },
+        overallRating: row.overall_rating,
+        residencyStatus: row.residency_status,
+        verificationLevel: row.verification_level,
+        status: row.status,
+        createdAt: row.created_at,
+        reportCount: Number(row.report_count ?? 0),
+      })),
+      total: rows[0]?.total_count ? Number(rows[0].total_count) : 0,
+      page,
+      pageSize,
+    };
+  }
+
+  async listAdminUserReports(
+    userId: string,
+    options: { page?: number; pageSize?: number } = {},
+  ): Promise<{ items: AdminUserReport[]; total: number; page: number; pageSize: number }> {
+    const pageSize = Math.min(Math.max(options.pageSize ?? ADMIN_PAGE_SIZE, 1), 100);
+    const page = Math.max(options.page ?? 1, 1);
+
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_admin_user_reports', {
+      target_user_id: userId,
+      page_size: pageSize,
+      page_offset: (page - 1) * pageSize,
+    });
+
+    if (error) throw new Error(`listAdminUserReports: ${error.message}`);
+
+    const rows = (data ?? []) as AdminUserReportRow[];
+
+    return {
+      items: rows.map((row) => ({
+        reportId: row.report_id,
+        reviewId: row.review_id,
+        reporterId: row.reporter_id,
+        reason: row.reason,
+        detail: row.detail,
+        status: row.status,
+        resolution: row.resolution,
+        createdAt: row.created_at,
+        resolvedAt: row.resolved_at,
+      })),
+      total: rows[0]?.total_count ? Number(rows[0].total_count) : 0,
+      page,
+      pageSize,
+    };
+  }
+
+  /**
    * Resolves an address to an account id.
    *
    * One indexed lookup inside `livd_admin_find_user_by_email`, behind that
@@ -1924,17 +2115,22 @@ export class SupabaseRepository implements LivdRepository {
    * past the first page the addresses did not even belong to the rows they
    * were shown beside.
    */
-  async listAdminUsers(
-    options: { page?: number; pageSize?: number } = {},
-  ): Promise<AdminUserPage> {
-    const pageSize = Math.min(Math.max(options.pageSize ?? ADMIN_PAGE_SIZE, 1), 100);
-    const page = Math.max(options.page ?? 1, 1);
+  async listAdminUsers(filters: AdminUserFilters = {}): Promise<AdminUserPage> {
+    const pageSize = Math.min(Math.max(filters.pageSize ?? ADMIN_PAGE_SIZE, 1), 100);
+    const page = Math.max(filters.page ?? 1, 1);
 
     const supabase = await this.client();
 
     const { data, error } = await supabase.rpc('livd_admin_user_directory', {
       page_size: pageSize,
       page_offset: (page - 1) * pageSize,
+      search_term: filters.search ?? null,
+      filter_role: filters.role ?? null,
+      filter_status: filters.status ?? null,
+      filter_verified: filters.hasVerifiedReviews ?? null,
+      filter_reported: filters.hasReports ?? null,
+      joined_after: filters.joinedAfter ?? null,
+      min_review_count: filters.minReviews ?? null,
     });
 
     if (error) throw new Error(`listAdminUsers: ${error.message}`);
@@ -1949,6 +2145,10 @@ export class SupabaseRepository implements LivdRepository {
         status: row.status,
         countryCode: row.country_code,
         createdAt: row.created_at,
+        reviewCount: Number(row.review_count ?? 0),
+        verifiedReviewCount: Number(row.verified_review_count ?? 0),
+        reportsAgainst: Number(row.reports_against ?? 0),
+        lastReviewAt: row.last_review_at,
       })),
       // `count(*) over ()` rides on every row, so a page with rows knows the
       // total without a second query. An empty page past the end knows only

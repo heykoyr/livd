@@ -39,4 +39,9 @@ export {
   type AdminAuditOutcome,
   type AdminSubjectType,
 } from './audit';
-export { changeUserRole, changeUserStatus, readUserDirectory } from './users';
+export {
+  changeUserRole,
+  changeUserStatus,
+  readUserDirectory,
+  readUserDetail,
+} from './users';

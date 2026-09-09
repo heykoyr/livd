@@ -9,7 +9,11 @@ import { matchScore, normaliseForSearch } from '@/lib/search/matching';
 import { formatAddressInline, propertyContextLine, propertyDisplayName } from '@/lib/format';
 import { propertySlug, shortId } from '@/lib/utils';
 import type {
+  AdminUserDetail,
+  AdminUserFilters,
   AdminUserPage,
+  AdminUserReport,
+  AdminUserReview,
   ClaimStatus,
   ModerationAction,
   Property,
@@ -131,6 +135,44 @@ function addressKey(input: {
     normaliseForSearch(input.streetAddress ?? ''),
     normaliseForSearch(input.buildingName ?? ''),
   ].join('|');
+}
+
+
+/**
+ * Everything the directory and the detail view count about one account.
+ *
+ * Postgres has `livd_admin_user_counts`, shared by both callers for the same
+ * reason: a list saying four reviews beside a page saying three is a bug
+ * somebody chases for an afternoon.
+ */
+function countsFor(database: LocalDatabase, userId: string) {
+  const authored = database.reviews.filter((review) => review.authorId === userId);
+  const authoredIds = new Set(authored.map((review) => review.id));
+
+  return {
+    reviewCount: authored.length,
+    publishedReviewCount: authored.filter((r) => r.status === 'published').length,
+    removedReviewCount: authored.filter((r) => r.status === 'removed').length,
+    heldReviewCount: authored.filter(
+      (r) => r.status === 'held' || r.status === 'pending_moderation',
+    ).length,
+    verifiedReviewCount: authored.filter(
+      (r) =>
+        r.verificationLevel === 'location_verified' ||
+        r.verificationLevel === 'verified_resident',
+    ).length,
+    reportsAgainst: database.reports.filter((report) => authoredIds.has(report.reviewId)).length,
+    reportsMade: database.reports.filter((report) => report.reporterId === userId).length,
+    locationCheckCount: database.propertyVerifications.filter((v) => v.userId === userId).length,
+    residencySubmissions: database.verifications.filter((v) => v.submittedBy === userId).length,
+    lastReviewAt:
+      authored.length === 0
+        ? null
+        : authored.reduce(
+            (latest, review) => (review.createdAt > latest ? review.createdAt : latest),
+            authored[0]!.createdAt,
+          ),
+  };
 }
 
 export class LocalRepository implements LivdRepository {
@@ -1566,28 +1608,157 @@ export class LocalRepository implements LivdRepository {
    * never carried into the returned object. `tests/safety/identity.test.ts`
    * pins the two rules to each other.
    */
-  async listAdminUsers(
-    options: { page?: number; pageSize?: number } = {},
-  ): Promise<AdminUserPage> {
-    const pageSize = Math.min(Math.max(options.pageSize ?? 25, 1), 100);
-    const page = Math.max(options.page ?? 1, 1);
+  async listAdminUsers(filters: AdminUserFilters = {}): Promise<AdminUserPage> {
+    const pageSize = Math.min(Math.max(filters.pageSize ?? 25, 1), 100);
+    const page = Math.max(filters.page ?? 1, 1);
 
     const database = await getDatabase();
 
+    const term = filters.search?.trim().toLowerCase() || null;
+    const searchingByEmail = term !== null && term.includes('@');
+
     const all = database.users
       .filter((user) => !user.id.startsWith('demo-user-'))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      .filter((user) => {
+        if (term === null) return true;
+        // An address is matched exactly; an id is matched by prefix. An
+        // internal identifier is looked up, never trawled.
+        return searchingByEmail
+          ? user.email.toLowerCase() === term
+          : user.id.toLowerCase().startsWith(term);
+      })
+      .filter((user) => !filters.role || user.role === filters.role)
+      .filter((user) => !filters.status || user.status === filters.status)
+      .filter((user) => !filters.joinedAfter || user.createdAt >= filters.joinedAfter)
+      .map((user) => ({ user, counts: countsFor(database, user.id) }))
+      .filter(({ counts }) =>
+        filters.hasVerifiedReviews === null || filters.hasVerifiedReviews === undefined
+          ? true
+          : filters.hasVerifiedReviews
+            ? counts.verifiedReviewCount > 0
+            : counts.verifiedReviewCount === 0,
+      )
+      .filter(({ counts }) =>
+        filters.hasReports === null || filters.hasReports === undefined
+          ? true
+          : filters.hasReports
+            ? counts.reportsAgainst > 0
+            : counts.reportsAgainst === 0,
+      )
+      .filter(({ counts }) => !filters.minReviews || counts.reviewCount >= filters.minReviews)
+      .sort(
+        (a, b) =>
+          b.user.createdAt.localeCompare(a.user.createdAt) || b.user.id.localeCompare(a.user.id),
+      );
 
     const start = (page - 1) * pageSize;
 
     return {
-      items: all.slice(start, start + pageSize).map((user) => ({
+      items: all.slice(start, start + pageSize).map(({ user, counts }) => ({
         id: user.id,
         maskedEmail: maskEmail(user.email),
         role: user.role,
         status: user.status,
         countryCode: user.countryCode,
         createdAt: user.createdAt,
+        reviewCount: counts.reviewCount,
+        verifiedReviewCount: counts.verifiedReviewCount,
+        reportsAgainst: counts.reportsAgainst,
+        lastReviewAt: counts.lastReviewAt,
+      })),
+      total: all.length,
+      page,
+      pageSize,
+    };
+  }
+
+  async getAdminUserDetail(userId: string): Promise<AdminUserDetail | null> {
+    const database = await getDatabase();
+    const user = database.users.find((u) => u.id === userId);
+    if (!user) return null;
+
+    const counts = countsFor(database, userId);
+
+    return {
+      id: user.id,
+      maskedEmail: maskEmail(user.email),
+      role: user.role,
+      status: user.status,
+      countryCode: user.countryCode,
+      preferredLocale: user.preferredLocale,
+      createdAt: user.createdAt,
+      ...counts,
+    };
+  }
+
+  async listAdminUserReviews(
+    userId: string,
+    options: { page?: number; pageSize?: number } = {},
+  ): Promise<{ items: AdminUserReview[]; total: number; page: number; pageSize: number }> {
+    const pageSize = Math.min(Math.max(options.pageSize ?? 25, 1), 100);
+    const page = Math.max(options.page ?? 1, 1);
+
+    const database = await getDatabase();
+
+    const all = database.reviews
+      .filter((review) => review.authorId === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+
+    const start = (page - 1) * pageSize;
+
+    const items = all
+      .slice(start, start + pageSize)
+      .map((review) => {
+        const property = database.properties.find((p) => p.id === review.propertyId);
+        if (!property) return null;
+
+        return {
+          reviewId: review.id,
+          propertyId: property.id,
+          propertySlug: property.slug,
+          address: property.address,
+          overallRating: review.overallRating,
+          residencyStatus: review.residencyStatus,
+          verificationLevel: review.verificationLevel,
+          status: review.status,
+          createdAt: review.createdAt,
+          reportCount: database.reports.filter((r) => r.reviewId === review.id).length,
+        };
+      })
+      .filter((entry): entry is AdminUserReview => entry !== null);
+
+    return { items, total: all.length, page, pageSize };
+  }
+
+  async listAdminUserReports(
+    userId: string,
+    options: { page?: number; pageSize?: number } = {},
+  ): Promise<{ items: AdminUserReport[]; total: number; page: number; pageSize: number }> {
+    const pageSize = Math.min(Math.max(options.pageSize ?? 25, 1), 100);
+    const page = Math.max(options.page ?? 1, 1);
+
+    const database = await getDatabase();
+    const authored = new Set(
+      database.reviews.filter((review) => review.authorId === userId).map((review) => review.id),
+    );
+
+    const all = database.reports
+      .filter((report) => authored.has(report.reviewId))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+
+    const start = (page - 1) * pageSize;
+
+    return {
+      items: all.slice(start, start + pageSize).map((report) => ({
+        reportId: report.id,
+        reviewId: report.reviewId,
+        reporterId: report.reporterId,
+        reason: report.reason,
+        detail: report.detail,
+        status: report.status,
+        resolution: report.resolution,
+        createdAt: report.createdAt,
+        resolvedAt: report.resolvedAt,
       })),
       total: all.length,
       page,
