@@ -22,21 +22,30 @@ import type { GeocodeCandidate, GeocodePrecision, GeocodeResult, Geocoder } from
  */
 
 /**
- * Google's `location_type`, translated.
+ * Google's `location_type` says *how* the point was derived, and `types` says
+ * *what* was found. Neither means anything without the other, which is the
+ * subtlety that matters most in this file.
  *
  *   ROOFTOP             the building itself.
  *   RANGE_INTERPOLATED  estimated between two known house numbers on the
  *                       street. Accepted — in a dense city it lands within a
  *                       few tens of metres, which the verification budget
  *                       absorbs, and refusing it would lose most of Lagos.
- *   GEOMETRIC_CENTER    the middle of a road or polygon. This is the Admiralty
- *                       Way case and it is refused.
+ *   GEOMETRIC_CENTER    the centre of whatever was matched. For a road that is
+ *                       a midpoint hundreds of metres from any door; for a
+ *                       building or a named place it is the centre of that
+ *                       building. So this one cannot be judged alone, and
+ *                       `precisionOf` resolves it against `types`.
  *   APPROXIMATE         a district or a city.
+ *
+ * Getting this wrong is not academic: treating GEOMETRIC_CENTER as street-level
+ * regardless refused Eko Pearl Towers in Lagos, Marina Gate in Dubai and Britam
+ * Tower in Nairobi — named buildings Google locates perfectly well, and exactly
+ * the addresses the commercial provider was added to reach.
  */
 const LOCATION_TYPE_PRECISION: Record<string, GeocodePrecision> = {
   ROOFTOP: 'building',
   RANGE_INTERPOLATED: 'interpolated',
-  GEOMETRIC_CENTER: 'street',
   APPROXIMATE: 'area',
 };
 
@@ -103,13 +112,20 @@ function localityOf(result: GoogleResult): string | null {
 
 function precisionOf(result: GoogleResult): GeocodePrecision {
   const types = result.types ?? [];
+  const isPlace = types.some((t) => PLACE_TYPES.has(t));
 
   // A road is a road however precisely its centre was computed.
-  if (types.some((t) => ROAD_TYPES.has(t)) && !types.some((t) => PLACE_TYPES.has(t))) {
-    return 'street';
+  if (types.some((t) => ROAD_TYPES.has(t)) && !isPlace) return 'street';
+
+  const locationType = result.geometry?.location_type ?? '';
+
+  // The centre of a *place* is that place. The centre of anything else is a
+  // midpoint of something long, which is the failure this gate exists for.
+  if (locationType === 'GEOMETRIC_CENTER') {
+    return isPlace ? 'building' : 'street';
   }
 
-  const fromLocationType = LOCATION_TYPE_PRECISION[result.geometry?.location_type ?? ''];
+  const fromLocationType = LOCATION_TYPE_PRECISION[locationType];
   if (fromLocationType) return fromLocationType;
 
   // An unrecognised label is treated as the weakest thing it could be. A new
@@ -170,10 +186,22 @@ export class GoogleGeocoder implements Geocoder {
       const lng = result.geometry?.location?.lng;
       if (typeof lat !== 'number' || typeof lng !== 'number') return null;
 
-      // `bounds` is the feature's real extent; `viewport` is a display hint and
-      // is padded, so it is only used when there is nothing better and is
-      // measured against the same limit.
-      const box = result.geometry?.bounds ?? result.geometry?.viewport;
+      /*
+       * `bounds` only. Never `viewport`.
+       *
+       * `viewport` is a display window — how far to zoom out to show the
+       * result — and Google pads it to roughly 300 metres for *every* point,
+       * however exact. Measuring it as if it were the feature's size therefore
+       * refuses every precise answer it has: a rooftop match on 32 Long Street
+       * in Cape Town and on Britam Tower in Nairobi both failed on this before
+       * it was fixed.
+       *
+       * `bounds` is the real extent and is present exactly where it matters —
+       * on roads and areas. Hill Road in Mumbai reports 1,554 metres and is
+       * refused on it. Where `bounds` is absent there is nothing to measure,
+       * and the precision label carries the decision alone.
+       */
+      const box = result.geometry?.bounds;
       const candidate: GeocodeCandidate = {
         latitude: lat,
         longitude: lng,
@@ -193,10 +221,25 @@ export class GoogleGeocoder implements Geocoder {
         locality: localityOf(result),
       };
 
-      // `partial_match` means Google could not match the whole address and
-      // guessed at part of it. Tolerable when it still landed on a building;
-      // not tolerable as the basis for anything softer.
-      if (result.partial_match && candidate.precision !== 'building') return null;
+      /*
+       * `partial_match` means Google could not match the whole query and
+       * matched part of it instead, which is only trustworthy when it is
+       * nonetheless certain about the point it returns.
+       *
+       * The line is drawn at ROOFTOP rather than at the derived precision,
+       * because a partial match on a *named place* is the dangerous
+       * combination: "Eko Pearl Towers, Lagos" comes back partial, typed as an
+       * establishment, positioned at the centre of Eko Pearl Boulevard — a
+       * road with a similar name. That reads as a confident building match and
+       * is not one.
+       *
+       * "Admiralty Heights, 8 Admiralty Way, Lagos" is also partial — Google
+       * discards the building name — but returns ROOFTOP on the street address
+       * it did understand, which is a real answer to a real part of the query.
+       */
+      if (result.partial_match && result.geometry?.location_type !== 'ROOFTOP') {
+        return null;
+      }
 
       return acceptCandidate(candidate, input);
     } catch {

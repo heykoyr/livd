@@ -136,10 +136,15 @@ quickest way to improve on the free option.
 **Coverage is the reason a paid provider is worth it, and it is not uniform.**
 Measured against real addresses:
 
-| | Berlin · Austin · London | Lagos · Cape Town | Dubai |
-| --- | --- | --- | --- |
-| OpenStreetMap | building | road only — refused | no match |
-| Google | building | building / establishment | building |
+| | Berlin · London · Austin | Lagos · Abuja | Cape Town | Dubai · Nairobi |
+| --- | --- | --- | --- | --- |
+| OpenStreetMap | building | road only — refused | road only — refused | no match |
+| Google | building | building | building | building |
+
+Measured, not estimated. Admiralty Heights in Lekki, 10 Gana Street in Maitama,
+32 Long Street in Cape Town, Marina Gate in Dubai Marina and Britam Tower in
+Upper Hill all resolve to buildings through Google and none of them resolve
+through OpenStreetMap.
 
 **Whatever the provider, anything less precise than a building is refused.**
 Nominatim answers "8 Admiralty Way, Lagos" with the road — a feature spanning

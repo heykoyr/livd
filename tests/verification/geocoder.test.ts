@@ -202,7 +202,7 @@ describe('Google', () => {
     expect(await getGeocoder().geocode(LAGOS)).toBeNull();
   });
 
-  it('refuses a partial match that is not a building', async () => {
+  it('refuses a partial match that is not a rooftop', async () => {
     stubFetch(
       googleResult({
         partial_match: true,
@@ -210,6 +210,105 @@ describe('Google', () => {
       }),
     );
     expect(await getGeocoder().geocode(LAGOS)).toBeNull();
+  });
+
+  /* --- Regressions. Every case below was refused by an earlier version of
+   *     this gate, and every one is a real Google response. --- */
+
+  it('accepts a point result that has only a viewport', async () => {
+    // `viewport` is a display window Google pads to roughly 300m for *every*
+    // point, however exact. Measuring it as the feature's size refused every
+    // precise answer Google had — 32 Long Street in Cape Town and Britam Tower
+    // in Nairobi were both rooftop matches lost to this.
+    stubFetch(
+      googleResult({
+        types: ['street_address', 'subpremise'],
+        geometry: {
+          location: { lat: -33.9207, lng: 18.4209 },
+          location_type: 'ROOFTOP',
+          viewport: {
+            northeast: { lat: -33.9193, lng: 18.4223 },
+            southwest: { lat: -33.922, lng: 18.4196 },
+          },
+        },
+        address_components: [{ long_name: 'Cape Town', types: ['locality', 'political'] }],
+      }),
+    );
+    expect(await getGeocoder().geocode({ ...LAGOS, locality: 'Cape Town' })).toEqual({
+      latitude: -33.9207,
+      longitude: 18.4209,
+    });
+  });
+
+  it('accepts the centre of a named building', async () => {
+    // How Marina Gate in Dubai and Eko Pearl in Lagos actually come back.
+    // GEOMETRIC_CENTER of an establishment is the centre of that building, not
+    // the midpoint of a road, and refusing it lost most of the Gulf.
+    stubFetch(
+      googleResult({
+        types: ['establishment', 'point_of_interest'],
+        geometry: {
+          location: { lat: 25.0868, lng: 55.1476 },
+          location_type: 'GEOMETRIC_CENTER',
+        },
+        address_components: [{ long_name: 'Dubai', types: ['locality', 'political'] }],
+      }),
+    );
+    expect(await getGeocoder().geocode({ ...LAGOS, locality: 'Dubai' })).not.toBeNull();
+  });
+
+  it('still refuses the centre of a road', async () => {
+    // The other half of the same rule, and the one that must not regress:
+    // Hill Road in Mumbai is 1,554m long.
+    stubFetch(
+      googleResult({
+        types: ['route'],
+        geometry: {
+          location: { lat: 19.0544, lng: 72.8256 },
+          location_type: 'GEOMETRIC_CENTER',
+          bounds: {
+            northeast: { lat: 19.0605, lng: 72.8301 },
+            southwest: { lat: 19.0521, lng: 72.8225 },
+          },
+        },
+      }),
+    );
+    expect(await getGeocoder().geocode(LAGOS)).toBeNull();
+  });
+
+  it('refuses a half-understood query that landed on a similarly named place', async () => {
+    // "Eko Pearl Towers, Lagos" returns partial, typed as an establishment,
+    // positioned on Eko Pearl *Boulevard*. That reads as a confident building
+    // match and is not one.
+    stubFetch(
+      googleResult({
+        partial_match: true,
+        types: ['establishment', 'point_of_interest'],
+        formatted_address: 'Eko Pearl Blvd, Lagos 106104, Lagos, Nigeria',
+        geometry: {
+          location: { lat: 6.4225, lng: 3.4076 },
+          location_type: 'GEOMETRIC_CENTER',
+        },
+      }),
+    );
+    expect(await getGeocoder().geocode(LAGOS)).toBeNull();
+  });
+
+  it('accepts a half-understood query that still found the street exactly', async () => {
+    // "Admiralty Heights, 8 Admiralty Way, Lagos" is partial because Google
+    // discards the building name, but ROOFTOP on the street address it did
+    // understand is a real answer to a real part of the query.
+    stubFetch(
+      googleResult({
+        partial_match: true,
+        types: ['street_address', 'subpremise'],
+        geometry: { location: { lat: 6.4476, lng: 3.4752 }, location_type: 'ROOFTOP' },
+      }),
+    );
+    expect(await getGeocoder().geocode(LAGOS)).toEqual({
+      latitude: 6.4476,
+      longitude: 3.4752,
+    });
   });
 
   it('refuses a precise match in the wrong city', async () => {
