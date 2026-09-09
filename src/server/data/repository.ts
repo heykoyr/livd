@@ -1,6 +1,7 @@
 import type {
   AdminUserPage,
   ClaimStatus,
+  UserRole,
   ModerationAction,
   Property,
   PropertyClaim,
@@ -27,6 +28,7 @@ import type {
   VerificationOutcome,
   VerificationRecord,
 } from '@/types/domain';
+import type { AdminAuditEntry } from '@/server/admin/audit';
 
 /**
  * The data contract.
@@ -150,6 +152,29 @@ export interface AccountDeletionSummary {
   locationChecksDestroyed: number;
   /** Saved properties destroyed. */
   savedPropertiesDestroyed: number;
+}
+
+/** One entry in the administrative audit log, as a reader sees it. */
+export interface AdminAuditRecord {
+  id: string;
+  /** Null once the administrator has deleted their account. The entry survives. */
+  actorId: string | null;
+  /** What they were at the time, never re-read from the profile. */
+  actorRole: UserRole;
+  action: string;
+  subjectType: string;
+  subjectId: string | null;
+  outcome: 'succeeded' | 'denied' | 'failed';
+  reason: string | null;
+  detail: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AdminAuditPage {
+  items: AdminAuditRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface AdminOverview {
@@ -377,6 +402,31 @@ export interface LivdRepository {
 
   recordModerationAction(input: Omit<ModerationAction, 'id' | 'createdAt'>): Promise<ModerationAction>;
   listModerationActions(subjectId?: string, limit?: number): Promise<ModerationAction[]>;
+
+  /* ---- Administrative audit ---- */
+
+  /**
+   * Records one sensitive administrative access.
+   *
+   * Separate from `recordModerationAction`, which records decisions about
+   * content. This records *reads* as well — that somebody opened a tenancy
+   * agreement, or looked up who wrote a review — which the moderation trail
+   * cannot express, because a read is not a decision and there was never a row
+   * to attach it to.
+   *
+   * Called by `runAdminAction`, not by operations themselves. The actor is
+   * stamped from the session inside the database, so an entry cannot be
+   * attributed to somebody who did not do the thing.
+   */
+  recordAdminAudit(entry: AdminAuditEntry): Promise<void>;
+
+  /** The audit log, newest first. Trust & Safety and above only. */
+  listAdminAudit(options?: {
+    page?: number;
+    pageSize?: number;
+    action?: string | null;
+    subjectId?: string | null;
+  }): Promise<AdminAuditPage>;
 
   /* ---- Claims & owner responses ---- */
 

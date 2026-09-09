@@ -159,6 +159,43 @@ is the absence of the value.
 
 ---
 
+## 2026-09-09 · Phase 2 · the administrative audit log
+
+Migration under test: `0023_admin_audit_log`.
+
+| Attack / behaviour | Result |
+|---|---|
+| Entry written by a moderator is stamped with their real id and role | 1 row, `actor_id` and `actor_role` both correct |
+| **Moderator** reads `admin_audit_log` directly | 0 rows |
+| Resident reads `admin_audit_log` directly | 0 rows |
+| Anonymous visitor reads `admin_audit_log` directly | 0 rows |
+| Moderator calls `livd_admin_audit_log` | BLOCKED — `Not authorised to read the audit log` |
+| Trust & Safety admin calls `livd_admin_audit_log` | 1 row — works |
+| Service role **deletes** an entry | BLOCKED — grant revoked |
+| Service role **rewrites** an entry | BLOCKED — grant revoked |
+| **Table owner** deletes an entry | BLOCKED — `admin_audit_log is append-only` |
+
+Two of these deserve more than a row in a table.
+
+**A moderator cannot read the audit log.** They are among the people it exists
+to hold accountable, and a log its subjects can review is a log they can learn
+to work around. The case timeline in a later phase is what shows a moderator
+the history of work they are entitled to see.
+
+**The table owner is refused too.** The grants stop `service_role` — which is
+what every administrative write in this application actually uses — but the
+trigger is what stops `postgres`. Append-only enforced by privilege alone would
+have left the most privileged connection able to erase the record of what it
+did, which is the failure mode the log exists to prevent.
+
+The actor and their role are stamped inside `livd_record_admin_audit` from
+`auth.uid()`, never taken as arguments, so an entry cannot be attributed to
+somebody who did not perform the action. `actor_role` is captured at write
+time rather than joined at read time: a demotion must not rewrite what somebody
+was when they did the thing.
+
+---
+
 ## A false pass, and what it cost
 
 The first run of the suite above reported tests 1–4 as BLOCKED with SQLSTATE

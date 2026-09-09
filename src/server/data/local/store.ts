@@ -78,6 +78,27 @@ export interface LocalDatabase {
     reviewedBy: string;
     reviewedAt: string;
   }>;
+  /**
+   * The administrative audit log.
+   *
+   * Postgres keeps this in its own table, append-only by trigger and readable
+   * only by trust_admin and above. Here it is an array that nothing removes
+   * from — the local adapter has no privilege system to enforce that with, so
+   * the discipline is in the code rather than in the store, and the store
+   * refuses to run in production for exactly this class of reason.
+   */
+  adminAudit: Array<{
+    id: string;
+    actorId: string | null;
+    actorRole: UserProfile['role'];
+    action: string;
+    subjectType: string;
+    subjectId: string | null;
+    outcome: 'succeeded' | 'denied' | 'failed';
+    reason: string | null;
+    detail: Record<string, unknown>;
+    createdAt: string;
+  }>;
   saved: SavedProperty[];
   helpfulVotes: Array<{ reviewId: string; voterId: string }>;
   searchEvents: Array<{
@@ -111,6 +132,7 @@ function emptyDatabase(): LocalDatabase {
     verifications: [],
     propertyVerifications: [],
     flagDecisions: [],
+    adminAudit: [],
     saved: [],
     helpfulVotes: [],
     searchEvents: [],

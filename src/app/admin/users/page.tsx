@@ -1,9 +1,9 @@
 import { Badge, Card, EmptyState } from '@/components/ui/primitives';
 import { Pagination } from '@/components/ui/pagination';
 import { formatRelativeTime } from '@/lib/format';
+import { readUserDirectory } from '@/server/admin';
 import { hasRole } from '@/server/auth/guards';
 import { getCurrentUser } from '@/server/auth/session';
-import { getRepository } from '@/server/data';
 import type { UserRole, UserStatus } from '@/types/domain';
 import { RoleControls, StatusControls } from '../moderation-controls';
 
@@ -54,8 +54,19 @@ export default async function UsersPage({
   const requestedPage = Number(typeof params.page === 'string' ? params.page : '1');
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
 
-  const [repository, viewer] = await Promise.all([getRepository(), getCurrentUser()]);
-  const directory = await repository.listAdminUsers({ page });
+  const viewer = await getCurrentUser();
+
+  // Through the administrative layer rather than the repository, so the read is
+  // authorised and recorded. Nothing sensitive comes back — the addresses are
+  // masked in SQL — but who pages through the whole membership of the platform,
+  // and how often, is worth being able to answer.
+  const result = await readUserDirectory({ page, pageSize: 25 });
+
+  if (!result.ok) {
+    return <EmptyState title="Not available" description={result.error} />;
+  }
+
+  const directory = result.data;
   const canEditRoles = hasRole(viewer, 'admin');
 
   if (directory.total === 0) {

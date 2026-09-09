@@ -38,6 +38,7 @@ import type {
 } from '@/types/domain';
 import { detectPropertyFlags } from '@/lib/safety/burst-detection';
 import { maskEmail } from '@/lib/safety/identity';
+import type { AdminAuditEntry } from '@/server/admin/audit';
 import { VERIFICATION_LIFETIME } from '@/config/verification';
 import { haversineMeters, isValidCoordinates } from '@/lib/geo/distance';
 import { decideProximity, isImplausibleMovement } from '@/lib/geo/proximity';
@@ -45,6 +46,7 @@ import { decideProximity, isImplausibleMovement } from '@/lib/geo/proximity';
 /** Matches `p_cooldown_days` in `livd_detect_property_flags`. */
 const FLAG_DECISION_COOLDOWN_DAYS = 7;
 import type {
+  AdminAuditPage,
   AdminOverview,
   CreatePropertyInput,
   CreateReviewInput,
@@ -1248,6 +1250,69 @@ export class LocalRepository implements LivdRepository {
       .filter((action) => !subjectId || action.subjectId === subjectId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Administrative audit
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Records one sensitive administrative access.
+   *
+   * Postgres stamps the actor from `auth.uid()` inside
+   * `livd_record_admin_audit`, so an entry there cannot name an author who did
+   * not do the thing. There is no session here, so the actor comes from the
+   * context the layer already established — which is the same asymmetry as
+   * `setUserRole`, and the same reason: this adapter is for development, and
+   * the guarantee that matters is the one Postgres makes.
+   */
+  async recordAdminAudit(entry: AdminAuditEntry): Promise<void> {
+    await mutate((database) => {
+      const actor = database.users.find((u) => u.id === entry.actorId);
+
+      database.adminAudit.push({
+        id: `audit-${shortId(12)}`,
+        actorId: actor?.id ?? null,
+        // The role at the time, captured now rather than read back later. A
+        // demotion must not rewrite what somebody was when they did this.
+        actorRole: actor?.role ?? 'resident',
+        action: entry.action,
+        subjectType: entry.subjectType,
+        subjectId: entry.subjectId,
+        outcome: entry.outcome,
+        reason: entry.reason,
+        detail: entry.detail,
+        createdAt: nowIso(),
+      });
+    });
+  }
+
+  async listAdminAudit(
+    options: {
+      page?: number;
+      pageSize?: number;
+      action?: string | null;
+      subjectId?: string | null;
+    } = {},
+  ): Promise<AdminAuditPage> {
+    const pageSize = Math.min(Math.max(options.pageSize ?? 50, 1), 200);
+    const page = Math.max(options.page ?? 1, 1);
+
+    const database = await getDatabase();
+
+    const all = database.adminAudit
+      .filter((entry) => !options.action || entry.action === options.action)
+      .filter((entry) => !options.subjectId || entry.subjectId === options.subjectId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+
+    const start = (page - 1) * pageSize;
+
+    return {
+      items: all.slice(start, start + pageSize).map((entry) => ({ ...entry })),
+      total: all.length,
+      page,
+      pageSize,
+    };
   }
 
   /* ---------------------------------------------------------------------

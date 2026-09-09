@@ -41,6 +41,7 @@ import type {
   VerificationRecord,
 } from '@/types/domain';
 import type {
+  AdminAuditPage,
   AdminOverview,
   CreatePropertyInput,
   CreateReviewInput,
@@ -52,6 +53,7 @@ import type {
   ReviewListOptions,
   ReviewListResult,
 } from '../repository';
+import type { AdminAuditEntry } from '@/server/admin/audit';
 import { toPublicReview } from '../public-review';
 import {
   PROPERTY_SELECT,
@@ -117,6 +119,21 @@ const EVIDENCE_LINK_SECONDS = 300;
 
 /** Default page size for administrative listings. */
 const ADMIN_PAGE_SIZE = 25;
+
+/** One row of `livd_admin_audit_log`. */
+interface AdminAuditRow {
+  id: number | string;
+  actor_id: string | null;
+  actor_role: UserProfile['role'];
+  action: string;
+  subject_type: string;
+  subject_id: string | null;
+  outcome: 'succeeded' | 'denied' | 'failed';
+  reason: string | null;
+  detail: unknown;
+  created_at: string;
+  total_count: number | string;
+}
 
 /** One row of `livd_admin_user_directory`. Carries a mask, never an address. */
 interface AdminUserDirectoryRow {
@@ -1745,6 +1762,77 @@ export class SupabaseRepository implements LivdRepository {
       .eq('property_id', propertyId);
 
     if (error) throw new Error(`setSavedPropertyNote: ${error.message}`);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Administrative audit
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Records one sensitive administrative access.
+   *
+   * Through the caller's own session, so `livd_record_admin_audit` can stamp
+   * the actor and their role from `auth.uid()`. Neither is accepted as an
+   * argument — an entry that could name its own author would be an entry
+   * anybody could forge, which is not an audit trail.
+   */
+  async recordAdminAudit(entry: AdminAuditEntry): Promise<void> {
+    const supabase = await this.client();
+
+    const { error } = await supabase.rpc('livd_record_admin_audit', {
+      audit_action: entry.action,
+      subject_type: entry.subjectType,
+      subject_id: entry.subjectId,
+      outcome: entry.outcome,
+      reason: entry.reason,
+      detail: entry.detail,
+      actor_ip_hash: entry.actorIpHash,
+    });
+
+    if (error) throw new Error(`recordAdminAudit: ${error.message}`);
+  }
+
+  async listAdminAudit(
+    options: {
+      page?: number;
+      pageSize?: number;
+      action?: string | null;
+      subjectId?: string | null;
+    } = {},
+  ): Promise<AdminAuditPage> {
+    const pageSize = Math.min(Math.max(options.pageSize ?? 50, 1), 200);
+    const page = Math.max(options.page ?? 1, 1);
+
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_admin_audit_log', {
+      page_size: pageSize,
+      page_offset: (page - 1) * pageSize,
+      filter_action: options.action ?? null,
+      filter_subject: options.subjectId ?? null,
+    });
+
+    if (error) throw new Error(`listAdminAudit: ${error.message}`);
+
+    const rows = (data ?? []) as AdminAuditRow[];
+
+    return {
+      items: rows.map((row) => ({
+        id: String(row.id),
+        actorId: row.actor_id,
+        actorRole: row.actor_role,
+        action: row.action,
+        subjectType: row.subject_type,
+        subjectId: row.subject_id,
+        outcome: row.outcome,
+        reason: row.reason,
+        detail: (row.detail ?? {}) as Record<string, unknown>,
+        createdAt: row.created_at,
+      })),
+      total: rows[0]?.total_count ? Number(rows[0].total_count) : 0,
+      page,
+      pageSize,
+    };
   }
 
   /* ---------------------------------------------------------------------
