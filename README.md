@@ -2,292 +2,266 @@
 
 **Know what it's really like to live there.**
 
-A global property intelligence platform built on real resident experiences.
-Livd collects what people who actually lived at a property say about it —
-including why they left — and turns it into something a prospective renter can
-make a decision with.
+Livd is a property intelligence platform. It collects what people who actually
+lived at a property say about it — including why they left — and turns that into
+something a prospective renter can make a decision with.
+
+**[Live demo](https://livd-koyrstudio.vercel.app)** · [Product spec](docs/product-spec.md) · [Architecture](docs/architecture.md) · [Design system](docs/design-system.md)
+
+> The deployed site runs on seeded demonstration data. Every seeded property is
+> labelled **Sample data** wherever it appears, excluded from the sitemap, and
+> marked `noindex`. No real resident has reviewed anything on Livd yet.
+
+![The property page](docs/images/property-page.png)
 
 ---
 
-## Run it
+## The problem
 
-```bash
-npm install
-npm run dev
-```
+A renter can see the property, meet the landlord, look at the photographs and
+walk the neighbourhood. What they cannot discover is what the previous residents
+experienced — the things that only reveal themselves after three months of
+living there.
 
-Open <http://localhost:3000>.
+That information exists. It is held by people who have already moved out, and
+nothing collects it in a form the next renter can use.
 
-No database, no accounts, no configuration. The app ships with a file-backed
-local store seeded with sixteen properties across eight countries, and it works
-end to end: search, the property pages, the review flow, moderation, all of it.
+Livd is built on the premise that the most valuable thing a former resident
+knows is **why they left**, and that it is worth capturing as structured data
+rather than as prose nobody can count.
 
-Everything seeded is labelled **Sample data** wherever it appears, and none of
-it can reach a search index.
-
-### Signing in
-
-The local adapter has no email step. Enter any address on `/sign-in` and you are
-signed in immediately. The first account created becomes an admin, so `/admin`
-is reachable straight away.
-
-This adapter refuses to run in production.
-
-### Commands
-
-| Command | What it does |
+| Livd is not | Because |
 | --- | --- |
-| `npm run dev` | Development server |
-| `npm run build` | Production build |
-| `npm test` | Test suite |
-| `npm run typecheck` | TypeScript, no emit |
-| `npm run audit:a11y` | axe-core against a running server |
-| `npm run verify` | Typecheck, tests and build together |
-| `npm run reset` | Clears `.data` and `.next`, reseeding on next run |
-
-> **`npm run reset` clears both on purpose.** Property aggregates are cached
-> under `.next` and survive a dev-server restart, so deleting `.data` alone
-> leaves the previous seed's numbers rendering with no sign they are stale.
+| A listings marketplace | It never brokers a rental. No inventory, no commissions, no incentive to flatter a property. |
+| A landlord directory | Reviews are about buildings and the experience of living in them, not about individuals. |
+| "Yelp for apartments" | A five-star average is not intelligence. Livd produces structured answers to specific questions. |
+| A regional product | Twelve markets across five continents are configuration, not special cases. |
 
 ---
 
-## Where things are
+## What it looks like
 
-```
-docs/                     Start here — spec, architecture, design system, schema
-supabase/migrations/      The production database: schema, functions, RLS
-src/
-├── app/                  Routes
-├── components/           UI primitives and product components
-├── config/               Markets, categories, departure reasons, tags
-├── content/copy.ts       Every user-facing string
-├── lib/
-│   ├── intelligence/     Scoring, verdict, departures, timeline
-│   ├── safety/           Content linter, rate limiting
-│   ├── format/           Intl wrappers — address, money, dates
-│   └── validation/       Zod schemas
-└── server/
-    ├── auth/             Sessions and guards
-    ├── data/             Repository interface + two adapters
-    └── actions/          Server Actions — the only write path
-tests/                    116 tests, weighted to the highest-risk code
-```
+![Search results](docs/images/search.png)
 
-### The three files worth reading first
+Search results carry the score, the confidence band, the direction of travel and
+the two or three categories residents rated most sharply — enough to decide what
+to open, without opening it.
 
-- **`src/lib/intelligence/scoring.ts`** — the Livd Score. Every constant is
-  named and explained, and the reasoning behind each is in the comments.
-- **`src/lib/safety/content-linter.ts`** — how Livd keeps reviews about
-  properties rather than about people.
-- **`src/server/data/repository.ts`** — the one interface every read and write
-  goes through.
+![Why residents leave](docs/images/why-residents-leave.png)
+
+The signature section. Departure reasons are captured as structured data at
+move-out, then counted across a property's whole history. Reasons that reflect
+on the building are separated from reasons that do not, because "the rent went
+up" and "I got a job in another city" are not the same finding.
+
+![Check before you visit](docs/images/check-before-you-visit.png)
+
+The property's weakest categories, converted into questions a renter can
+literally ask at the viewing. Every question states the evidence it came from.
+
+<table>
+<tr>
+<td width="42%" align="center"><img src="docs/images/property-mobile.png" alt="The property page on mobile" width="290"></td>
+<td width="58%"><img src="docs/images/property-page-dark.png" alt="The property page in dark mode"></td>
+</tr>
+<tr>
+<td>Mobile is designed, not scaled down — the score dial moves inline with the header, filters become a bottom sheet, the review wizard becomes one full-height step per decision.</td>
+<td>Dark mode is a full token remap rather than an inversion, and the palette is asserted pair by pair in <a href="tests/design/contrast.test.ts"><code>tests/design/contrast.test.ts</code></a>.</td>
+</tr>
+</table>
+
+More screens in [`docs/images/`](docs/images) — the resident verdict, category
+scores, the freshness panel, the timeline, and the empty states.
 
 ---
 
-## The two data adapters
+## The product decisions
 
-Every read and write goes through `LivdRepository`. Two implementations satisfy
-it:
+Livd is defined less by what it does than by what it refuses to do. Each refusal
+below is a design decision with a mechanism behind it, not a policy in a
+document.
 
-- **`local`** — a JSON file under `.data`. No external service. The default.
-- **`supabase`** — PostgreSQL with Row Level Security. The production path.
+### A score is never shown without its basis
 
-The interface is shaped by what production needs, never narrowed to what the
-local store finds easy, and both adapters are held to the same behaviour. That
-is what lets you clone this repository and see the real product working —
-writes included — without provisioning anything.
+Below a threshold of evidence, no score is published at all and the page says
+what it does not know.
 
-### The production database
+![A property below the evidence threshold](docs/images/no-score.png)
 
-A Supabase project is provisioned and all sixteen migrations are applied:
+The Livd Score is a computed judgement on a 0–100 scale — deliberately not five
+stars, so it cannot be mistaken for a consumer star average. Four adjustments,
+in order: a weighted category aggregate, recency decay, verification weighting,
+then Bayesian shrinkage toward a neutral prior so three glowing reviews cannot
+produce a 98. Effective sample size determines the confidence band, and below
+`limited` there is no number.
 
-| | |
-| --- | --- |
-| Project | `Livd` (Koyr org, `eu-west-2`) |
-| URL | `https://tehkyjihyyhxxrqlvmck.supabase.co` |
-| Tables with RLS | 25, with 48 policies |
+*Enforced in [`src/lib/intelligence/scoring.ts`](src/lib/intelligence/scoring.ts) — pure functions, no I/O, the most heavily tested file in the repository. Every constant carries the reasoning for its value.*
 
-To point the app at it, set in `.env.local`:
+### "Why residents leave" stays hidden below four responses
 
-```
-LIVD_DATA_BACKEND=supabase
-NEXT_PUBLIC_SUPABASE_URL=https://tehkyjihyyhxxrqlvmck.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...        # Settings > API keys > anon
-SUPABASE_SERVICE_ROLE_KEY=...            # Settings > API keys > service_role
-LIVD_SESSION_SECRET=...                  # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
+One person's reason rendered as "100%" is both meaningless and potentially
+identifying. Four is where a distribution starts to describe a building rather
+than a person.
 
-Optionally, to give newly added properties a coordinate so residents can
-location-verify them:
+*Enforced in [`src/lib/intelligence/departures.ts`](src/lib/intelligence/departures.ts).*
 
-```
-LIVD_GEOCODER=google,nominatim
-GOOGLE_MAPS_API_KEY=...                  # console.cloud.google.com, enable "Geocoding API"
-LIVD_GEOCODER_CONTACT=you@example.com    # required by Nominatim's usage policy
-```
+### Reviews are about properties, not people
 
-`LIVD_GEOCODER` is a list tried in order. The two named providers fail
-differently — Google on quota, billing and outage; Nominatim on coverage — so
-chaining them means a lapsed card degrades coverage in the Gulf rather than
-removing geocoding everywhere. `mapbox` is also supported
-(`MAPBOX_ACCESS_TOKEN`) and its free tier needs no card, which makes it the
-quickest way to improve on the free option.
+Contact details, unit numbers and named individuals are refused before
+publication — with a specific instruction saying what to change and why, rather
+than a generic rejection.
 
-**Coverage is the reason a paid provider is worth it, and it is not uniform.**
-Measured against real addresses:
+![The content linter refusing a review](docs/images/content-linter.png)
 
-| | Berlin · London · Austin | Lagos · Abuja | Cape Town | Dubai · Nairobi |
-| --- | --- | --- | --- | --- |
-| OpenStreetMap | building | road only — refused | road only — refused | no match |
-| Google | building | building | building | building |
+*Enforced in [`src/lib/safety/content-linter.ts`](src/lib/safety/content-linter.ts), called by the submit action before anything is persisted.*
 
-Measured, not estimated. Admiralty Heights in Lekki, 10 Gana Street in Maitama,
-32 Long Street in Cape Town, Marina Gate in Dubai Marina and Britam Tower in
-Upper Hill all resolve to buildings through Google and none of them resolve
-through OpenStreetMap.
+### Verification is a signal, not a gate — and it stores no location
 
-**Whatever the provider, anything less precise than a building is refused.**
-Nominatim answers "8 Admiralty Way, Lagos" with the road — a feature spanning
-1,716 metres — and a point along it can sit most of a kilometre from the
-property. Storing that means offering a verification step a real resident
-cannot pass, which is worse than offering no step at all. Refusing is the
-better failure.
+A resident can confirm they are at a property before writing, and the review
+carries "Location verified". That is the honest claim: being at a building is
+evidence of presence, not of a tenancy, and the product never says otherwise.
 
-Geocoding runs when a property is created, so switching a provider on helps
-only properties added afterwards. To fill in the ones already missing a
-coordinate:
+![The verification step](docs/images/verification-step.png)
 
-```bash
-npm run geocode:backfill              # dry run, writes nothing
-npm run geocode:backfill -- --write   # apply
-```
+The privacy explanation appears **before** the permission prompt, not after it.
+A review published without verifying is still published, still counted and still
+permanent; verification changes how much weight it carries, not whether it
+exists.
 
-It never overwrites an existing coordinate, never lowers the precision bar, and
-never touches demonstration data. It needs `SUPABASE_SERVICE_ROLE_KEY`.
+The position itself is used for one comparison and never stored.
+`property_verifications` has no latitude, longitude, accuracy or distance
+column, so there is no location history in the database to leak, subpoena or
+lose.
 
-The anon key is safe in a browser — Row Level Security is what protects the
-data, not the secrecy of that key. `SUPABASE_SERVICE_ROLE_KEY` bypasses every
-policy: it is the one real secret, is read only by server-only modules, is
-never prefixed `NEXT_PUBLIC_`, and moderation will not work without it.
+*Decided inside Postgres by `livd_verify_property_location` ([migration 0014](supabase/migrations/0014_property_verification.sql)), so a client can ask for a verdict and never assert one. [`src/lib/geo/proximity.ts`](src/lib/geo/proximity.ts) is the same arithmetic for the local adapter, held to identical constants by [`tests/verification/parity.test.ts`](tests/verification/parity.test.ts).*
 
-The database is seeded: 16 properties, 222 reviews, 2,033 category ratings,
-212 departure reasons and 1,313 tags, all marked `is_demo`.
+### Recency is part of the answer, and is derived rather than stored
 
-### Seeding the demonstration data
+A five-star review from someone who left in 2019 and one from someone who was in
+the lobby last week are different claims. The buckets — current, recent, former,
+older — are computed on read, so nobody verifies once and stays a "current
+resident" for ever.
 
-```bash
-npm run seed:supabase -- --dry   # report what it would write
-npm run seed:supabase            # apply
-npm run seed:supabase -- --purge # remove it again
-```
+*Enforced in [`src/lib/intelligence/recency.ts`](src/lib/intelligence/recency.ts).*
 
-Reuses the same generator as the local store, so the two cannot describe
-different properties. Everything it writes is marked `is_demo`, which is what
-makes the "Sample data" badge appear, marks those pages `noindex`, and keeps
-them out of the sitemap. Idempotent — ids are derived deterministically, so
-re-running updates rather than duplicates.
+### Owners can reply. They cannot remove.
 
-It needs the service-role key: demo rows have no authenticated author, so every
-RLS insert policy correctly refuses them.
+There is no column in the schema and no policy in the database that would let a
+property owner alter a review's visibility. It is not a rule that a persistent
+request could change — the capability does not exist.
 
-### Deploying
+Moderation is on the record too: a review is never deleted, only restatused, and
+every decision is written to an append-only log no role can edit.
 
-Livd is deployed on Vercel and rebuilds on every push to `main`.
+### Global from the first commit
 
-| | |
-| --- | --- |
-| Project | `koyrstudio/livd` |
-| Production | <https://livd-koyrstudio.vercel.app> |
-| Repository | <https://github.com/heykoyr/livd> |
+Address structure, currency, property-type vocabulary and which review
+categories apply are all configuration. A Lagos property is asked about water
+supply and never about central heating; a London flat, the reverse. Neither is a
+special case in the code.
 
-Environment variables set on the project:
+Twelve markets — US, GB, NG, CA, AU, IE, DE, NL, FR, ZA, AE, IN — with
+per-country address templates, per-market property-type labels, and money stored
+as `(amount_minor, currency_code)`. There is no default currency symbol anywhere
+in the codebase.
 
-| Variable | Environments | |
+---
+
+## What I designed and built
+
+Livd is a solo project. I own every decision in it, and every commit is mine.
+
+**Product.** The positioning, the four user segments, the scope of the MVP and
+what was deliberately left out of it. The intelligence layer — what the score is
+made of, what each threshold is for, and which questions the product answers
+rather than merely displays. Written up in [`docs/product-spec.md`](docs/product-spec.md).
+
+**Design.** The design system — tokens, type scale, palette, motion, responsive
+strategy, voice — specified in [`docs/design-system.md`](docs/design-system.md)
+and implemented as 65 components. No component library: a bought design system
+is the fastest route to looking like a template. Every user-facing string lives
+in one typed file so a second locale is a sibling object rather than a
+component change.
+
+**Engineering.** The full application: Next.js App Router, the two-adapter data
+layer, the PostgreSQL schema with its RLS policies and database functions, the
+trust and safety pipeline, the verification architecture, the test suite, and
+the deployment.
+
+**What this is not.** There is no team here, so there is no evidence of
+collaboration, and no real users, so there is no adoption data. The seeded
+dataset exists to make the product evaluable before launch, and is labelled as
+such everywhere it appears.
+
+---
+
+## How it works
+
+Every write passes through four layers, and none of them trusts the one above.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/trust-enforcement-dark.svg">
+  <img alt="A review's path to publication: browser, server action, Postgres function, trigger and RLS, stored row — with what each layer refuses" src="docs/images/trust-enforcement.svg">
+</picture>
+
+**The two-adapter data layer** is the most consequential architectural decision
+in the repository. Every read and write goes through one interface,
+[`LivdRepository`](src/server/data/repository.ts), and two implementations
+satisfy it: a file-backed JSON store for local development, and PostgreSQL
+through Supabase in production.
+
+The point is that anyone can clone this repository and see the real product
+working — every flow, end to end, writes included — without provisioning
+anything. The rule that keeps it honest: the interface is shaped by what
+production needs, never narrowed to what the local store finds easy.
+
+| Layer | Choice | Why |
 | --- | --- | --- |
-| `LIVD_DATA_BACKEND` | Production, Preview | `supabase` |
-| `NEXT_PUBLIC_SUPABASE_URL` | Production, Preview | |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | All three | Public by design — RLS is the protection |
-| `NEXT_PUBLIC_SITE_URL` | Production | Previews fall back to `VERCEL_URL` |
-| `LIVD_SESSION_SECRET` | Production, Preview | |
-| `LIVD_SHOW_DEMO_DATA` | Production, Preview | `true` while the seeded data is the content |
+| Framework | Next.js 16, App Router | Property pages must be server-rendered and indexable; SEO is the acquisition channel. Server Components keep the intelligence layer off the client bundle. |
+| Language | TypeScript, `strict` + `noUncheckedIndexedAccess` | The scoring maths and the safety pipeline are where correctness matters most. |
+| UI | React 19 | Server Components, Server Actions, `useActionState` for forms that degrade gracefully. |
+| Styling | Tailwind v4 with a CSS-variable token layer | Tokens declared once in `@theme`; arbitrary values are treated as a defect. |
+| Database | PostgreSQL via Supabase | Real constraints, Row Level Security, full-text search, `pg_trgm` fuzzy matching, `pg_cron`. |
+| Validation | Zod v4 | One schema per boundary, enforced server-side. Client validation is a convenience, never a control. |
+| Hosting | Vercel | Rebuilds on every push to `main`. |
 
-`SUPABASE_SERVICE_ROLE_KEY` is **not** set, on Vercel or locally. Everything a
-visitor does works without it, because every public read and every review
-submission goes through Row Level Security as the anon or authenticated role.
-Moderation does not: `/admin` needs the key to act on the queue. To add it:
+**Deliberately not used:** no ORM, no state management library, no component
+library, no analytics SDK, no AI at runtime. The Content-Security-Policy permits
+`'self'` and the Supabase origin and nothing else; fonts are self-hosted, so
+rendering a page contacts no third party.
 
-```bash
-# Supabase dashboard > Project Settings > API keys > service_role
-npm run vercel -- env add SUPABASE_SERVICE_ROLE_KEY production --type secret
-```
+`27` tables · `51` RLS policies · `33` database functions · `18` migrations ·
+`26` routes · `137` source files.
 
-Do **not** set `LIVD_ALLOW_LOCAL_IN_PROD` — the local file store cannot work on
-a serverless filesystem, and the guard that refuses it is deliberate.
-
----
-
-## What makes this product what it is
-
-**A score is never shown without its basis.** Below a threshold of evidence, no
-score is published at all and the page says what it does not know. "Why
-residents leave" stays hidden until four former residents have answered,
-because one person's reason rendered as "100%" is both meaningless and
-potentially identifying.
-
-**Reviews are about properties, not people.** Contact details, unit numbers and
-named individuals are refused before publication, with a specific instruction
-about what to change. The subject of a review is a building and the experience
-of living in it.
-
-**Verification is a signal, not a gate.** A resident can confirm they are at a
-property before writing, and the review carries "Location verified" — which is
-the honest claim, because being at a building is evidence of presence and not
-of a tenancy. Livd never says it knows you live there. A review published
-without verification is still published, still counted and still permanent;
-verification changes how much weight it carries, not whether it exists. The
-position itself is used for one comparison and never stored, so there is no
-location history in the database to leak.
-
-**Recency is part of the answer.** A five-star review from someone who left in
-2019 and one from someone who was in the lobby last week are different claims,
-and the property page now says which is which. The buckets are derived on read
-rather than stored, so nobody verifies once and remains a "current resident"
-for ever.
-
-**Owners can reply. They cannot remove.** There is no column in the schema and
-no policy in the database that would let a property owner alter a review's
-visibility — not a rule that a persistent request could change.
-
-**Moderation is on the record.** A review is never deleted, only restatused,
-and every decision is written to a log no role can edit.
-
-**Global from the first commit.** Address structure, currency, property-type
-vocabulary and which review categories apply are all configuration. A Lagos
-property is asked about water supply and never about central heating; a London
-flat, the reverse. Neither is a special case in the code.
+Full detail in [`docs/architecture.md`](docs/architecture.md) and
+[`docs/database-schema.md`](docs/database-schema.md).
 
 ---
 
-## Verified
+## Evidence
 
-- Tests weighted toward scoring, the safety linter, rate limiting, burst
-  detection, the colour palette and the international layer.
-- Zero axe-core violations across 13 pages in a production build.
-- Verification enforcement exercised against the live database as an
-  `authenticated` client, not asserted from the policy text: a client cannot
-  insert its own verified row, cannot assert `verification_level` on a review,
-  cannot use a verification belonging to another account or another property,
-  and an approved property manager sees zero verification rows and zero
-  reviewer profiles.
-- The served HTML of a property page checked, signed out, for coordinates,
-  accuracy, distance, verification ids, verification timestamps, author ids,
-  emails, IP and device data. None present.
-- Contrast checked in a real browser, both themes, and asserted per token pair
-  by `tests/design/contrast.test.ts`. The one violation axe still reports is a
-  disabled pagination control, which WCAG 1.4.3 exempts as an inactive
-  component and which is `aria-hidden` besides.
-- Every public route returns 200, every authenticated route redirects, and the
-  sitemap contains no seeded data.
+- **427 tests** across 20 files (`npm test`), weighted toward the highest-risk
+  code: scoring, the safety linter, rate limiting, burst detection, the
+  verification and account-deletion pipelines, the colour palette and the
+  international layer.
+- **Zero axe-core violations** across 13 pages in a production build. The one
+  violation axe still reports is a disabled pagination control, which WCAG 1.4.3
+  exempts as an inactive component and which is `aria-hidden` besides.
+- **Verification enforcement exercised against the live database** as an
+  `authenticated` client, rather than asserted from the policy text: a client
+  cannot insert its own verified row, cannot assert `verification_level` on a
+  review, cannot use a verification belonging to another account or another
+  property, and an approved property manager sees zero verification rows and
+  zero reviewer profiles.
+- **The served HTML of a property page inspected**, signed out, for coordinates,
+  accuracy, distance, verification ids and timestamps, author ids, emails, IP and
+  device data. None present.
+- **Contrast checked in a real browser**, both themes, and asserted per token
+  pair by a test that reads the values out of `globals.css` so it cannot drift
+  from the palette.
+- **Geocoder coverage measured, not estimated** — real addresses in eight cities
+  across four continents, comparing OpenStreetMap against Google. The table is in
+  [`docs/deployment.md`](docs/deployment.md).
 
 > An earlier version of this list claimed zero contrast failures "measured
 > against real computed styles". That was wrong. `npm run audit:a11y` runs axe
@@ -299,10 +273,68 @@ flat, the reverse. Neither is a special case in the code.
 
 ---
 
-## Not built yet
+## Status
 
-Maps — deliberately. A pin on a residential building is a liability before it is
-a feature, and the privacy design has to come first. Also out of the MVP:
-messaging between users, mobile apps, payments, and any AI-generated prose.
+Deployed and working end to end. Not launched — there are no real reviews, and
+three things stand between the current build and a public launch: an email
+provider for magic links, error monitoring, and counsel's review of the three
+policy pages in each market.
 
-`docs/roadmap.md` has the rest.
+**Deliberately not built.** Maps, because a pin on a residential building is a
+liability before it is a feature and the privacy design has to come first. Also
+out of scope: messaging between users, mobile apps, payments, and any
+AI-generated prose. `docs/roadmap.md` has the reasoning and what comes next.
+
+---
+
+## Documentation
+
+| | |
+| --- | --- |
+| [`docs/product-spec.md`](docs/product-spec.md) | What Livd is, who it is for, the intelligence layer, and what is out of scope |
+| [`docs/architecture.md`](docs/architecture.md) | Stack, the two-adapter data layer, rendering, trust and safety implementation, security posture |
+| [`docs/design-system.md`](docs/design-system.md) | Tokens, typography, colour and contrast, space, components, motion, responsive, voice |
+| [`docs/database-schema.md`](docs/database-schema.md) | Every table and the reasoning behind it |
+| [`docs/deployment.md`](docs/deployment.md) | Supabase, Vercel, seeding, geocoding, environment |
+| [`docs/legal-review.md`](docs/legal-review.md) | The briefing pack for counsel, and what the product does with personal data |
+| [`docs/roadmap.md`](docs/roadmap.md) | What shipped, known limitations, what is next |
+
+---
+
+## Run it locally
+
+```bash
+npm install
+npm run dev
+```
+
+Open <http://localhost:3000>. No database, no accounts, no configuration — the
+app ships with a file-backed store seeded with sixteen properties across eight
+countries, and it works end to end: search, property pages, the review flow,
+moderation, all of it.
+
+The local sign-in adapter has no email step: enter any address on `/sign-in` and
+you are signed in. The first account created becomes an admin, so `/admin` is
+reachable straight away. This adapter refuses to run in production.
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Development server |
+| `npm run build` | Production build |
+| `npm test` | Test suite |
+| `npm run typecheck` | TypeScript, no emit |
+| `npm run audit:a11y` | axe-core against a running server |
+| `npm run verify` | Typecheck, lint, tests and build together |
+| `npm run reset` | Clears `.data` and `.next`, reseeding on next run |
+
+> `npm run reset` clears both on purpose. Property aggregates are cached under
+> `.next` and survive a dev-server restart, so deleting `.data` alone leaves the
+> previous seed's numbers rendering with no sign they are stale.
+
+To point the app at PostgreSQL instead, see [`docs/deployment.md`](docs/deployment.md).
+
+---
+
+## Licence
+
+All rights reserved. Published for reading and evaluation; see [LICENSE](LICENSE).

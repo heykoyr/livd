@@ -154,17 +154,35 @@ cap at `40rem`.
 
 ## 5. Components
 
-`ui/`: Button (primary · secondary · ghost · danger; sm/md/lg; loading and
-disabled states) · IconButton · Field (label, hint, error, `aria-describedby`
-wiring) · Input · Textarea with counter · Select · RadioCardGroup ·
-CheckboxGroup · RatingScale · Chip · Badge · Card · Tabs (roving tabindex) ·
-Dialog · Sheet (mobile bottom sheet) · Toast · Tooltip · Progress · Skeleton ·
-EmptyState · ErrorState · Pagination · Disclosure · SegmentedControl ·
-VisuallyHidden.
+What is built, not what was planned. A primitive is added when a second surface
+needs it; until then the surface owns its own markup.
 
-`property/`: ScoreDial · ConfidenceChip · CategoryBars · DepartureBreakdown ·
-ResidentVerdict · PropertyTimeline · CheckBeforeYouVisit · ReviewCard ·
-ReviewFilters · OwnerResponse · PropertyHeader · ComparisonTable.
+`ui/` — **Button** (primary · secondary · ghost · danger · quiet; sm/md/lg;
+loading and disabled states) · ButtonLink · IconButton · Spinner ·
+**Field** (label, hint, error, `aria-describedby` wiring) · Input · Textarea ·
+Select · CharacterCount · FormError · **RadioCardGroup** · CheckboxChipGroup ·
+RatingScale · SegmentedControl · **Dialog** (focus trap and restoration) ·
+Toast · Pagination · Card · Section · Badge · Chip · Eyebrow · Meter ·
+Stat · Divider · EmptyState · Skeleton · VisuallyHidden.
+
+`property/` — **ScoreDial** · ConfidenceChip · ScoreBadge · TrendPill ·
+**ResidentVerdictPanel** · CategoryScores · **DepartureBreakdownPanel** ·
+PreVisitChecks · PropertyTimeline · TagFrequencyList · ResidentFreshnessPanel ·
+FreshnessLine · PropertyHeader · PropertyCard · PropertyMissing · ReviewCard ·
+ReviewFilters · ReportReviewButton · SaveButton · ShareButton ·
+**VerifyLocation** · VerificationBadge · VerifyResidency.
+
+`search/` — SearchCombobox · SearchFilters · NearbyProperties.
+`layout/` — SiteHeader · SiteFooter · MobileNav · AccountMenu · ThemeToggle ·
+ProsePage. `brand/` — Logo.
+
+The review wizard's steps and the shortlist comparison table live beside the
+routes that own them, in `src/app/review/` and `src/app/shortlist/`, because
+nothing else renders them.
+
+Not built: Tabs, Tooltip, Progress and Disclosure. Each was in the original
+inventory and none earned its place — the surfaces that would have used them
+were solved with a heading, a link, or a native `<details>`.
 
 Every interactive primitive: 44×44px minimum hit area, visible `:focus-visible`
 ring (2px `brand`, 2px offset), disabled states that still meet 3:1, and a

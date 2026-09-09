@@ -46,8 +46,13 @@ a database. The local adapter makes that true. The Supabase adapter is the
 production path, with complete migrations and RLS policies in `supabase/`.
 
 **The rule that keeps this honest:** the interface is defined by what production
-needs, never narrowed to what the local store finds easy. Both adapters are held
-to the same tests (`tests/data/repository.contract.test.ts`).
+needs, never narrowed to what the local store finds easy. Where the two adapters
+implement the same rule independently — the proximity decision most importantly —
+they are held to identical constants by `tests/verification/parity.test.ts`.
+
+A repository contract suite running both adapters against one set of assertions
+is not written yet, and until it is, the interface is what keeps them aligned
+rather than a test.
 
 Authentication follows the identical pattern in `src/server/auth/` — a signed
 cookie session for local development, Supabase Auth in production. The local
@@ -61,7 +66,7 @@ adapter refuses to start when `NODE_ENV=production`.
 | --- | --- |
 | `/` | Static, revalidated hourly |
 | `/property/[slug]` | Server-rendered, `revalidate: 300`, tag-invalidated on review write |
-| `/places/[country]/[region]/[locality]` | Server-rendered, revalidated hourly |
+| `/places/[country]/[locality]` | Server-rendered, revalidated hourly |
 | `/search` | Dynamic — depends on query |
 | `/api/suggest` | Route handler, 60s cache, no personal data |
 | `/review/*`, `/account/*`, `/admin/*` | Dynamic, `no-store`, auth-gated |
@@ -81,7 +86,8 @@ generation — is server-only.
 ```
 src/
 ├── app/                    Routes (App Router)
-│   ├── (marketing)/        Landing, how-it-works, trust, legal
+│   ├── page.tsx            Landing
+│   ├── how-it-works/       ·  trust/  ·  for-owners/  ·  legal/
 │   ├── search/             Results
 │   ├── property/[slug]/    Property profile + reviews + claim
 │   ├── places/             Location index pages (SEO surface)
@@ -91,11 +97,14 @@ src/
 │   ├── admin/              Moderation, claims, verification, config
 │   └── api/                Suggest, sitemap, health
 ├── components/
-│   ├── ui/                 Primitives — Button, Field, Dialog, Sheet, Toast…
+│   ├── ui/                 Primitives — Button, Field, Choice, Dialog, Toast…
 │   ├── property/           Score dial, category bars, departure chart, timeline
-│   ├── review/             Wizard steps, review card, filters
-│   ├── search/             Combobox, result card, filters
-│   └── layout/             Header, footer, nav, skip link
+│   ├── search/             Combobox, filters, nearby
+│   ├── layout/             Header, footer, nav, skip link
+│   └── brand/              Logotype
+
+   The review wizard's steps live beside the route that owns them, in
+   `src/app/review/`, rather than in `components/`.
 ├── lib/
 │   ├── intelligence/       scoring · verdict · departures · trends · checklist
 │   ├── safety/             content linter · privacy redaction · rate limits
@@ -221,7 +230,7 @@ list and search ordering.
 Server-rendered property pages with per-page metadata, canonical URLs, Open Graph
 and Twitter cards; `Place` + `AggregateRating` JSON-LD emitted **only** where the
 confidence band justifies it; location index pages at
-`/places/[country]/[region]/[locality]`; generated `sitemap.xml` and `robots.txt`
+`/places/[country]/[locality]`; generated `sitemap.xml` and `robots.txt`
 excluding all authenticated routes.
 
 No review author information — not even a pseudonym — appears in structured data.
@@ -235,10 +244,9 @@ No review author information — not even a pseudonym — appears in structured 
 | `tests/intelligence/` | Scoring, shrinkage, decay, confidence bands, departures, trends, verdict |
 | `tests/safety/` | Content linter across evasion cases; rate limiter |
 | `tests/format/` | Multi-market address, currency and date formatting |
-| `tests/data/` | Repository contract, run against the local adapter |
-| `tests/actions/` | Submit, report, save — authorisation and validation paths |
-| `tests/a11y/` | axe-core against rendered primitives and key screens |
-| `tests/components/` | Wizard behaviour, search combobox keyboard interaction |
+| `tests/design/` | Every token pair the design puts together, read out of `globals.css` |
+| `tests/auth/` | Redirect safety on the sign-in path |
+| `tests/components/` | Month-and-year field behaviour |
 | `tests/verification/` | Proximity maths and its uncertainty budget · resident recency and freshness · TypeScript/SQL constant parity · what a public review does and does not carry · server-side enforcement against every spoofing path · the verification step's states |
 
 Highest-risk-first: scoring correctness, safety pipeline, authorisation.
