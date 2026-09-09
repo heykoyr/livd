@@ -2,7 +2,7 @@
   "name": "livd",
   "version": "0.1.0",
   "private": true,
-  "description": "Livd \u2014 know what it's really like to live there. A global property intelligence platform built on real resident experiences.",
+  "description": "Livd — know what it's really like to live there. A global property intelligence platform built on real resident experiences.",
   "engines": {
     "node": ">=20.9.0"
   },
@@ -19,7 +19,8 @@
     "audit:a11y": "node scripts/audit-a11y.mjs",
     "seed:supabase": "esbuild scripts/seed-supabase.mjs --bundle --platform=node --format=esm --alias:@=./src --packages=external --outfile=.seed-sql/seed.mjs --log-level=warning && node .seed-sql/seed.mjs",
     "seed:sql": "esbuild scripts/build-seed-sql.mjs --bundle --platform=node --format=esm --alias:@=./src --outfile=.seed-sql/build.mjs --log-level=warning && node .seed-sql/build.mjs",
-    "vercel": "node scripts/vercel.mjs"
+    "vercel": "node scripts/vercel.mjs",
+    "geocode:backfill": "esbuild scripts/backfill-coordinates.mjs --bundle --platform=node --format=esm --alias:@=./src --alias:server-only=./tests/stubs/server-only.ts --packages=external --outfile=.seed-sql/backfill.mjs --log-level=warning && node --env-file=.env.local .seed-sql/backfill.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

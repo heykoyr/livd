@@ -121,22 +121,44 @@ Optionally, to give newly added properties a coordinate so residents can
 location-verify them:
 
 ```
-LIVD_GEOCODER=nominatim
+LIVD_GEOCODER=google,nominatim
+GOOGLE_MAPS_API_KEY=...                  # console.cloud.google.com, enable "Geocoding API"
 LIVD_GEOCODER_CONTACT=you@example.com    # required by Nominatim's usage policy
 ```
 
-Both are optional. Without them, a property added by a contributor has no
-coordinate and simply does not offer the verification step — everything else
-about it works normally.
+`LIVD_GEOCODER` is a list tried in order. The two named providers fail
+differently — Google on quota, billing and outage; Nominatim on coverage — so
+chaining them means a lapsed card degrades coverage in the Gulf rather than
+removing geocoding everywhere. `mapbox` is also supported
+(`MAPBOX_ACCESS_TOKEN`) and its free tier needs no card, which makes it the
+quickest way to improve on the free option.
 
-With them, coverage follows OpenStreetMap's building data rather than being
-universal, because the geocoder refuses anything less precise than a building.
-Nominatim answers a Lagos street address with the *road*, a feature spanning
-1.7km, and a point along it can sit most of a kilometre from the property — so
-storing it would mean offering a verification step that a real resident cannot
-pass. Refusing is the better failure: no coordinate, no step, no false
-accusation. Measured against real addresses, Berlin, Austin and London resolve
-to buildings; Lagos and Cape Town resolve only to roads and are refused.
+**Coverage is the reason a paid provider is worth it, and it is not uniform.**
+Measured against real addresses:
+
+| | Berlin · Austin · London | Lagos · Cape Town | Dubai |
+| --- | --- | --- | --- |
+| OpenStreetMap | building | road only — refused | no match |
+| Google | building | building / establishment | building |
+
+**Whatever the provider, anything less precise than a building is refused.**
+Nominatim answers "8 Admiralty Way, Lagos" with the road — a feature spanning
+1,716 metres — and a point along it can sit most of a kilometre from the
+property. Storing that means offering a verification step a real resident
+cannot pass, which is worse than offering no step at all. Refusing is the
+better failure.
+
+Geocoding runs when a property is created, so switching a provider on helps
+only properties added afterwards. To fill in the ones already missing a
+coordinate:
+
+```bash
+npm run geocode:backfill              # dry run, writes nothing
+npm run geocode:backfill -- --write   # apply
+```
+
+It never overwrites an existing coordinate, never lowers the precision bar, and
+never touches demonstration data. It needs `SUPABASE_SERVICE_ROLE_KEY`.
 
 The anon key is safe in a browser — Row Level Security is what protects the
 data, not the secrecy of that key. `SUPABASE_SERVICE_ROLE_KEY` bypasses every

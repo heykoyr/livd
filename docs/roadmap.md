@@ -148,15 +148,17 @@ Still true since the deployment:
   properties visible at all. It has to be turned off the moment real reviews
   exist, or the two will sit side by side.
 
-**Geocoding coverage.** The geocoder is live and gated to building-level
-precision, which is the right trade — a wrong coordinate offers a verification
-step that a real resident cannot pass, and a missing one offers no step at all.
-The consequence is that coverage follows OpenStreetMap's building data, so
-properties in Lagos and Dubai largely will not be location-verifiable while
-Berlin and Austin will. Two ways to close that when it matters: a commercial
-geocoder with better building coverage behind the same `Geocoder` interface, or
-letting an approved property claimant place their own building on a map, which
-is a different trust question and needs its own thinking.
+**Geocoding coverage.** Three providers behind one interface — Google, Mapbox
+and Nominatim — configured as an ordered list so a commercial provider can fall
+back to the free one. Every provider passes the same precision gate: anything
+less precise than a building is refused, because a wrong coordinate offers a
+verification step a real resident cannot pass while a missing one offers no step
+at all. 
+> livd@0.1.0 geocode:backfill
+> esbuild scripts/backfill-coordinates.mjs --bundle --platform=node --format=esm --alias:@=./src --alias:server-only=./tests/stubs/server-only.ts --packages=external --outfile=.seed-sql/backfill.mjs --log-level=warning && node --env-file=.env.local .seed-sql/backfill.mjs fills in properties that predate the
+geocoder. Google and Mapbox are covered by fixture tests in their real response
+shapes but have not been exercised against their live APIs, which needs paid
+keys.
 
 **Soon after.** Privacy-safe map discovery, area-level rather than unit-level ·
 grounded AI summarisation of review corpora, behind the existing
