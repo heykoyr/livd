@@ -104,6 +104,61 @@ Identical to the state before testing began.
 
 ---
 
+## 2026-09-09 · Phase 1B · admin email privacy
+
+Migration under test: `0022_admin_user_directory`.
+
+### Before
+
+`/admin/users` rendered `user.email` for every account. The adapter fetched the
+addresses with the service-role key through `auth.admin.listUsers()`, so
+everyone the layout guard admitted — moderators included — read all 124 real
+addresses, and nothing was recorded because reading one was not modelled as an
+act.
+
+It was also wrong. `listUsers({ perPage: limit })` returns accounts in Auth's
+own order, which is not the order of the profile page it was zipped against, so
+past the first page the addresses shown did not belong to the rows beside them.
+
+### The mask, evaluated in Postgres
+
+| Input | Output |
+|---|---|
+| `feranmiadekoya@gmail.com` | `fer***@gmail.com` |
+| `abcdef@example.com` | `abc***@example.com` |
+| `abcd@example.com` | `ab***@example.com` |
+| `abc@example.com` | `a***@example.com` |
+| `ab@example.com` | `a***@example.com` |
+| `a@example.com` | `***@example.com` |
+| `null` / `not-an-email` / `@example.com` | `—` |
+
+Never more than half the local part, so a rule tuned for a long address does
+not hand back a short one unchanged. `tests/safety/identity.test.ts` holds the
+TypeScript copy to this exact table.
+
+### Access
+
+| Attack | Result |
+|---|---|
+| Anonymous visitor calls `livd_admin_user_directory` | BLOCKED — `permission denied for function` |
+| Resident calls `livd_admin_user_directory` | BLOCKED — `Not authorised to read the user directory` |
+| Resident calls `livd_admin_find_user_by_email` | BLOCKED — `Not authorised to look up an account` |
+| Resident calls `livd_mask_email` directly | BLOCKED — `permission denied for function` |
+| Anonymous visitor reads `auth.users` directly | BLOCKED — `permission denied for table users` |
+| Moderator-or-above reads page 1 | 5 rows, sample `fer***@gmail.com` |
+| ... sees `total_count` | 124 |
+| ... reads offset 120 | 4 rows |
+| ... asks for 100 000 rows | 100 — capped |
+
+The property that matters most is not in the table. `livd_admin_user_directory`
+returns a masked string and no address, so there is no object anywhere in the
+Node process holding a real one — it cannot leak into a client payload, a log
+line or an error message, because it is not there to leak. A mask applied in
+TypeScript would be a promise about what code does with a value it holds; this
+is the absence of the value.
+
+---
+
 ## A false pass, and what it cost
 
 The first run of the suite above reported tests 1–4 as BLOCKED with SQLSTATE

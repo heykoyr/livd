@@ -14,6 +14,7 @@ import {
   createServiceRoleClient,
 } from '@/server/auth/supabase-client';
 import type {
+  AdminUserPage,
   ClaimStatus,
   ModerationAction,
   Property,
@@ -113,6 +114,20 @@ const EVIDENCE_BUCKET = 'verification-evidence';
  * anonymous.
  */
 const EVIDENCE_LINK_SECONDS = 300;
+
+/** Default page size for administrative listings. */
+const ADMIN_PAGE_SIZE = 25;
+
+/** One row of `livd_admin_user_directory`. Carries a mask, never an address. */
+interface AdminUserDirectoryRow {
+  id: string;
+  masked_email: string;
+  role: UserProfile['role'];
+  status: UserProfile['status'];
+  country_code: string | null;
+  created_at: string;
+  total_count: number | string;
+}
 
 export class SupabaseRepository implements LivdRepository {
   /**
@@ -1755,25 +1770,27 @@ export class SupabaseRepository implements LivdRepository {
     return toUserProfile(data as unknown as ProfileRow, user?.id === id ? (user.email ?? '') : '');
   }
 
-  async getUserByEmail(email: string): Promise<UserProfile | null> {
-    const admin = this.admin();
-    const { data, error } = await admin.auth.admin.listUsers();
-    if (error) throw new Error(`getUserByEmail: ${error.message}`);
+  /**
+   * Resolves an address to an account id.
+   *
+   * One indexed lookup inside `livd_admin_find_user_by_email`, behind that
+   * function's own moderator check. It replaces a loop over
+   * `auth.admin.listUsers()` with no pagination, which searched only the first
+   * page — fifty accounts, against a deployment that has a hundred and
+   * twenty-four — and returned "no such account" for everybody else.
+   *
+   * Through the caller's session, not the service role, so the authorisation
+   * is evaluated against the real JWT rather than asserted by this process.
+   */
+  async findUserIdByEmail(email: string): Promise<string | null> {
+    const supabase = await this.client();
 
-    const authUser = data.users.find(
-      (candidate) => candidate.email?.toLowerCase() === email.trim().toLowerCase(),
-    );
-    if (!authUser) return null;
+    const { data, error } = await supabase.rpc('livd_admin_find_user_by_email', {
+      lookup_email: email,
+    });
 
-    const { data: profile } = await admin
-      .from('profiles')
-      .select('id, role, status, country_code, preferred_locale, created_at')
-      .eq('id', authUser.id)
-      .maybeSingle();
-
-    return profile
-      ? toUserProfile(profile as unknown as ProfileRow, authUser.email ?? '')
-      : null;
+    if (error) throw new Error(`findUserIdByEmail: ${error.message}`);
+    return (data as string | null) ?? null;
   }
 
   async upsertUser(input: {
@@ -1804,24 +1821,54 @@ export class SupabaseRepository implements LivdRepository {
     return toUserProfile(data as unknown as ProfileRow, input.email);
   }
 
-  async listUsers(limit = 100): Promise<UserProfile[]> {
-    const admin = this.admin();
+  /**
+   * One page of the administrative user directory.
+   *
+   * The whole query lives in `livd_admin_user_directory`, which joins
+   * `profiles` to `auth.users` and applies `livd_mask_email` before returning
+   * a row. Nothing in this process ever holds a real address, so nothing here
+   * can leak one.
+   *
+   * What this replaced is worth remembering. It selected profiles ordered by
+   * creation, fetched the first page of Auth users in Auth's own order, zipped
+   * the two together by id and handed the result to a page that printed
+   * `user.email`. Every moderator read every account's address, unlogged — and
+   * past the first page the addresses did not even belong to the rows they
+   * were shown beside.
+   */
+  async listAdminUsers(
+    options: { page?: number; pageSize?: number } = {},
+  ): Promise<AdminUserPage> {
+    const pageSize = Math.min(Math.max(options.pageSize ?? ADMIN_PAGE_SIZE, 1), 100);
+    const page = Math.max(options.page ?? 1, 1);
 
-    const { data: profiles, error } = await admin
-      .from('profiles')
-      .select('id, role, status, country_code, preferred_locale, created_at')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const supabase = await this.client();
 
-    if (error) throw new Error(`listUsers: ${error.message}`);
-
-    const { data: authData } = await admin.auth.admin.listUsers({ perPage: limit });
-    const emails = new Map(authData.users.map((user) => [user.id, user.email ?? '']));
-
-    return (profiles ?? []).map((row) => {
-      const typed = row as unknown as ProfileRow;
-      return toUserProfile(typed, emails.get(typed.id) ?? '');
+    const { data, error } = await supabase.rpc('livd_admin_user_directory', {
+      page_size: pageSize,
+      page_offset: (page - 1) * pageSize,
     });
+
+    if (error) throw new Error(`listAdminUsers: ${error.message}`);
+
+    const rows = (data ?? []) as AdminUserDirectoryRow[];
+
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        maskedEmail: row.masked_email,
+        role: row.role,
+        status: row.status,
+        countryCode: row.country_code,
+        createdAt: row.created_at,
+      })),
+      // `count(*) over ()` rides on every row, so a page with rows knows the
+      // total without a second query. An empty page past the end knows only
+      // that it is empty, which is all the pager needs.
+      total: rows[0]?.total_count ? Number(rows[0].total_count) : 0,
+      page,
+      pageSize,
+    };
   }
 
   /**

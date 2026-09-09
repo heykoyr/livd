@@ -9,6 +9,7 @@ import { matchScore, normaliseForSearch } from '@/lib/search/matching';
 import { formatAddressInline, propertyContextLine, propertyDisplayName } from '@/lib/format';
 import { propertySlug, shortId } from '@/lib/utils';
 import type {
+  AdminUserPage,
   ClaimStatus,
   ModerationAction,
   Property,
@@ -36,6 +37,7 @@ import type {
   VerificationRecord,
 } from '@/types/domain';
 import { detectPropertyFlags } from '@/lib/safety/burst-detection';
+import { maskEmail } from '@/lib/safety/identity';
 import { VERIFICATION_LIFETIME } from '@/config/verification';
 import { haversineMeters, isValidCoordinates } from '@/lib/geo/distance';
 import { decideProximity, isImplausibleMovement } from '@/lib/geo/proximity';
@@ -1452,10 +1454,11 @@ export class LocalRepository implements LivdRepository {
     return database.users.find((user) => user.id === id) ?? null;
   }
 
-  async getUserByEmail(email: string): Promise<UserProfile | null> {
+  async findUserIdByEmail(email: string): Promise<string | null> {
     const database = await getDatabase();
     const normalised = email.trim().toLowerCase();
-    return database.users.find((user) => user.email.toLowerCase() === normalised) ?? null;
+    const match = database.users.find((user) => user.email.toLowerCase() === normalised);
+    return match?.id ?? null;
   }
 
   async upsertUser(input: {
@@ -1489,12 +1492,42 @@ export class LocalRepository implements LivdRepository {
     });
   }
 
-  async listUsers(limit = 100): Promise<UserProfile[]> {
+  /**
+   * One page of the administrative user directory.
+   *
+   * Postgres masks inside `livd_admin_user_directory`, before the row leaves
+   * the database. There is no database here, so the mask is applied as the
+   * summary is built — and the address is dropped on the same line it is read,
+   * never carried into the returned object. `tests/safety/identity.test.ts`
+   * pins the two rules to each other.
+   */
+  async listAdminUsers(
+    options: { page?: number; pageSize?: number } = {},
+  ): Promise<AdminUserPage> {
+    const pageSize = Math.min(Math.max(options.pageSize ?? 25, 1), 100);
+    const page = Math.max(options.page ?? 1, 1);
+
     const database = await getDatabase();
-    return database.users
+
+    const all = database.users
       .filter((user) => !user.id.startsWith('demo-user-'))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, limit);
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+
+    const start = (page - 1) * pageSize;
+
+    return {
+      items: all.slice(start, start + pageSize).map((user) => ({
+        id: user.id,
+        maskedEmail: maskEmail(user.email),
+        role: user.role,
+        status: user.status,
+        countryCode: user.countryCode,
+        createdAt: user.createdAt,
+      })),
+      total: all.length,
+      page,
+      pageSize,
+    };
   }
 
   /**

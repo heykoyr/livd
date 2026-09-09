@@ -1,4 +1,5 @@
 import type {
+  AdminUserPage,
   ClaimStatus,
   ModerationAction,
   Property,
@@ -424,9 +425,35 @@ export interface LivdRepository {
   /* ---- Users ---- */
 
   getUserById(id: string): Promise<UserProfile | null>;
-  getUserByEmail(email: string): Promise<UserProfile | null>;
+
+  /**
+   * Resolves an address the caller already holds to an account id.
+   *
+   * Deliberately returns an id and not a profile. The previous method returned
+   * a `UserProfile` carrying the email, which made "look up who this is" a
+   * capability any caller inherited by accident; this one gives back only an
+   * internal identifier, and only to somebody who already knew the address.
+   *
+   * It also replaces an implementation that pulled the whole Auth user list
+   * and searched the first page — silently answering "no such account" for
+   * anyone past the fiftieth, which was already wrong at this deployment's
+   * size. Against Postgres it is now one indexed lookup behind a moderator
+   * check.
+   */
+  findUserIdByEmail(email: string): Promise<string | null>;
+
   upsertUser(input: { id?: string; email: string; countryCode?: string | null }): Promise<UserProfile>;
-  listUsers(limit?: number): Promise<UserProfile[]>;
+
+  /**
+   * One page of the administrative user directory.
+   *
+   * Returns `AdminUserSummary`, which has no email field at all — the mask is
+   * applied in the database, so the address is never selected into this
+   * process. `/admin/users` previously rendered every account's real address to
+   * anyone the layout guard admitted, which includes moderators, and recorded
+   * nothing.
+   */
+  listAdminUsers(options?: { page?: number; pageSize?: number }): Promise<AdminUserPage>;
 
   /**
    * Grants a role.

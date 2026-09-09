@@ -420,6 +420,14 @@ export type AdminRole = Extract<UserRole, 'moderator' | 'trust_admin' | 'admin'>
  */
 export type UserStatus = 'active' | 'restricted' | 'suspended';
 
+/**
+ * An account, as the account holder's own session sees it.
+ *
+ * `email` is the signed-in person's own address and is populated only when
+ * that is who is being read. It is not, and must never become, a way for one
+ * person to learn another's — administrative screens use `AdminUserSummary`,
+ * which has no such field.
+ */
 export interface UserProfile {
   id: string;
   email: string;
@@ -428,6 +436,37 @@ export interface UserProfile {
   countryCode: CountryCode | null;
   preferredLocale: string;
   createdAt: string;
+}
+
+/**
+ * An account as an administrative screen sees it.
+ *
+ * Note what is missing. There is no `email`, only a `maskedEmail`, and the
+ * masking happens in Postgres before the row is returned — so no object in
+ * this process carries the real address, and none can leak into a payload, a
+ * log or an error message.
+ *
+ * That is the difference between this type and `UserProfile`, and it is the
+ * whole point of having two. Reading an actual address is a separate operation
+ * with its own authorisation and its own audit record; it is never a side
+ * effect of listing people.
+ */
+export interface AdminUserSummary {
+  id: string;
+  /** e.g. `fer***@gmail.com`. Never the address itself. */
+  maskedEmail: string;
+  role: UserRole;
+  status: UserStatus;
+  countryCode: CountryCode | null;
+  createdAt: string;
+}
+
+/** One page of the administrative user directory. */
+export interface AdminUserPage {
+  items: AdminUserSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export type ReportReason =
