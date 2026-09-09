@@ -427,7 +427,42 @@ export interface LivdRepository {
   getUserByEmail(email: string): Promise<UserProfile | null>;
   upsertUser(input: { id?: string; email: string; countryCode?: string | null }): Promise<UserProfile>;
   listUsers(limit?: number): Promise<UserProfile[]>;
-  setUserRole(userId: string, role: UserProfile['role'], actorId: string): Promise<void>;
+
+  /**
+   * Grants a role.
+   *
+   * `actorId` is the caller as the application understands them, and the
+   * Supabase adapter does **not** trust it: the database derives the actor
+   * from `auth.uid()` inside `livd_set_user_role` and enforces the whole rule
+   * set there — administrator only, never yourself, never the last
+   * administrator, always with a reason, always audited, all in one
+   * transaction. The argument is carried for the local adapter, which has no
+   * database session and applies the identical rules in TypeScript.
+   *
+   * That asymmetry is deliberate. Authorisation for this operation is not
+   * something server code asserts; it is something the database decides, so a
+   * Server Action holding the service-role key cannot grant a role either.
+   */
+  setUserRole(
+    userId: string,
+    role: UserProfile['role'],
+    actorId: string,
+    reason: string,
+  ): Promise<void>;
+
+  /**
+   * Changes an account's standing. Same contract as `setUserRole`.
+   *
+   * Restricting is ordinary moderation; suspending requires Trust & Safety
+   * authorisation, and acting on another privileged account requires an
+   * administrator. Enforced in the database, not here.
+   */
+  setUserStatus(
+    userId: string,
+    status: UserProfile['status'],
+    actorId: string,
+    reason: string,
+  ): Promise<void>;
 
   /**
    * Erases an account.

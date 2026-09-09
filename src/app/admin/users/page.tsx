@@ -3,7 +3,7 @@ import { formatRelativeTime } from '@/lib/format';
 import { hasRole } from '@/server/auth/guards';
 import { getCurrentUser } from '@/server/auth/session';
 import { getRepository } from '@/server/data';
-import { RoleControls } from '../moderation-controls';
+import { RoleControls, StatusControls } from '../moderation-controls';
 
 /**
  * Accounts.
@@ -44,8 +44,11 @@ export default async function UsersPage() {
                 </p>
               </div>
 
-              {canEdit && viewer?.id !== user.id && (
-                <RoleControls userId={user.id} currentRole={user.role} />
+              {viewer?.id !== user.id && (
+                <div className="flex w-full flex-col gap-4 border-t border-border pt-4 lg:w-auto lg:border-0 lg:pt-0">
+                  {canEdit && <RoleControls userId={user.id} currentRole={user.role} />}
+                  <StatusControls userId={user.id} currentStatus={user.status} />
+                </div>
               )}
             </div>
           </li>

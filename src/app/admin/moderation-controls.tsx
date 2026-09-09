@@ -12,6 +12,7 @@ import {
   setReviewStatus,
   setReviewVerification,
   setUserRole,
+  setUserStatus,
 } from '@/server/actions/moderation';
 import {
   decideVerification,
@@ -185,26 +186,131 @@ export function ClaimControls({ claimId }: { claimId: string }) {
   );
 }
 
+const ROLE_OPTIONS = [
+  { value: 'resident', label: 'Resident' },
+  { value: 'owner', label: 'Owner' },
+  { value: 'moderator', label: 'Moderator' },
+  { value: 'trust_admin', label: 'Trust & Safety admin' },
+  { value: 'admin', label: 'Administrator' },
+] as const;
+
+/**
+ * Grants a role.
+ *
+ * The reason field is not politeness. `livd_set_user_role` refuses a change
+ * that arrives without one, because the audit row and the role change are
+ * written in the same transaction — a role that moved without a recorded
+ * reason is not a state the database can be left in.
+ */
 export function RoleControls({ userId, currentRole }: { userId: string; currentRole: string }) {
   const [state, formAction, pending] = useActionState(setUserRole, initialModerationState);
 
   return (
-    <form action={formAction} className="flex flex-wrap items-center gap-2">
+    <form action={formAction} className="flex flex-col gap-2.5">
       <input type="hidden" name="userId" value={userId} />
-      <select
-        name="role"
-        defaultValue={currentRole}
-        className="h-9 rounded-md border border-border-strong bg-surface px-2.5 text-label text-ink"
-      >
-        {['resident', 'owner', 'moderator', 'admin'].map((role) => (
-          <option key={role} value={role}>
-            {role}
-          </option>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="sr-only" htmlFor={`role-${userId}`}>
+          Role
+        </label>
+        <select
+          id={`role-${userId}`}
+          name="role"
+          defaultValue={currentRole}
+          className="h-9 rounded-md border border-border-strong bg-surface px-2.5 text-label text-ink"
+        >
+          {ROLE_OPTIONS.map((role) => (
+            <option key={role.value} value={role.value}>
+              {role.label}
+            </option>
+          ))}
+        </select>
+
+        <label className="sr-only" htmlFor={`role-reason-${userId}`}>
+          Reason for this role change
+        </label>
+        <Input
+          id={`role-reason-${userId}`}
+          name="reason"
+          required
+          minLength={3}
+          maxLength={500}
+          placeholder="Why this change?"
+          className="h-9 w-52"
+        />
+
+        <Button type="submit" variant="secondary" size="sm" loading={pending}>
+          Update
+        </Button>
+      </div>
+
+      <Feedback state={state} />
+    </form>
+  );
+}
+
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Active', variant: 'secondary' as const },
+  { value: 'restricted', label: 'Restrict', variant: 'secondary' as const },
+  { value: 'suspended', label: 'Suspend', variant: 'danger' as const },
+];
+
+/**
+ * Changes an account's standing.
+ *
+ * Nothing here touches what the account wrote. A suspended account keeps every
+ * published review it has, and removing a review says nothing about its
+ * author's standing — the two are separate decisions with separate records,
+ * and combining them into one control is how people get punished twice for
+ * one thing.
+ *
+ * Suspension is refused for a plain moderator by the database. The control is
+ * still rendered, because hiding it would teach a moderator that the boundary
+ * does not exist rather than that they are on the wrong side of it.
+ */
+export function StatusControls({
+  userId,
+  currentStatus,
+}: {
+  userId: string;
+  currentStatus: string;
+}) {
+  const [state, formAction, pending] = useActionState(setUserStatus, initialModerationState);
+
+  return (
+    <form action={formAction} className="flex flex-col gap-2.5">
+      <input type="hidden" name="userId" value={userId} />
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-label font-medium text-ink">Reason for this decision</span>
+        <Input
+          name="reason"
+          required
+          minLength={3}
+          maxLength={500}
+          placeholder="Why this decision?"
+        />
+        <span className="text-micro text-ink-subtle">
+          Recorded in the audit log with who made it. Never shown to the account holder.
+        </span>
+      </label>
+
+      <div className="flex flex-wrap gap-2">
+        {STATUS_OPTIONS.filter((option) => option.value !== currentStatus).map((option) => (
+          <Button
+            key={option.value}
+            type="submit"
+            name="status"
+            value={option.value}
+            variant={option.variant}
+            size="sm"
+            loading={pending}
+          >
+            {option.label}
+          </Button>
         ))}
-      </select>
-      <Button type="submit" variant="secondary" size="sm" loading={pending}>
-        Update
-      </Button>
+      </div>
+
       <Feedback state={state} />
     </form>
   );

@@ -1497,16 +1497,56 @@ export class LocalRepository implements LivdRepository {
       .slice(0, limit);
   }
 
+  /**
+   * Grants a role.
+   *
+   * Every rule `livd_set_user_role` enforces in Postgres is enforced here in
+   * the same order, so the two adapters refuse the same requests for the same
+   * reasons. That is not tidiness: the security tests run against this
+   * adapter, in process, with no database — and a test that passes here is
+   * only worth something if the behaviour it pins is the behaviour production
+   * has.
+   *
+   * The one difference is where the actor comes from. Postgres reads
+   * `auth.uid()` and cannot be told who is calling; here there is no session,
+   * so `actorId` is the caller and the Server Action above is what established
+   * it.
+   */
   async setUserRole(
     userId: string,
     role: UserProfile['role'],
     actorId: string,
+    reason: string,
   ): Promise<void> {
     await mutate((database) => {
+      const actor = database.users.find((u) => u.id === actorId);
+      if (!actor || actor.role !== 'admin' || actor.status !== 'active') {
+        throw new Error('Only an administrator may change a role');
+      }
+
+      if (userId === actorId) throw new Error('You cannot change your own role');
+
+      if (reason.trim().length < 3) {
+        throw new Error('A reason is required, for the audit trail');
+      }
+
       const user = database.users.find((u) => u.id === userId);
-      if (!user) throw new Error('User not found');
+      if (!user) throw new Error('No such account');
 
       const previous = user.role;
+
+      // Idempotent: a retried request must not write a second audit event.
+      if (previous === role) return;
+
+      if (previous === 'admin') {
+        const remaining = database.users.filter(
+          (u) => u.role === 'admin' && u.status === 'active' && u.id !== userId,
+        ).length;
+        if (remaining === 0) {
+          throw new Error('This is the last administrator and cannot be demoted');
+        }
+      }
+
       user.role = role;
 
       database.moderationActions.push({
@@ -1514,10 +1554,66 @@ export class LocalRepository implements LivdRepository {
         actorId,
         subjectType: 'user',
         subjectId: userId,
-        action: `set_role:${role}`,
-        reason: null,
+        action: 'role_changed',
+        reason: reason.trim(),
         previousStatus: previous,
         newStatus: role,
+        createdAt: nowIso(),
+      });
+    });
+  }
+
+  /** As `setUserRole`, mirroring `livd_set_user_status`. */
+  async setUserStatus(
+    userId: string,
+    status: UserProfile['status'],
+    actorId: string,
+    reason: string,
+  ): Promise<void> {
+    await mutate((database) => {
+      const actor = database.users.find((u) => u.id === actorId);
+      const actorModerates =
+        actor?.status === 'active' &&
+        (actor.role === 'moderator' || actor.role === 'trust_admin' || actor.role === 'admin');
+
+      if (!actorModerates) {
+        throw new Error('Only a moderator may change an account standing');
+      }
+
+      if (userId === actorId) throw new Error('You cannot change your own standing');
+
+      if (reason.trim().length < 3) {
+        throw new Error('A reason is required, for the audit trail');
+      }
+
+      const user = database.users.find((u) => u.id === userId);
+      if (!user) throw new Error('No such account');
+
+      const targetIsPrivileged =
+        user.role === 'moderator' || user.role === 'trust_admin' || user.role === 'admin';
+
+      if (targetIsPrivileged && actor.role !== 'admin') {
+        throw new Error('Only an administrator may act on a privileged account');
+      }
+
+      if (status === 'suspended' && actor.role !== 'trust_admin' && actor.role !== 'admin') {
+        throw new Error('Suspending an account requires Trust and Safety authorisation');
+      }
+
+      const previous = user.status;
+      if (previous === status) return;
+
+      user.status = status;
+
+      database.moderationActions.push({
+        id: `action-${shortId(12)}`,
+        actorId,
+        subjectType: 'user',
+        subjectId: userId,
+        action: 'status_changed',
+        reason: reason.trim(),
+        previousStatus: previous,
+        newStatus: status,
         createdAt: nowIso(),
       });
     });

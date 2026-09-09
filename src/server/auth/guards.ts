@@ -2,7 +2,7 @@ import 'server-only';
 
 import { redirect } from 'next/navigation';
 
-import type { UserProfile, UserRole } from '@/types/domain';
+import type { AdminRole, UserProfile, UserRole } from '@/types/domain';
 import { getCurrentUser } from './session';
 
 /**
@@ -21,18 +21,39 @@ export class AuthorisationError extends Error {
   }
 }
 
-/** Ordered by privilege. A role satisfies any requirement at or below it. */
+/**
+ * The administrative ladder. A role satisfies any requirement at or below it.
+ *
+ * `owner` used to sit at rank 1, above `resident` — which modelled a property
+ * owner as *more* privileged than an ordinary person. Nothing called
+ * `requireRole('owner')`, so it never did any harm, but it had the hierarchy
+ * pointing the wrong way for the one system where the direction matters most:
+ * an owner is the party a reviewer most needs protecting from, and must never
+ * accumulate access to them by climbing a ladder they should not be on.
+ *
+ * So they are not on it. Owning a property is a relationship to a building,
+ * checked per property by `livd_owns_property`, and it confers a right of
+ * reply — never a level of access to a person. `requireRole` accepts only
+ * `AdminRole`, so `requireRole('owner')` is now a compile error rather than a
+ * check that quietly passes for everyone.
+ */
 const ROLE_RANK: Record<UserRole, number> = {
   resident: 0,
-  owner: 1,
-  moderator: 2,
+  owner: 0,
+  moderator: 1,
+  trust_admin: 2,
   admin: 3,
 };
 
-export function hasRole(user: UserProfile | null, required: UserRole): boolean {
+export function hasRole(user: UserProfile | null, required: AdminRole): boolean {
   if (!user) return false;
   if (user.status !== 'active') return false;
   return ROLE_RANK[user.role] >= ROLE_RANK[required];
+}
+
+/** May cross the identity boundary — reveal an account, read verification evidence. */
+export function canAccessIdentity(user: UserProfile | null): boolean {
+  return hasRole(user, 'trust_admin');
 }
 
 /**
@@ -50,7 +71,7 @@ export async function requireUser(): Promise<UserProfile> {
   return user;
 }
 
-export async function requireRole(required: UserRole): Promise<UserProfile> {
+export async function requireRole(required: AdminRole): Promise<UserProfile> {
   const user = await requireUser();
   if (!hasRole(user, required)) throw new AuthorisationError();
   return user;
@@ -66,7 +87,7 @@ export async function requireUserPage(returnTo: string): Promise<UserProfile> {
   return user;
 }
 
-export async function requireRolePage(required: UserRole, returnTo: string): Promise<UserProfile> {
+export async function requireRolePage(required: AdminRole, returnTo: string): Promise<UserProfile> {
   const user = await requireUserPage(returnTo);
   // Not found rather than forbidden: an unauthorised visitor should not learn
   // that an admin area exists at this path.

@@ -1,0 +1,33 @@
+-- ===========================================================================
+-- Livd — 0019 · The trust_admin role
+--
+-- Adds one enum value and nothing else, deliberately.
+--
+-- Postgres will not let a new enum value be *used* in the same transaction
+-- that adds it, and Supabase applies each migration inside one. So the value
+-- is added here alone, and 0020 — which references it in predicates, policies
+-- and function bodies — runs afterwards.
+--
+-- Why the role exists: until now the database has known exactly one kind of
+-- privileged account. `livd_is_moderator()` returns true for `moderator` and
+-- `admin` alike, and every policy in the schema is written against it, so
+-- there has never been a database-level difference between someone who
+-- moderates content and someone who administers the platform. Livd needs
+-- three tiers, because the thing that must be gated is not moderation — it is
+-- access to who wrote a review:
+--
+--   moderator    reads reported content, moderates reviews, works cases,
+--                sees a masked email and never the address behind it
+--   trust_admin  may additionally reveal an account identity, read
+--                verification evidence, and handle serious cases — every one
+--                of those an audited act
+--   admin        may additionally grant roles and change security
+--                configuration
+--
+-- Placed after `moderator` so the enum's own ordering matches the privilege
+-- ordering for the three administrative roles. `resident` and `owner` sit
+-- before them and are not on that ladder at all: owning a property is a
+-- relationship to a building, never a level of access to a person.
+-- ===========================================================================
+
+alter type user_role add value if not exists 'trust_admin' after 'moderator';

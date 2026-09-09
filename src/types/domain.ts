@@ -382,8 +382,42 @@ export interface PreVisitCheck {
  * People, safety & personalisation
  * ---------------------------------------------------------------------- */
 
-export type UserRole = 'resident' | 'owner' | 'moderator' | 'admin';
+/**
+ * What an account may do.
+ *
+ * Two of these are not privileges at all. `resident` is the default, and
+ * `owner` describes a relationship to a building — someone who has claimed a
+ * property — which grants a right of reply and nothing whatsoever about the
+ * people who reviewed it. Neither sits on the administrative ladder.
+ *
+ * The other three do, in order:
+ *
+ *   `moderator`   Reads reported content, moderates reviews, works cases.
+ *                 Sees a masked email and never the address behind it.
+ *   `trust_admin` May additionally reveal an account identity and read
+ *                 verification evidence — the identity boundary. Every
+ *                 crossing of it is audited.
+ *   `admin`       May additionally grant roles and change security
+ *                 configuration.
+ *
+ * The database knows this hierarchy too, through `livd_is_moderator`,
+ * `livd_is_trust_admin` and `livd_is_super_admin`. It is not a fact that lives
+ * only in TypeScript, because a fact that lives only in TypeScript is one a
+ * request to PostgREST does not have to respect.
+ */
+export type UserRole = 'resident' | 'owner' | 'moderator' | 'trust_admin' | 'admin';
 
+/** The three administrative tiers. `resident` and `owner` are deliberately absent. */
+export type AdminRole = Extract<UserRole, 'moderator' | 'trust_admin' | 'admin'>;
+
+/**
+ * An account's standing.
+ *
+ * Entirely separate from what has happened to anything the account wrote. A
+ * banned account keeps its published reviews; a removed review says nothing
+ * about its author's standing. Conflating the two is how moderation systems
+ * end up punishing people twice for one thing, or not at all for another.
+ */
 export type UserStatus = 'active' | 'restricted' | 'suspended';
 
 export interface UserProfile {

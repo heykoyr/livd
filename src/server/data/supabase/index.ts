@@ -1824,30 +1824,59 @@ export class SupabaseRepository implements LivdRepository {
     });
   }
 
+  /**
+   * Grants a role.
+   *
+   * Through the caller's own session, never the service role, and never as a
+   * direct write to the column. Until 0020 this method did exactly that —
+   * `admin.from('profiles').update({ role })` — which meant the only thing
+   * standing between a moderator and an administrator was a
+   * `requireRole('admin')` call in a Server Action. PostgREST does not run
+   * Server Actions, and the policy protecting the column exempted moderators,
+   * so the check was decorative.
+   *
+   * Now the database owns the decision. `livd_set_user_role` reads the actor
+   * from `auth.uid()`, refuses anyone who is not an administrator, refuses a
+   * self-change, refuses to demote the last administrator, demands a reason
+   * and writes the audit row in the same transaction as the update. The
+   * service-role client could not do this even if it wanted to: a trigger
+   * refuses any write to `role` that did not come through this function.
+   *
+   * `actorId` is unused here on purpose — see the note on the interface.
+   */
   async setUserRole(
     userId: string,
     role: UserProfile['role'],
-    actorId: string,
+    _actorId: string,
+    reason: string,
   ): Promise<void> {
-    const admin = this.admin();
+    const supabase = await this.client();
 
-    const { data: current } = await admin
-      .from('profiles')
-      .select('role')
-      .eq('id', userId)
-      .maybeSingle();
-
-    const { error } = await admin.from('profiles').update({ role }).eq('id', userId);
-    if (error) throw new Error(`setUserRole: ${error.message}`);
-
-    await admin.from('moderation_actions').insert({
-      actor_id: actorId,
-      subject_type: 'user',
-      subject_id: userId,
-      action: `set_role:${role}`,
-      previous_status: (current as { role: string } | null)?.role ?? null,
-      new_status: role,
+    const { error } = await supabase.rpc('livd_set_user_role', {
+      target_user_id: userId,
+      new_role: role,
+      change_reason: reason,
     });
+
+    if (error) throw new Error(`setUserRole: ${error.message}`);
+  }
+
+  /** As `setUserRole`, for standing rather than privilege. */
+  async setUserStatus(
+    userId: string,
+    status: UserProfile['status'],
+    _actorId: string,
+    reason: string,
+  ): Promise<void> {
+    const supabase = await this.client();
+
+    const { error } = await supabase.rpc('livd_set_user_status', {
+      target_user_id: userId,
+      new_status: status,
+      change_reason: reason,
+    });
+
+    if (error) throw new Error(`setUserStatus: ${error.message}`);
   }
 
   /**
