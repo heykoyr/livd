@@ -68,6 +68,22 @@ export interface AdminActionSpec<TInput, TOutput> {
    */
   action: AdminAuditAction | null;
 
+  /**
+   * Whether the layer records a *successful* run.
+   *
+   * `false` is for operations the database audits transactionally on success —
+   * `livd_reveal_user_identity` writes its entry and returns the address in one
+   * statement block, so there is no ordering in which the disclosure happens
+   * and the record does not. Auditing here as well would double it.
+   *
+   * Denials and failures are still recorded whatever this says, and that is the
+   * point of having the flag rather than just setting `action: null`: a refused
+   * attempt never reaches the database function, so the layer is the only thing
+   * that can note it — and somebody repeatedly trying to cross the identity
+   * boundary is exactly what an access log is for.
+   */
+  auditSuccess?: boolean;
+
   /** The tier required to attempt this at all. Re-checked in the database. */
   requires: AdminRole;
 
@@ -145,6 +161,7 @@ export async function runAdminAction<TInput, TOutput>(
 
   const audit = async (outcome: AdminAuditOutcome, output: TOutput | null) => {
     if (spec.action === null) return;
+    if (outcome === 'succeeded' && spec.auditSuccess === false) return;
 
     try {
       await repository.recordAdminAudit({

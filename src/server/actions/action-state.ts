@@ -234,3 +234,33 @@ export const initialVerificationSubmitState: VerificationSubmitState = {
   message: null,
   checks: [],
 };
+
+/* -------------------------------------------------------------------------
+ * Identity reveal
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The result of crossing the identity boundary.
+ *
+ * The address lives here, in the state of one form, for as long as that page
+ * stays open. It is never written into the page's server-rendered HTML, never
+ * cached and never stored — a reveal is an event, and what it produces should
+ * not outlive the moment somebody needed it.
+ *
+ * `auditEntryId` is carried back so the person can be shown that the access was
+ * recorded, and which record it is. Telling somebody their action was logged is
+ * worth more than logging it silently: it is the part that changes behaviour.
+ */
+export interface IdentityRevealState {
+  status: 'idle' | 'error' | 'revealed';
+  error: string | null;
+  email: string | null;
+  auditEntryId: string | null;
+}
+
+export const initialIdentityRevealState: IdentityRevealState = {
+  status: 'idle',
+  error: null,
+  email: null,
+  auditEntryId: null,
+};

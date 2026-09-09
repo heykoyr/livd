@@ -52,6 +52,9 @@ const FLAG_DECISION_COOLDOWN_DAYS = 7;
 import type {
   AdminAuditPage,
   AdminOverview,
+  IdentityAccessReason,
+  IdentityAccessRecord,
+  IdentityReveal,
   CreatePropertyInput,
   CreateReviewInput,
   DiscoveryOptions,
@@ -145,6 +148,59 @@ function addressKey(input: {
  * reason: a list saying four reviews beside a page saying three is a bug
  * somebody chases for an afternoon.
  */
+/**
+ * The reasons an identity may be accessed for.
+ *
+ * A table in Postgres (`identity_access_reasons`, migration 0025) so the
+ * vocabulary is a data change rather than a deploy. Here it is a constant,
+ * kept identical — `tests/safety/identity-reveal.test.ts` is what holds the
+ * two together.
+ */
+const IDENTITY_ACCESS_REASONS: IdentityAccessReason[] = [
+  {
+    key: 'safety_investigation',
+    label: 'Safety investigation',
+    description: "A credible concern about somebody's physical safety.",
+    requiresDetail: false,
+  },
+  {
+    key: 'fraud_investigation',
+    label: 'Fraud investigation',
+    description: 'Suspected review manipulation, coordinated activity or impersonation.',
+    requiresDetail: false,
+  },
+  {
+    key: 'serious_abuse',
+    label: 'Serious abuse or harassment',
+    description: 'Targeted harassment, threats, or a sustained campaign against a person.',
+    requiresDetail: false,
+  },
+  {
+    key: 'legal_request',
+    label: 'Legal request',
+    description: 'A request with an apparent legal basis, recorded as an authority request.',
+    requiresDetail: true,
+  },
+  {
+    key: 'regulatory_request',
+    label: 'Regulatory request',
+    description: 'A request from a body with regulatory authority over Livd.',
+    requiresDetail: true,
+  },
+  {
+    key: 'security_investigation',
+    label: 'Security investigation',
+    description: 'Account compromise, platform abuse or an incident affecting Livd itself.',
+    requiresDetail: false,
+  },
+  {
+    key: 'other',
+    label: 'Other Trust & Safety reason',
+    description: 'Anything else. Say what it is — this one is read.',
+    requiresDetail: true,
+  },
+];
+
 function countsFor(database: LocalDatabase, userId: string) {
   const authored = database.reviews.filter((review) => review.authorId === userId);
   const authoredIds = new Set(authored.map((review) => review.id));
@@ -1292,6 +1348,113 @@ export class LocalRepository implements LivdRepository {
       .filter((action) => !subjectId || action.subjectId === subjectId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Identity
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Reveals an account's email address.
+   *
+   * Postgres does this inside one transaction, so the disclosure and its record
+   * cannot come apart. There are no transactions here, so the record is written
+   * *first* and the address is returned only if that succeeded — the same
+   * guarantee in the only order that can provide it without one.
+   *
+   * Every rule `livd_reveal_user_identity` enforces is enforced here, in the
+   * same order, for the same reason as `setUserRole`: the security tests run
+   * against this adapter, and a test that pins the wrong behaviour is worse
+   * than no test.
+   */
+  async revealUserIdentity(input: {
+    userId: string;
+    reasonKey: string;
+    reasonDetail: string | null;
+    caseReference: string | null;
+    actorIpHash: string | null;
+    actorId: string;
+  }): Promise<IdentityReveal> {
+    const reason = IDENTITY_ACCESS_REASONS.find((entry) => entry.key === input.reasonKey);
+    if (!reason) throw new Error('Select a reason for this access');
+
+    if (reason.requiresDetail && (input.reasonDetail ?? '').trim().length < 10) {
+      throw new Error('This reason needs a written explanation');
+    }
+
+    const database = await getDatabase();
+
+    const actor = database.users.find((u) => u.id === input.actorId);
+    const actorIsTrusted =
+      actor?.status === 'active' && (actor.role === 'trust_admin' || actor.role === 'admin');
+
+    if (!actorIsTrusted) {
+      throw new Error('Revealing an account identity requires Trust and Safety authorisation');
+    }
+
+    const target = database.users.find((u) => u.id === input.userId);
+    if (!target) throw new Error('No such account');
+
+    const detail = (input.reasonDetail ?? '').trim();
+    const combined = detail ? `${reason.label} — ${detail}` : reason.label;
+
+    const auditEntryId = `audit-${shortId(12)}`;
+
+    // Written before the address is returned. If this throws, nothing is
+    // disclosed.
+    await mutate((db) => {
+      db.adminAudit.push({
+        id: auditEntryId,
+        actorId: actor.id,
+        actorRole: actor.role,
+        action: 'identity_revealed',
+        subjectType: 'user',
+        subjectId: input.userId,
+        outcome: 'succeeded',
+        reason: combined,
+        detail: {
+          reasonKey: input.reasonKey,
+          ...(input.caseReference?.trim()
+            ? { caseReference: input.caseReference.trim() }
+            : {}),
+          fields: 'email,account_metadata',
+        },
+        createdAt: nowIso(),
+      });
+    });
+
+    return {
+      email: target.email,
+      accountId: target.id,
+      role: target.role,
+      status: target.status,
+      countryCode: target.countryCode,
+      createdAt: target.createdAt,
+      auditEntryId,
+    };
+  }
+
+  async listIdentityAccessReasons(): Promise<IdentityAccessReason[]> {
+    return IDENTITY_ACCESS_REASONS.map((entry) => ({ ...entry }));
+  }
+
+  async listIdentityAccess(userId: string, limit = 20): Promise<IdentityAccessRecord[]> {
+    const database = await getDatabase();
+
+    return database.adminAudit
+      .filter((entry) => entry.action === 'identity_revealed' && entry.subjectId === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .slice(0, limit)
+      .map((entry) => ({
+        id: entry.id,
+        actorId: entry.actorId,
+        actorRole: entry.actorRole,
+        outcome: entry.outcome,
+        reason: entry.reason,
+        caseReference:
+          typeof entry.detail.caseReference === 'string' ? entry.detail.caseReference : null,
+        createdAt: entry.createdAt,
+      }));
   }
 
   /* ---------------------------------------------------------------------

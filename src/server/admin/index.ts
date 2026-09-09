@@ -40,6 +40,12 @@ export {
   type AdminSubjectType,
 } from './audit';
 export {
+  revealIdentity,
+  identityAccessReasons,
+  identityAccessHistory,
+  type RevealIdentityInput,
+} from './identity';
+export {
   changeUserRole,
   changeUserStatus,
   readUserDirectory,

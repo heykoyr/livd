@@ -53,9 +53,17 @@ async function world(actorRole: 'moderator' | 'trust_admin' | 'admin') {
   const subject = await repository.upsertUser({ email: 'quiet.resident@example.test' });
   const other = await repository.upsertUser({ email: 'someone.else@example.test' });
 
+  // Every role explicit, including the residents: the local adapter makes the
+  // first account in a fresh store an administrator, so a fixture that relies on
+  // the default is not testing what it claims to.
   await mutate((database) => {
     const row = database.users.find((u) => u.id === actor.id);
     if (row) row.role = actorRole;
+
+    for (const id of [subject.id, other.id]) {
+      const plain = database.users.find((u) => u.id === id);
+      if (plain) plain.role = 'resident';
+    }
   });
 
   const property = await repository.createProperty(

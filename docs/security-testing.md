@@ -196,6 +196,59 @@ was when they did the thing.
 
 ---
 
+## 2026-09-09 · Phase 4 · the identity boundary
+
+Migration under test: `0025_identity_reveal`.
+
+| # | Attack / behaviour | Result |
+|---|---|---|
+| 1 | Moderator calls `livd_reveal_user_identity` | BLOCKED — `requires Trust and Safety authorisation` |
+| 2 | Resident calls it, on their own account | BLOCKED — same |
+| 3 | Trust admin, made-up reason key | BLOCKED — `Select a reason for this access` |
+| 4 | Trust admin, `other` with a three-letter explanation | BLOCKED — `This reason needs a written explanation` |
+| 5 | Trust admin, valid category and reason | Address returned; audit rows 0 → 1 |
+| 5b | The entry it wrote | `action=identity_revealed outcome=succeeded actor_role=trust_admin`, reason and `caseReference` both present |
+| 6 | Does that entry contain an `@` anywhere? | 0 — no address in `reason` or `detail` |
+| 7 | Moderator reads `livd_identity_access_history` | 1 row — permitted |
+| 8 | Resident reads the same history | BLOCKED — `Not authorised` |
+
+The property worth stating on its own: **the audit insert and the address read
+are the same statement block.** There is no ordering in which a disclosure
+happens and no record is written — if the insert fails, the transaction aborts
+and nothing is returned. Server code could read the address and then log it,
+and would be correct almost always; "almost always" is the wrong standard for
+the one operation whose entire purpose is accountability.
+
+Row 6 matters more than it looks. An audit log that quotes the email address it
+is recording access to has become a second copy of the thing it protects, and
+one with a much longer retention.
+
+Row 7 is deliberate asymmetry. A moderator can see *that* an identity was
+looked at, by whom and why, while being unable to look themselves. An access
+log only its own subjects can read deters nobody.
+
+---
+
+## A fixture that lied
+
+The first run of the reveal tests reported that a **resident successfully
+revealed another account's identity**. It was not a hole in the reveal.
+
+The local development adapter makes the first account created in a fresh store
+an administrator, so the moderation tools are reachable without a fixture. The
+test helper created its "resident" first, and that account was therefore an
+admin — so the test named `refuses a resident` was, in fact, checking that an
+administrator is allowed.
+
+Two of the earlier suites had the same latent flaw and were passing. Every test
+fixture now sets its roles explicitly, `resident` included.
+
+The lesson generalises past this codebase: a security test that leans on a
+default is testing the default, not the control. The reason it surfaced at all
+is that this suite asserted a refusal rather than only asserting successes.
+
+---
+
 ## A false pass, and what it cost
 
 The first run of the suite above reported tests 1–4 as BLOCKED with SQLSTATE

@@ -47,6 +47,9 @@ import type {
 import type {
   AdminAuditPage,
   AdminOverview,
+  IdentityAccessReason,
+  IdentityAccessRecord,
+  IdentityReveal,
   CreatePropertyInput,
   CreateReviewInput,
   DiscoveryOptions,
@@ -1826,6 +1829,120 @@ export class SupabaseRepository implements LivdRepository {
       .eq('property_id', propertyId);
 
     if (error) throw new Error(`setSavedPropertyNote: ${error.message}`);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Identity
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Reveals an account's email address.
+   *
+   * Through the caller's own session, because the function reads `auth.uid()`
+   * to decide whether they may and to stamp the record — the service role has
+   * no identity and could not be held to either.
+   *
+   * `livd_reveal_user_identity` inserts the audit entry and returns the address
+   * in one transaction. If the insert fails the transaction aborts and nothing
+   * comes back, so there is no path by which this method returns an address
+   * that was not recorded.
+   */
+  async revealUserIdentity(input: {
+    userId: string;
+    reasonKey: string;
+    reasonDetail: string | null;
+    caseReference: string | null;
+    actorIpHash: string | null;
+    actorId: string;
+  }): Promise<IdentityReveal> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_reveal_user_identity', {
+      target_user_id: input.userId,
+      reason_key: input.reasonKey,
+      reason_detail: input.reasonDetail,
+      case_reference: input.caseReference,
+      actor_ip_hash: input.actorIpHash,
+    });
+
+    if (error) throw new Error(`revealUserIdentity: ${error.message}`);
+
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | {
+          email: string;
+          account_id: string;
+          role: UserProfile['role'];
+          status: UserProfile['status'];
+          country_code: string | null;
+          created_at: string;
+          audit_entry_id: number | string;
+        }
+      | undefined;
+
+    if (!row) throw new Error('revealUserIdentity: no such account');
+
+    return {
+      email: row.email,
+      accountId: row.account_id,
+      role: row.role,
+      status: row.status,
+      countryCode: row.country_code,
+      createdAt: row.created_at,
+      auditEntryId: String(row.audit_entry_id),
+    };
+  }
+
+  async listIdentityAccessReasons(): Promise<IdentityAccessReason[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase
+      .from('identity_access_reasons')
+      .select('key, label, description, requires_detail')
+      .eq('is_active', true)
+      .order('sort_order');
+
+    if (error) throw new Error(`listIdentityAccessReasons: ${error.message}`);
+
+    return ((data ?? []) as Array<{
+      key: string;
+      label: string;
+      description: string;
+      requires_detail: boolean;
+    }>).map((row) => ({
+      key: row.key,
+      label: row.label,
+      description: row.description,
+      requiresDetail: row.requires_detail,
+    }));
+  }
+
+  async listIdentityAccess(userId: string, limit = 20): Promise<IdentityAccessRecord[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_identity_access_history', {
+      target_user_id: userId,
+      page_size: limit,
+    });
+
+    if (error) throw new Error(`listIdentityAccess: ${error.message}`);
+
+    return ((data ?? []) as Array<{
+      id: number | string;
+      actor_id: string | null;
+      actor_role: UserProfile['role'];
+      outcome: IdentityAccessRecord['outcome'];
+      reason: string | null;
+      detail: { caseReference?: string } | null;
+      created_at: string;
+    }>).map((row) => ({
+      id: String(row.id),
+      actorId: row.actor_id,
+      actorRole: row.actor_role,
+      outcome: row.outcome,
+      reason: row.reason,
+      caseReference: row.detail?.caseReference ?? null,
+      createdAt: row.created_at,
+    }));
   }
 
   /* ---------------------------------------------------------------------

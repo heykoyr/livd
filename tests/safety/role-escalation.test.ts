@@ -70,6 +70,12 @@ async function cast() {
   // Bootstrapping: the first administrator cannot be granted by an
   // administrator, because there is not one yet. Everything after this goes
   // through the sanctioned path.
+  //
+  // Every role is set explicitly, `resident` included. The local adapter makes
+  // the first account in a fresh store an administrator so the moderation tools
+  // are reachable during development, which would otherwise make the "resident"
+  // here an admin — and a test that expects a privilege refusal would pass for
+  // entirely the wrong reason.
   const { getDatabase, mutate } = await import('@/server/data/local/store');
   await getDatabase();
   await mutate((database) => {
@@ -77,6 +83,8 @@ async function cast() {
       const row = database.users.find((u) => u.id === id);
       if (row) row.role = 'admin';
     }
+    const residentRow = database.users.find((u) => u.id === resident.id);
+    if (residentRow) residentRow.role = 'resident';
   });
 
   await repository.setUserRole(moderator.id, 'moderator', founder.id, 'Joined the moderation team');

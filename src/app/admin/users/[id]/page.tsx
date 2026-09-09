@@ -5,10 +5,11 @@ import { notFound } from 'next/navigation';
 import { Badge, Card, EmptyState, Stat } from '@/components/ui/primitives';
 import { copy } from '@/content/copy';
 import { formatRelativeTime, propertyContextLine, propertyDisplayName } from '@/lib/format';
-import { readUserDetail } from '@/server/admin';
+import { identityAccessHistory, identityAccessReasons, readUserDetail } from '@/server/admin';
 import { hasRole } from '@/server/auth/guards';
 import { getCurrentUser } from '@/server/auth/session';
 import { RoleControls, StatusControls } from '../../moderation-controls';
+import { RevealIdentity } from './reveal-identity';
 import {
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_TONES,
@@ -65,6 +66,15 @@ export default async function AdminUserPage({
   const canEditRoles = hasRole(viewer, 'admin');
   const isSelf = viewer?.id === detail.id;
 
+  // Revealing your own address through this path is refused — it is on the
+  // account page — so the control is not offered for it either.
+  const canRevealIdentity = hasRole(viewer, 'trust_admin') && !isSelf;
+
+  const [reasons, accessHistory] = await Promise.all([
+    canRevealIdentity ? identityAccessReasons() : Promise.resolve([]),
+    identityAccessHistory(detail.id),
+  ]);
+
   return (
     <div className="flex flex-col gap-8">
       <div>
@@ -120,19 +130,83 @@ export default async function AdminUserPage({
 
             <div>
               <dt className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
-                Email
+                Joined
               </dt>
-              <dd className="mt-1.5 font-mono text-label text-ink">{detail.maskedEmail}</dd>
+              <dd className="mt-1.5 text-label text-ink">
+                {formatRelativeTime(detail.createdAt)}
+              </dd>
             </div>
           </dl>
 
-          <p className="mt-5 border-t border-border pt-4 text-label text-ink-muted">
-            The full address is not loaded into this page. Revealing it is a separate action that
-            needs Trust &amp; Safety authorisation, a written reason, and is recorded in the audit
-            log.
-          </p>
+          <div className="mt-5 border-t border-border pt-5">
+            {canRevealIdentity ? (
+              <RevealIdentity
+                userId={detail.id}
+                maskedEmail={detail.maskedEmail}
+                reasons={reasons}
+              />
+            ) : (
+              <div className="rounded-lg border border-border bg-surface-sunken/50 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone="caution">Restricted</Badge>
+                  <span className="font-mono text-label text-ink">{detail.maskedEmail}</span>
+                </div>
+                <p className="mt-3 max-w-prose text-label text-ink-muted">
+                  The full address is not loaded into this page. Revealing it needs Trust &amp;
+                  Safety authorisation, a written reason, and is recorded in the audit log.
+                </p>
+              </div>
+            )}
+          </div>
         </Card>
       </section>
+
+      {/* ---- Who has looked ------------------------------------------- */}
+
+      {accessHistory.length > 0 && (
+        <section aria-labelledby="access-heading">
+          <h3
+            id="access-heading"
+            className="text-micro font-semibold uppercase tracking-micro text-ink-subtle"
+          >
+            Identity access
+          </h3>
+          <p className="mt-1.5 max-w-prose text-label text-ink-muted">
+            Every time this account&rsquo;s identity has been looked at, and why. Visible to
+            moderators, who cannot perform the access themselves — an access log only its own
+            subjects can read deters nobody.
+          </p>
+
+          <ol className="mt-3 flex flex-col gap-px overflow-hidden rounded-lg border border-border bg-border">
+            {accessHistory.map((entry) => (
+              <li key={entry.id} className="bg-surface p-3.5">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <Badge tone={entry.outcome === 'succeeded' ? 'caution' : 'neutral'}>
+                    {entry.outcome === 'succeeded' ? 'Revealed' : entry.outcome}
+                  </Badge>
+                  <span className="text-label text-ink-muted">
+                    by {ROLE_LABELS[entry.actorRole]}{' '}
+                    <span className="font-mono text-micro">
+                      {entry.actorId ? entry.actorId.slice(0, 8) : 'account deleted'}
+                    </span>
+                  </span>
+                  {entry.caseReference && (
+                    <span className="font-mono text-micro text-ink-subtle">
+                      {entry.caseReference}
+                    </span>
+                  )}
+                  <span className="ml-auto text-micro text-ink-subtle">
+                    {formatRelativeTime(entry.createdAt)}
+                  </span>
+                </div>
+                {entry.reason && (
+                  <p className="mt-1.5 text-label text-ink-muted">{entry.reason}</p>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       {/* ---- Standing ------------------------------------------------- */}
 

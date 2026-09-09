@@ -22,6 +22,7 @@ import type {
   SearchResults,
   SearchSuggestion,
   UserProfile,
+  UserStatus,
   PropertyFlag,
   PropertyFlagStatus,
   PropertyVerification,
@@ -156,6 +157,47 @@ export interface AccountDeletionSummary {
   locationChecksDestroyed: number;
   /** Saved properties destroyed. */
   savedPropertiesDestroyed: number;
+}
+
+/**
+ * The result of crossing the identity boundary.
+ *
+ * Carries the address and the account's own metadata, and deliberately nothing
+ * else — not their reviews, not their verification evidence, not their location
+ * history. The reveal answers "who is this account" and stops, because every
+ * extra field would be one more thing disclosed on the strength of a reason
+ * that only justified the first.
+ *
+ * `auditEntryId` is returned so the caller can show the person that the access
+ * was recorded, and point at the record.
+ */
+export interface IdentityReveal {
+  email: string;
+  accountId: string;
+  role: UserRole;
+  status: UserStatus;
+  countryCode: string | null;
+  createdAt: string;
+  auditEntryId: string;
+}
+
+export interface IdentityAccessReason {
+  key: string;
+  label: string;
+  description: string;
+  /** Whether a dropdown selection alone is a meaningful answer. */
+  requiresDetail: boolean;
+}
+
+/** One recorded look at an account's identity. */
+export interface IdentityAccessRecord {
+  id: string;
+  actorId: string | null;
+  actorRole: UserRole;
+  outcome: 'succeeded' | 'denied' | 'failed';
+  reason: string | null;
+  caseReference: string | null;
+  createdAt: string;
 }
 
 /** One entry in the administrative audit log, as a reader sees it. */
@@ -423,6 +465,43 @@ export interface LivdRepository {
    * attributed to somebody who did not do the thing.
    */
   recordAdminAudit(entry: AdminAuditEntry): Promise<void>;
+
+  /* ---- Identity ---- */
+
+  /**
+   * Reveals an account's email address.
+   *
+   * The one operation that crosses the boundary the product is built around,
+   * and the reason it is a repository method rather than a read is that it must
+   * be atomic with its own record. `livd_reveal_user_identity` writes the audit
+   * entry and returns the address in the same transaction, so there is no
+   * ordering in which a disclosure happens and nothing is written down.
+   *
+   * Server code could read the address and then log it, and would be correct
+   * almost always. "Almost always" is the wrong standard for the operation
+   * whose entire purpose is accountability.
+   */
+  revealUserIdentity(input: {
+    userId: string;
+    reasonKey: string;
+    reasonDetail: string | null;
+    caseReference: string | null;
+    actorIpHash: string | null;
+    /** Used only by the local adapter; Postgres reads it from the session. */
+    actorId: string;
+  }): Promise<IdentityReveal>;
+
+  /** The reasons an identity may be accessed for. A configurable vocabulary. */
+  listIdentityAccessReasons(): Promise<IdentityAccessReason[]>;
+
+  /**
+   * Who has looked at this account's identity, and why.
+   *
+   * Readable by a moderator even though performing the access is not: seeing
+   * that an identity was accessed is the deterrent, and an access log nobody
+   * ever reads deters nothing.
+   */
+  listIdentityAccess(userId: string, limit?: number): Promise<IdentityAccessRecord[]>;
 
   /** The audit log, newest first. Trust & Safety and above only. */
   listAdminAudit(options?: {

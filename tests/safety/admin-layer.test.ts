@@ -60,12 +60,13 @@ async function actingAs(role: 'resident' | 'moderator' | 'trust_admin' | 'admin'
 
   const actor = await repository.upsertUser({ email: `${role}-${Date.now()}@example.test` });
 
-  if (role !== 'resident') {
-    await mutate((database) => {
-      const row = database.users.find((u) => u.id === actor.id);
-      if (row) row.role = role;
-    });
-  }
+  // Set explicitly even for `resident`: the local adapter makes the first
+  // account in a fresh store an administrator, so relying on the default would
+  // quietly give this fixture the opposite of the role it asked for.
+  await mutate((database) => {
+    const row = database.users.find((u) => u.id === actor.id);
+    if (row) row.role = role;
+  });
 
   const current = await repository.getUserById(actor.id);
 

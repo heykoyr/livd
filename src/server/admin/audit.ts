@@ -16,7 +16,6 @@ import 'server-only';
 export type AdminAuditAction =
   /* Identity — the boundary that matters most on this platform. */
   | 'identity_revealed'
-  | 'identity_reveal_denied'
   | 'user_directory_searched'
 
   /* People */
