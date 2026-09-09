@@ -106,11 +106,21 @@ that stops authors rewriting reviews refused it. Only a live test caught that.
 
 ## Next
 
-**Before launch.** An email provider for magic links · error monitoring ·
-a legal entity, a contact route and counsel's review of the three policy pages.
+**Before launch.** An email provider · error monitoring · a legal entity, a
+contact route and counsel's review of the three policy pages.
 
-The other three pre-launch items are done:
+The email provider is no longer what blocks people from signing in — Google
+sign-in is live and does not email anything. It is still needed to make the
+email link usable, because the link is single-use and Gmail's scanner spends it
+about fifteen seconds after delivery, and only custom SMTP unlocks the setting
+that would let that email send a typed code instead.
 
+The other four pre-launch items are done:
+
+- **Signing in works.** `thefirstadekoya@gmail.com` is the first account on Livd
+  to hold a session, through Google. Every account before it shows email
+  confirmed and no session ever created. Both providers land on the same profile
+  when the address matches, so nobody ends up with two accounts.
 - **Verification is a pipeline.** A resident uploads at `/account/reviews`,
   `src/lib/safety/verification-checks.ts` settles what a machine can settle, and
   a moderator decides at `/admin/verification`. Evidence lives in a private

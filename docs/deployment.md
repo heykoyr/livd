@@ -182,13 +182,54 @@ npm run vercel -- env add SUPABASE_SERVICE_ROLE_KEY production --type secret
 
 ### Authentication
 
-Supabase Auth, magic link, no passwords stored. Custom SMTP is the remaining
-gap: Supabase's built-in sender disables the Subject and Body fields outright, so
-the branded template in
+Supabase Auth, no passwords stored, two ways in: Google, and a link sent by
+email.
+
+**Google is the one that works today.** Email delivery is not the problem — the
+emails arrive. The problem is that a Supabase sign-in link may be used once, and
+Gmail follows every link it delivers to scan it about fifteen seconds after it
+lands. The scanner spends the link before the person opens the message, so the
+click that follows fails. Every account created before Google sign-in existed
+shows the same signature: email confirmed, session never created, a consistent
+fourteen-to-nineteen second gap between the link being sent and being used.
+Nothing is emailed in the Google flow, so there is nothing to intercept.
+
+Both halves have to exist before the button appears, and Livd cannot see either
+one, so `NEXT_PUBLIC_GOOGLE_SIGN_IN` gates it and defaults to off. A button that
+leads to an error page is worse than no button — it is the control a new visitor
+is most likely to press first.
+
+Setting it up, once:
+
+1. Google Cloud console → **Google Auth Platform → Clients → Create client**.
+   Application type **Web application**. The only authorised redirect URI is the
+   Supabase callback, `https://<project-ref>.supabase.co/auth/v1/callback` — not
+   the Livd origin. Livd is where Supabase sends the browser *afterwards*, which
+   is a different setting.
+2. Copy the client ID and secret into Supabase → **Authentication → Sign In /
+   Providers → Google**, and enable it. Copy and paste them; a value poked into
+   those fields by script does not register with the form, which saves an empty
+   secret behind a client ID that looks correct and fails later as
+   `invalid_client`.
+3. Add the Livd origin to Supabase → **Authentication → URL Configuration →
+   Redirect URLs** as `https://<origin>/**`. The action sends an absolute
+   `redirectTo`, and Supabase discards any value not on that list.
+4. Set `NEXT_PUBLIC_GOOGLE_SIGN_IN=true` and redeploy. It is read at build time,
+   so setting it without a rebuild changes nothing.
+
+Note what the consent screen says: "to continue to
+`<project-ref>.supabase.co`", not "Livd". Google names the domain that owns the
+OAuth client, and that is Supabase's until Livd has a custom auth domain.
+
+**The email link is the fallback, and it is still incomplete.** Custom SMTP is
+the gap: Supabase's built-in sender disables the Subject and Body fields
+outright, so the branded template in
 [`supabase/templates/magic-link.html`](../supabase/templates/magic-link.html)
 cannot be applied and the sender still reads "Supabase Auth". It is also rate
 limited to a few emails an hour and is not something to launch on. One setting
-gates all three, and it needs a domain with SPF and DKIM.
+gates all three, and it needs a domain with SPF and DKIM. Sending a typed code
+rather than a link would also close the scanner hole, and editing that email
+needs the same setting.
 
 ### Moving to a custom domain
 
