@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Badge, Card, Stat } from '@/components/ui/primitives';
 import { getMarket } from '@/config/markets';
 import { copy } from '@/content/copy';
+import { DeleteAccount } from './delete-account';
 import { formatRelativeTime } from '@/lib/format';
 import { requireUserPage } from '@/server/auth/guards';
 import { getRepository } from '@/server/data';
@@ -86,15 +87,12 @@ export default async function AccountPage() {
         </p>
       </section>
 
+      {/* Was a promise pointing at a support address the product does not have,
+          for a deletion the schema would have performed incorrectly anyway.
+          Both halves are now real: migration 0017 severs where the legal pages
+          say it severs, and this does it. */}
       <section className="mt-12 max-w-prose">
-        <h2 className="font-display text-title-lg tracking-tightish text-ink">
-          {copy.account.deleteAccount}
-        </h2>
-        <p className="mt-3 text-body text-ink-muted">{copy.account.deleteAccountBody}</p>
-        <p className="mt-3 text-label text-ink-subtle">
-          Account deletion is handled by support while Livd is in early access — email us and it
-          will be done within seven days.
-        </p>
+        <DeleteAccount />
       </section>
     </div>
   );

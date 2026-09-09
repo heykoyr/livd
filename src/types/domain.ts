@@ -133,7 +133,16 @@ export interface CategoryRating {
 export interface Review {
   id: string;
   propertyId: string;
-  authorId: string;
+  /**
+   * Null once the author has deleted their account.
+   *
+   * The review itself survives — every legal page promises that a published
+   * review stays as part of the property record — and becomes permanently
+   * unattributable. Nothing can re-link it: the update guard forbids changing
+   * the column and the insert policy requires it to equal the caller, which no
+   * null can satisfy.
+   */
+  authorId: string | null;
   residencyStatus: ResidencyStatus;
   /** ISO date pinned to the first of the month. Never an exact date. */
   movedInMonth: string;
@@ -401,7 +410,8 @@ export type ReportStatus = 'open' | 'under_review' | 'upheld' | 'dismissed';
 export interface ReviewReport {
   id: string;
   reviewId: string;
-  reporterId: string;
+  /** Null once the reporter has deleted their account. The report is kept. */
+  reporterId: string | null;
   reason: ReportReason;
   detail: string | null;
   status: ReportStatus;
@@ -585,7 +595,13 @@ export interface PropertyFlag {
 
 export interface ModerationAction {
   id: string;
-  actorId: string;
+  /**
+   * Null once the moderator has deleted their account.
+   *
+   * The decision outlives the person who made it. A moderation history with
+   * holes in it is not a history, so the row is severed rather than removed.
+   */
+  actorId: string | null;
   subjectType: 'review' | 'property' | 'user' | 'claim' | 'owner_response';
   subjectId: string;
   action: string;

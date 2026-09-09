@@ -50,8 +50,8 @@ verified in both themes against real computed styles · mobile pass · every
 route checked · production guards corrected.
 
 ### Deployment ✅
-Supabase project provisioned, eight migrations applied, and the demonstration
-data loaded into it — 16 properties, 222 reviews and 3,558 child rows, every
+Supabase project provisioned, the eight migrations that existed at the time
+applied, and the demonstration data loaded into it — 16 properties, 222 reviews and 3,558 child rows, every
 one marked `is_demo`. Deployed to Vercel at
 <https://livd-koyrstudio.vercel.app>, rebuilding on every push to `main`.
 Verified against the live site: every public route 200, every authenticated
@@ -92,13 +92,15 @@ its missing state inline with `noindex` — trading the 404 status for a page
 that is readable and accessible. Revisit when the framework renders the
 boundary inside the layout.
 
-**Reviews outlive their authors on the page, and do not in the schema.** All
-three legal pages say a deleted account leaves its reviews standing,
-permanently unlinked. `reviews.author_id` is `on delete cascade`, so deleting a
-profile would delete them. Account deletion is not built, so nothing triggers
-it yet — but the published promise and the database disagree, and one of them
-has to move. `docs/legal-review.md` §4.1 sets out the two ways that resolves.
-It is the one item on this list that could require a schema change.
+**Account deletion, and the promise it had to keep.** All three legal pages
+said a deleted account leaves its reviews standing, permanently unlinked.
+`reviews.author_id` was `on delete cascade`, so deletion would have removed
+them. Migration 0017 severs instead of deleting across every link to a profile
+— reviews, owner replies and the moderation record survive unattributed, while
+the shortlist, notifications, location checks and residency documents are
+destroyed. 0018 exists because 0017 alone silently made deletion impossible: a
+foreign key setting `author_id` to null is an UPDATE, and the guard trigger
+that stops authors rewriting reviews refused it. Only a live test caught that.
 
 ---
 
@@ -153,9 +155,7 @@ and Nominatim — configured as an ordered list so a commercial provider can fal
 back to the free one. Every provider passes the same precision gate: anything
 less precise than a building is refused, because a wrong coordinate offers a
 verification step a real resident cannot pass while a missing one offers no step
-at all. 
-> livd@0.1.0 geocode:backfill
-> esbuild scripts/backfill-coordinates.mjs --bundle --platform=node --format=esm --alias:@=./src --alias:server-only=./tests/stubs/server-only.ts --packages=external --outfile=.seed-sql/backfill.mjs --log-level=warning && node --env-file=.env.local .seed-sql/backfill.mjs fills in properties that predate the
+at all. `npm run geocode:backfill` fills in properties that predate the
 geocoder. Google and Mapbox are covered by fixture tests in their real response
 shapes but have not been exercised against their live APIs, which needs paid
 keys.

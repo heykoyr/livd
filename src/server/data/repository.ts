@@ -137,6 +137,20 @@ export interface LocalitySummary {
   href: string;
 }
 
+/** What an account erasure actually did. Reported back, never guessed at. */
+export interface AccountDeletionSummary {
+  /** Reviews left standing on property pages, now unattributable. */
+  reviewsUnlinked: number;
+  /** Owner responses left standing, now unattributable. */
+  responsesUnlinked: number;
+  /** Residency documents destroyed, file and row together. */
+  evidenceFilesDestroyed: number;
+  /** Location-check records destroyed. */
+  locationChecksDestroyed: number;
+  /** Saved properties destroyed. */
+  savedPropertiesDestroyed: number;
+}
+
 export interface AdminOverview {
   propertyCount: number;
   reviewCount: number;
@@ -414,6 +428,27 @@ export interface LivdRepository {
   upsertUser(input: { id?: string; email: string; countryCode?: string | null }): Promise<UserProfile>;
   listUsers(limit?: number): Promise<UserProfile[]>;
   setUserRole(userId: string, role: UserProfile['role'], actorId: string): Promise<void>;
+
+  /**
+   * Erases an account.
+   *
+   * What survives is what the legal pages promise survives: published reviews
+   * and owner responses stay on the property record, permanently severed from
+   * the person who wrote them. Everything private goes — the shortlist, the
+   * notifications, the helpful votes, the location checks, and every residency
+   * document with its file.
+   *
+   * That last one is the reason this is a repository method rather than a
+   * single delete: the database cascade removes the verification *row* but
+   * cannot touch the *file* in the private bucket. A tenancy agreement carries
+   * a name, an address and a signature, and orphaning one in storage would be
+   * the worst possible outcome of a feature whose entire purpose is erasure.
+   * The evidence is destroyed first; only then is the account removed.
+   *
+   * Returns a summary of what happened, so the caller can tell the person
+   * plainly rather than claiming more than was done.
+   */
+  deleteAccount(userId: string): Promise<AccountDeletionSummary>;
 
   /* ---- Analytics ---- */
 

@@ -45,6 +45,7 @@ import type {
   CreateReviewInput,
   DiscoveryOptions,
   LivdRepository,
+  AccountDeletionSummary,
   LocalitySummary,
   NearbyProperty,
   ReviewListOptions,
@@ -1847,6 +1848,95 @@ export class SupabaseRepository implements LivdRepository {
       previous_status: (current as { role: string } | null)?.role ?? null,
       new_status: role,
     });
+  }
+
+  /**
+   * Erases an account.
+   *
+   * Migration 0017 does most of this: every foreign key to `profiles` now
+   * either severs (reviews, owner responses, the moderation record) or
+   * cascades (the shortlist, notifications, votes, claims, location checks,
+   * verification rows). Deleting the auth user triggers all of it in one
+   * transaction the database guarantees.
+   *
+   * What the database cannot do is delete a *file*. `verification_records`
+   * cascades away, but the tenancy agreement it pointed at stays in the
+   * private bucket for ever — a document carrying a name, an address and a
+   * signature, orphaned by the very operation meant to erase the person. So
+   * the objects go first, deliberately, before anything is irreversible.
+   *
+   * Ordering that the other way would be the single worst bug this feature
+   * could have: the row that names the file would already be gone, leaving
+   * nothing to find it by.
+   */
+  async deleteAccount(userId: string): Promise<AccountDeletionSummary> {
+    // Service role throughout: this reads across a person's whole footprint and
+    // then removes their auth record, neither of which any client role can do.
+    const admin = this.admin();
+
+    /* --- Count what will survive, before it is severed ---------------- */
+
+    const [{ count: reviewCount }, { count: responseCount }, { count: savedCount }, { count: checkCount }] =
+      await Promise.all([
+        admin.from('reviews').select('id', { count: 'exact', head: true }).eq('author_id', userId),
+        admin
+          .from('owner_responses')
+          .select('id', { count: 'exact', head: true })
+          .eq('responder_id', userId),
+        admin
+          .from('saved_properties')
+          .select('property_id', { count: 'exact', head: true })
+          .eq('user_id', userId),
+        admin
+          .from('property_verifications')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId),
+      ]);
+
+    /* --- Destroy the evidence files first ----------------------------- */
+
+    const { data: evidence } = await admin
+      .from('verification_records')
+      .select('evidence_ref')
+      .eq('submitted_by', userId);
+
+    const refs = ((evidence ?? []) as Array<{ evidence_ref: string | null }>)
+      .map((row) => row.evidence_ref)
+      .filter((ref): ref is string => Boolean(ref));
+
+    let evidenceFilesDestroyed = 0;
+    if (refs.length > 0) {
+      const { data: removed, error } = await admin.storage.from(EVIDENCE_BUCKET).remove(refs);
+
+      if (error) {
+        // Refuse to continue. Deleting the account now would orphan a tenancy
+        // agreement in storage with nothing left pointing at it — the one
+        // outcome this whole method exists to prevent. Better to fail loudly
+        // and let the person try again.
+        throw new Error(
+          `deleteAccount: could not remove residency evidence, so the account was left intact: ${error.message}`,
+        );
+      }
+
+      evidenceFilesDestroyed = removed?.length ?? refs.length;
+    }
+
+    /* --- Then the account itself -------------------------------------- */
+
+    // Deleting the auth user cascades to `profiles`, and from there through
+    // every foreign key set up in 0017.
+    const { error: deleteError } = await admin.auth.admin.deleteUser(userId);
+    if (deleteError) {
+      throw new Error(`deleteAccount: ${deleteError.message}`);
+    }
+
+    return {
+      reviewsUnlinked: reviewCount ?? 0,
+      responsesUnlinked: responseCount ?? 0,
+      evidenceFilesDestroyed,
+      locationChecksDestroyed: checkCount ?? 0,
+      savedPropertiesDestroyed: savedCount ?? 0,
+    };
   }
 
   /* ---------------------------------------------------------------------

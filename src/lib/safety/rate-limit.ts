@@ -80,6 +80,12 @@ export const RATE_LIMITS = {
    * while walking.
    */
   nearbyLookup: { limit: 30, windowSeconds: 3600 },
+  /**
+   * Account deletion. Irreversible, so repeated attempts are worth slowing
+   * down whatever is making them — and nobody legitimately needs a fourth go
+   * in a day.
+   */
+  accountDelete: { limit: 3, windowSeconds: 86_400 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS;

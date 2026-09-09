@@ -1,3 +1,4 @@
+import type { AccountDeletionSummary } from '@/server/data/repository';
 import type {
   PropertyVerificationFailureReason,
   VerificationCheck,
@@ -131,6 +132,30 @@ export interface OwnerResponseState {
 }
 
 export const initialOwnerResponseState: OwnerResponseState = { status: 'idle', error: null };
+
+/* -------------------------------------------------------------------------
+ * Account deletion
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The result of erasing an account.
+ *
+ * Carries the summary rather than a bare success, because "your account is
+ * gone" is only half of what happened. The other half — that published reviews
+ * stay on the property pages, permanently unattributable — is the part people
+ * are surprised by, and it is what the legal pages promised them.
+ */
+export interface DeleteAccountState {
+  status: 'idle' | 'error' | 'deleted';
+  error: string | null;
+  summary: AccountDeletionSummary | null;
+}
+
+export const initialDeleteAccountState: DeleteAccountState = {
+  status: 'idle',
+  error: null,
+  summary: null,
+};
 
 /* -------------------------------------------------------------------------
  * Property verification

@@ -92,8 +92,13 @@ export default function PrivacyPage() {
 
       <ProseSection title="Deleting your account">
         <p>
-          Deleting your account removes it along with your saved properties and search
-          preferences.
+          You can delete your account yourself, from your account page. It happens
+          immediately.
+        </p>
+        <p>
+          Deleting it removes the account along with your saved properties, your search
+          preferences, your notifications, every location check on the account, and any
+          residency document you sent us — the document itself, not only the record of it.
         </p>
         <p>
           Published reviews remain, permanently unlinked from you. That is a deliberate trade:

@@ -568,6 +568,30 @@ export const copy = {
     deleteAccount: 'Delete account',
     deleteAccountBody:
       'Your account and saved properties are deleted. Published reviews stay, permanently unlinked from you, because the property record they belong to is what other renters rely on.',
+    deleteConfirmLabel: 'Type DELETE to confirm',
+    deleteConfirmMismatch: 'Type DELETE exactly to confirm.',
+    deleteSubmit: 'Delete my account',
+    deleteWorking: 'Deleting',
+    deleteCancel: 'Keep my account',
+    deleteStart: 'Delete my account',
+    // Said before the button, not after it. Somebody is about to do something
+    // irreversible, and the surprising half — that their reviews stay — has to
+    // be the part they read first.
+    deleteWhatHappens: 'What happens when you delete',
+    deleteKept: 'Your published reviews and any owner replies stay on Livd, permanently disconnected from you. Nobody, including us, can link them back to you afterwards — and you will not be able to edit or remove them.',
+    deleteRemoved: 'Everything else goes: your shortlist, your notifications, any residency documents you sent us, and every location check on your account.',
+    deleteWhyKept: 'Reviews stay because the next person deciding where to live relies on them. A record that can be withdrawn later is not a record.',
+    deleteIrreversible: 'This cannot be undone.',
+    deleteFailed:
+      'We could not complete the deletion, so your account is unchanged. Please try again in a few minutes.',
+    deletedTitle: 'Your account has been deleted',
+    deletedBody: 'You are signed out and your account is gone.',
+    deletedReviewsKept: (n: number) =>
+      n === 1
+        ? '1 review stays on Livd, no longer connected to you.'
+        : `${n} reviews stay on Livd, no longer connected to you.`,
+    deletedNothingKept: 'You had no published reviews, so nothing of yours remains.',
+    deletedDone: 'Back to Livd',
   },
 
   admin: {

@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { LIMITS, showDemoData } from '@/config/site';
@@ -48,6 +48,7 @@ import type {
   CreateReviewInput,
   DiscoveryOptions,
   LivdRepository,
+  AccountDeletionSummary,
   LocalitySummary,
   NearbyProperty,
   ReviewListOptions,
@@ -1134,7 +1135,12 @@ export class LocalRepository implements LivdRepository {
     const signals = database.reviews
       .filter((review) => review.status === 'published')
       .flatMap((review) => {
-        const author = usersById.get(review.authorId);
+        // A review whose author has deleted their account carries no account-age
+        // signal, so it cannot contribute to new-account-concentration and is
+        // skipped rather than counted with a fabricated date. It still exists on
+        // the property page; it simply stops being evidence about *who* wrote it,
+        // which is the entire point of unlinking.
+        const author = review.authorId ? usersById.get(review.authorId) : undefined;
         if (!author) return [];
         return [
           {
@@ -1517,6 +1523,78 @@ export class LocalRepository implements LivdRepository {
     });
   }
 
+  /**
+   * Erases an account.
+   *
+   * The order is the whole method. Evidence files are destroyed first, because
+   * they are the only thing here the database cannot reach: a cascade removes
+   * a verification row and leaves the tenancy agreement sitting on disk. Then
+   * public contributions are severed rather than deleted, then everything
+   * private is removed, and the profile goes last.
+   *
+   * Mirrors the foreign keys in migration 0017. The Postgres adapter gets the
+   * same outcome from the database itself; here it is written out, because a
+   * JSON file has no referential actions to lean on.
+   */
+  async deleteAccount(userId: string): Promise<AccountDeletionSummary> {
+    // Read the evidence references before the rows are touched, and destroy the
+    // files before anything else — a half-finished deletion must never be one
+    // that dropped the row and kept the document.
+    const database = await getDatabase();
+    const evidence = database.verifications.filter((v) => v.submittedBy === userId);
+
+    let evidenceFilesDestroyed = 0;
+    for (const record of evidence) {
+      if (await deleteEvidenceFile(record.evidenceRef)) evidenceFilesDestroyed += 1;
+    }
+
+    return mutate((db) => {
+      let reviewsUnlinked = 0;
+      for (const review of db.reviews) {
+        if (review.authorId === userId) {
+          // Severed, not removed. The property record is what the next renter
+          // relies on, and every legal page promises it survives.
+          review.authorId = null;
+          reviewsUnlinked += 1;
+        }
+      }
+
+      // Owner responses carry no author in this store — `OwnerResponse` is the
+      // public shape and never held a responder id, so there is nothing here to
+      // sever. Postgres does hold one, and migration 0017 nulls it there.
+      const responsesUnlinked = 0;
+
+      // The moderation record survives its author too — a history with gaps is
+      // not a history.
+      for (const action of db.moderationActions) {
+        if (action.actorId === userId) action.actorId = null;
+      }
+      for (const report of db.reports) {
+        if (report.reporterId === userId) report.reporterId = null;
+      }
+
+      const locationChecksDestroyed = db.propertyVerifications.filter(
+        (v) => v.userId === userId,
+      ).length;
+      const savedPropertiesDestroyed = db.saved.filter((s2) => s2.userId === userId).length;
+
+      db.propertyVerifications = db.propertyVerifications.filter((v) => v.userId !== userId);
+      db.verifications = db.verifications.filter((v) => v.submittedBy !== userId);
+      db.saved = db.saved.filter((s2) => s2.userId !== userId);
+      db.helpfulVotes = db.helpfulVotes.filter((v) => v.voterId !== userId);
+      db.claims = db.claims.filter((c) => c.claimantId !== userId);
+      db.users = db.users.filter((u) => u.id !== userId);
+
+      return {
+        reviewsUnlinked,
+        responsesUnlinked,
+        evidenceFilesDestroyed,
+        locationChecksDestroyed,
+        savedPropertiesDestroyed,
+      };
+    });
+  }
+
   /* ---------------------------------------------------------------------
    * Analytics
    * ------------------------------------------------------------------ */
@@ -1645,6 +1723,18 @@ async function writeEvidenceFile(id: string, data: Uint8Array): Promise<string> 
   const path = join(EVIDENCE_DIR, id);
   await writeFile(path, data);
   return id;
+}
+
+/** Removes one evidence file. Reports whether there was one to remove. */
+async function deleteEvidenceFile(ref: string): Promise<boolean> {
+  try {
+    await rm(join(EVIDENCE_DIR, ref));
+    return true;
+  } catch {
+    // Already gone, or the store was reset. Either way there is no document
+    // left, which is the outcome being asked for.
+    return false;
+  }
 }
 
 async function readEvidenceAsDataUrl(ref: string, mime: string | null): Promise<string | null> {

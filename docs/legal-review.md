@@ -121,8 +121,14 @@ change what gets built.
 
 ### 4.1 Permanent reviews against the right to erasure
 
-**This one is not just unreviewed. The schema currently does the opposite of
-what the pages promise, and that has to be fixed whatever counsel says.**
+**RESOLVED in migrations 0017 and 0018.** `author_id` is now nullable with
+`on delete set null`, account deletion is implemented at `/account`, and the
+outcome is tested against both adapters. The record below is kept because the
+reasoning still stands and because the second half — whether unlinking is
+sufficient anonymisation at all — remains a question for counsel.
+
+**This one was not just unreviewed. The schema did the opposite of
+what the pages promise.**
 
 All three pages state that deleting an account removes the account and that
 published reviews remain, permanently unlinked from their author. The reasoning
