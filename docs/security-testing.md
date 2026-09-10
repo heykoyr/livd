@@ -623,3 +623,30 @@ All five are gone, and the coverage test now requires every remaining name to
 be produced by the administrative layer, by a migration, or by the normaliser —
 and, in the other direction, requires every action a migration writes to be one
 the vocabulary knows.
+
+## 2026-09-11 · Phase 11 · the dashboard
+
+Migration under test: `0037_admin_attention`.
+
+| # | Attack / behaviour | Result |
+|---|---|---|
+| 1 | Resident calls `livd_admin_attention` | BLOCKED — `Not authorised` |
+| 2 | Moderator reads it | queues answered; `authority=null holds=null sanctions=null refusals=null` |
+| 3 | Trust & Safety reads it | all four legal figures answered; platform figures match production |
+
+Row 2 is the one that needed a decision. The Trust & Safety figures are **null**
+for a moderator, not zero.
+
+Zero says "there are none". Null says "not yours to see". A dashboard that
+answered a moderator's question about how many authority requests are open —
+even with a truthful zero — would be telling them something about a part of the
+system that is not theirs, and on a quiet week the answer would be right often
+enough to be trusted. The distinction is made in SQL, by a `case when
+privileged then ... end` that yields null rather than by a branch in TypeScript,
+so the honest answer is the one that leaves the database.
+
+`tests/safety/attention.test.ts` pins the rest: that the shape carries no
+address, no review body and no coordinate; that every queue answers in a count
+and a timestamp and nothing else; and that the local adapter fills in every
+column the SQL declares — a field added to one and forgotten in the other would
+be a dashboard meaning different things in development and in production.

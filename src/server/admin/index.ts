@@ -41,6 +41,7 @@ export {
   type AdminSubjectType,
 } from './audit';
 export { readAuditTrail, readAuditSummary, readAuditActors } from './trail';
+export { readAttention } from './attention';
 export { readReviewInvestigation } from './reviews';
 export {
   openAuthorityRequest,

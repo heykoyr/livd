@@ -66,10 +66,12 @@ import type {
   VerificationRecord,
 } from '@/types/domain';
 import type {
+  AdminAttention,
   AdminAuditPage,
   AdminOverview,
   AuditActionSummary,
   AuditActorSummary,
+  AttentionQueue,
   AuditFeedFilters,
   AuditFeedPage,
   IdentityAccessReason,
@@ -284,6 +286,34 @@ interface AdminAuditRow {
   detail: unknown;
   created_at: string;
   total_count: number | string;
+}
+
+/** The single row of `livd_admin_attention`. Counts and ages, nothing else. */
+interface AttentionRow {
+  pending_reviews: number | string;
+  oldest_pending_review: string | null;
+  open_reports: number | string;
+  oldest_open_report: string | null;
+  open_flags: number | string;
+  oldest_open_flag: string | null;
+  pending_verifications: number | string;
+  oldest_pending_verification: string | null;
+  pending_claims: number | string;
+  oldest_pending_claim: string | null;
+  open_cases: number | string;
+  unassigned_cases: number | string;
+  my_cases: number | string;
+  critical_cases: number | string;
+  oldest_open_case: string | null;
+  /** Null for a moderator — see the note on `AdminAttention`. */
+  open_authority_requests: number | string | null;
+  preservation_holds: number | string | null;
+  sanctions_expiring: number | string | null;
+  refusals_7d: number | string | null;
+  property_count: number | string;
+  review_count: number | string;
+  user_count: number | string;
+  reviews_30d: number | string;
 }
 
 /** One row of `livd_admin_audit_feed`. Carries a mask, never an address. */
@@ -3019,6 +3049,65 @@ export class SupabaseRepository implements LivdRepository {
       denials: Number(row.denials),
       lastAt: row.last_at,
     }));
+  }
+
+  /**
+   * What needs attention.
+   *
+   * Through the caller's own session, so `livd_admin_attention` can read the
+   * viewer from `auth.uid()` for "my cases" and decide from
+   * `livd_is_trust_admin()` whether the legal figures are theirs to see. The
+   * service role would answer both questions wrongly.
+   */
+  async adminAttention(): Promise<AdminAttention> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_admin_attention');
+    if (error) throw new Error(`adminAttention: ${error.message}`);
+
+    const row = ((data ?? []) as AttentionRow[])[0];
+    if (!row) throw new Error('adminAttention: no row');
+
+    const queue = (count: number | string | null, oldest: string | null): AttentionQueue => ({
+      count: Number(count ?? 0),
+      oldest,
+    });
+
+    return {
+      pendingReviews: queue(row.pending_reviews, row.oldest_pending_review),
+      openReports: queue(row.open_reports, row.oldest_open_report),
+      openFlags: queue(row.open_flags, row.oldest_open_flag),
+      pendingVerifications: queue(row.pending_verifications, row.oldest_pending_verification),
+      pendingClaims: queue(row.pending_claims, row.oldest_pending_claim),
+
+      cases: {
+        open: Number(row.open_cases ?? 0),
+        unassigned: Number(row.unassigned_cases ?? 0),
+        mine: Number(row.my_cases ?? 0),
+        critical: Number(row.critical_cases ?? 0),
+        oldest: row.oldest_open_case,
+      },
+
+      // Null rather than zero, and the null comes from the database rather
+      // than from a check here. A moderator is not told there are none; they
+      // are not told.
+      trustAndSafety:
+        row.open_authority_requests === null
+          ? null
+          : {
+              openAuthorityRequests: Number(row.open_authority_requests),
+              preservationHolds: Number(row.preservation_holds ?? 0),
+              sanctionsExpiring: Number(row.sanctions_expiring ?? 0),
+              refusalsLast7Days: Number(row.refusals_7d ?? 0),
+            },
+
+      platform: {
+        properties: Number(row.property_count ?? 0),
+        reviews: Number(row.review_count ?? 0),
+        users: Number(row.user_count ?? 0),
+        reviewsLast30Days: Number(row.reviews_30d ?? 0),
+      },
+    };
   }
 
   async auditActors(since: string | null = null): Promise<AuditActorSummary[]> {

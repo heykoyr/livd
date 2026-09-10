@@ -71,10 +71,12 @@ import { decideProximity, isImplausibleMovement } from '@/lib/geo/proximity';
 /** Matches `p_cooldown_days` in `livd_detect_property_flags`. */
 const FLAG_DECISION_COOLDOWN_DAYS = 7;
 import type {
+  AdminAttention,
   AdminAuditPage,
   AuditActionSummary,
   AuditActorSummary,
   AuditFeedEntry,
+  AttentionQueue,
   AuditFeedFilters,
   AuditFeedPage,
   AdminOverview,
@@ -3123,6 +3125,100 @@ export class LocalRepository implements LivdRepository {
         createdAt: entry.createdAt,
       })),
     ].filter((row) => !since || row.createdAt >= since);
+  }
+
+  /**
+   * What needs attention.
+   *
+   * Mirrors `livd_admin_attention` field for field. The Trust & Safety block
+   * is null for anybody below that tier here too — the parity test is what
+   * keeps the two answering the same question the same way.
+   */
+  async adminAttention(viewerId: string | null = null): Promise<AdminAttention> {
+    const database = await getDatabase();
+
+    // Flags are derived on read in this adapter rather than stored — there is
+    // no scheduler here to write them — so the count comes from the same
+    // computation the flags page uses, not from a table.
+    const flags = await this.listPropertyFlags('open');
+
+    const viewer = viewerId ? database.users.find((u) => u.id === viewerId) : undefined;
+    const privileged = viewer?.role === 'trust_admin' || viewer?.role === 'admin';
+
+    const queue = <T>(rows: T[], at: (row: T) => string): AttentionQueue => ({
+      count: rows.length,
+      oldest: rows.length === 0 ? null : rows.map(at).sort()[0] ?? null,
+    });
+
+    // Not concluded. A case in `action_taken` still needs somebody to close
+    // it and one `escalated` needs somebody senior; both are work, and both
+    // would vanish from a naive `status === 'open'` count.
+    const openCases = database.cases.filter(
+      (entry) => !['resolved', 'dismissed', 'closed'].includes(entry.status),
+    );
+
+    const now = Date.now();
+    const weekAway = new Date(now + 7 * 86_400_000).toISOString();
+    const weekAgo = new Date(now - 7 * 86_400_000).toISOString();
+    const monthAgo = new Date(now - 30 * 86_400_000).toISOString();
+
+    return {
+      pendingReviews: queue(
+        database.reviews.filter((review) => review.status === 'pending_moderation'),
+        (review) => review.createdAt,
+      ),
+      openReports: queue(
+        database.reports.filter((report) => report.status === 'open'),
+        (report) => report.createdAt,
+      ),
+      openFlags: queue(flags, (entry) => entry.flag.createdAt),
+      pendingVerifications: queue(
+        database.verifications.filter((record) => record.outcome === 'pending'),
+        (record) => record.createdAt,
+      ),
+      pendingClaims: queue(
+        database.claims.filter((claim) => claim.status === 'pending'),
+        (claim) => claim.createdAt,
+      ),
+
+      cases: {
+        open: openCases.length,
+        unassigned: openCases.filter((entry) => !entry.assignedTo).length,
+        mine: viewerId ? openCases.filter((entry) => entry.assignedTo === viewerId).length : 0,
+        critical: openCases.filter((entry) => entry.priority === 'critical').length,
+        oldest:
+          openCases.length === 0
+            ? null
+            : openCases.map((entry) => entry.createdAt).sort()[0] ?? null,
+      },
+
+      trustAndSafety: privileged
+        ? {
+            openAuthorityRequests: database.authorityRequests.filter(
+              (request) => !['fulfilled', 'declined', 'closed'].includes(request.status),
+            ).length,
+            preservationHolds: database.cases.filter((entry) => entry.preservationHold).length,
+            sanctionsExpiring: database.sanctions.filter(
+              (sanction) =>
+                !sanction.liftedAt &&
+                sanction.endsAt !== null &&
+                sanction.endsAt >= new Date(now).toISOString() &&
+                sanction.endsAt <= weekAway,
+            ).length,
+            refusalsLast7Days: database.adminAudit.filter(
+              (entry) => entry.outcome === 'denied' && entry.createdAt >= weekAgo,
+            ).length,
+          }
+        : null,
+
+      platform: {
+        properties: database.properties.filter((property) => property.status === 'active').length,
+        reviews: database.reviews.filter((review) => review.status === 'published').length,
+        users: database.users.length,
+        reviewsLast30Days: database.reviews.filter((review) => review.createdAt >= monthAgo)
+          .length,
+      },
+    };
   }
 
   /* ---------------------------------------------------------------------

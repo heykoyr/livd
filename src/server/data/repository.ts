@@ -330,6 +330,59 @@ export interface AuditFeedFilters {
   includeReads?: boolean;
 }
 
+/**
+ * One queue on the dashboard: how much is waiting, and how long the oldest has
+ * waited.
+ *
+ * The age is the point. A count says three reports are open; it cannot say one
+ * of them has been open nine days, which is the part a person seeing the
+ * number needs in order to act. Everything in this area degrades with time — a
+ * review nobody has looked at is still visible, a resident waiting on
+ * verification is waiting with their review counting for less.
+ */
+export interface AttentionQueue {
+  count: number;
+  /** When the oldest waiting item arrived. Null when nothing is waiting. */
+  oldest: string | null;
+}
+
+/**
+ * The dashboard, in one shape.
+ *
+ * The Trust & Safety figures are `null` rather than `0` for a moderator. Zero
+ * would say "there are none"; null says "not yours to see", and the two are
+ * different answers that a dashboard should not confuse.
+ */
+export interface AdminAttention {
+  pendingReviews: AttentionQueue;
+  openReports: AttentionQueue;
+  openFlags: AttentionQueue;
+  pendingVerifications: AttentionQueue;
+  pendingClaims: AttentionQueue;
+
+  cases: {
+    open: number;
+    unassigned: number;
+    mine: number;
+    critical: number;
+    oldest: string | null;
+  };
+
+  trustAndSafety: {
+    openAuthorityRequests: number;
+    preservationHolds: number;
+    sanctionsExpiring: number;
+    refusalsLast7Days: number;
+  } | null;
+
+  platform: {
+    properties: number;
+    reviews: number;
+    users: number;
+    reviewsLast30Days: number;
+  };
+}
+
 /** How often each kind of thing has happened, and when it last did. */
 export interface AuditActionSummary {
   action: string;
@@ -876,6 +929,24 @@ export interface LivdRepository {
 
   /** The administrators present in either trail. Also not a recorded read. */
   auditActors(since?: string | null): Promise<AuditActorSummary[]>;
+
+  /**
+   * What needs attention, in one query.
+   *
+   * Replaces nine separate counts assembled in TypeScript. The round trips
+   * matter for a page every moderator opens first, but the reason it is one
+   * function is that the dashboard's shape should be decided in one place:
+   * nine independent counts is nine chances for one of them to mean something
+   * slightly different from the others.
+   *
+   * Counts and ages only — no identity, no content, no position. Every route
+   * out of the dashboard goes through a page that authorises and records
+   * whatever it then shows.
+   *
+   * `viewerId` is used only by the local adapter, for "my cases"; Postgres
+   * reads it from the session.
+   */
+  adminAttention(viewerId?: string | null): Promise<AdminAttention>;
 
   /* ---- Claims & owner responses ---- */
 
