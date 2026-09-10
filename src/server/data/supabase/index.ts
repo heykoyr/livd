@@ -14,6 +14,7 @@ import {
   createServiceRoleClient,
 } from '@/server/auth/supabase-client';
 import type {
+  AccountSignal,
   AdminUserDetail,
   AdminUserFilters,
   AdminUserPage,
@@ -286,6 +287,22 @@ interface AdminAuditRow {
   detail: unknown;
   created_at: string;
   total_count: number | string;
+}
+
+/** One row of `livd_list_account_signals`. An account id, never an address. */
+interface AccountSignalRow {
+  id: string;
+  user_id: string;
+  kind: AccountSignal['kind'];
+  severity: number;
+  window_start: string;
+  window_end: string;
+  observed: unknown;
+  detail: string;
+  status: AccountSignal['status'];
+  case_id: string | null;
+  case_reference: string | null;
+  created_at: string;
 }
 
 /** The single row of `livd_admin_attention`. Counts and ages, nothing else. */
@@ -1729,6 +1746,73 @@ export class SupabaseRepository implements LivdRepository {
         property: toProperty(typed.properties),
       };
     });
+  }
+
+  /**
+   * Signals about one account.
+   *
+   * Through the caller's own session: `livd_list_account_signals` checks
+   * `livd_is_moderator()` against `auth.uid()`, and the subject of a signal is
+   * never allowed to read the one about them. Telling somebody which pattern in
+   * their behaviour was noticed is telling them precisely what to avoid next
+   * time.
+   */
+  async listAccountSignals(status: PropertyFlagStatus | null = 'open'): Promise<AccountSignal[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_list_account_signals', {
+      filter_status: status,
+    });
+
+    if (error) throw new Error(`listAccountSignals: ${error.message}`);
+
+    return ((data ?? []) as AccountSignalRow[]).map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      kind: row.kind,
+      severity: row.severity as 1 | 2 | 3,
+      windowStart: row.window_start,
+      windowEnd: row.window_end,
+      observed: (row.observed ?? {}) as AccountSignal['observed'],
+      detail: row.detail,
+      status: row.status,
+      caseId: row.case_id,
+      caseReference: row.case_reference,
+      createdAt: row.created_at,
+    }));
+  }
+
+  async decideAccountSignal(
+    signalId: string,
+    status: Extract<PropertyFlagStatus, 'reviewed' | 'dismissed'>,
+    _actorId: string,
+  ): Promise<void> {
+    const supabase = await this.client();
+
+    const { error } = await supabase.rpc('livd_decide_account_signal', {
+      signal_id: signalId,
+      new_status: status,
+    });
+
+    if (error) throw new Error(`decideAccountSignal: ${error.message}`);
+  }
+
+  async openCaseFromSignal(input: {
+    signalKind: 'property' | 'account';
+    signalId: string;
+    why: string;
+    actorId: string;
+  }): Promise<string> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_open_case_from_signal', {
+      signal_kind: input.signalKind,
+      signal_id: input.signalId,
+      why: input.why,
+    });
+
+    if (error) throw new Error(`openCaseFromSignal: ${error.message}`);
+    return data as string;
   }
 
   async decidePropertyFlag(

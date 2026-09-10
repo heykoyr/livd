@@ -650,3 +650,86 @@ address, no review body and no coordinate; that every queue answers in a count
 and a timestamp and nothing else; and that the local adapter fills in every
 column the SQL declares — a field added to one and forgotten in the other would
 be a dashboard meaning different things in development and in production.
+
+## 2026-09-11 · Phase 12 · signals
+
+Migrations under test: `0038_signal_kinds`, `0039_signals`.
+
+| # | Attack / behaviour | Result |
+|---|---|---|
+| 1 | Eight reports against one property from two accounts | `report_campaign`, severity 3, "8 reports in 48 hours from 2 accounts, against 4 reviews." |
+| 2 | One account, five buildings, one afternoon | `author_spread`, severity 1, "5 reviews across 5 different properties in 48 hours." |
+| 3 | One account, seven reports, all dismissed | `serial_reporter`, severity 2 |
+| 4 | Reviews changed by any of that | 0 — every review still published |
+| 5 | Accounts restricted by any of that | 0 — every account still active |
+| 6 | Moderation rows written by detection | 0 |
+| 7 | Resident reads `livd_list_account_signals` | BLOCKED — `Not authorised` |
+| 8 | Resident reads `account_signals` directly | 0 rows |
+| 9 | Resident calls `livd_open_case_from_signal` | BLOCKED — `Only a moderator may open a case` |
+| 10 | Moderator opens a case from a property signal | `LV-1006`, property attached, flag marked reviewed and linked |
+| 11 | Moderator opens a case from an account signal | `LV-1007`, account attached |
+| 12 | Calling it twice | the same case, not a second |
+| 13 | The arithmetic in the case timeline | present, with the window and the counts |
+| 14 | `livd_decide_account_signal(id, 'removed')` | BLOCKED — `A signal is reviewed or dismissed` |
+
+### The property this phase is really about
+
+Rows 4, 5 and 6 are the phase. Nothing in the detection layer changes a
+review's status, its verification level, a property's score or an account's
+standing. The strongest thing a signal can do is cause a person to be asked.
+
+That is not a limitation waiting to be lifted. A detector that could act would
+eventually act on a property that had simply become popular, or on a resident
+who moved twice in a year, and there is no threshold clever enough to be
+trusted with that. The arithmetic decides what is unusual; a person decides
+what it means.
+
+`tests/safety/signals.test.ts` enforces it by reading the migrations: every
+`livd_detect_*` and `livd_raise_*` function is scanned and must contain no
+`update reviews`, no `update profiles` and no `delete from`. A detection
+function that gained one of those would be the single most damaging change
+anybody could make to this product, and it would look entirely reasonable in a
+diff.
+
+That scan counts what it examined and fails if it found fewer than four
+functions — because a scan that matched nothing would pass in silence, and this
+project has already shipped one detector whose regex could not have matched
+anything at all (Phase 10).
+
+### What was invisible before
+
+The detector built in Phase 5 could only see abuse that concentrates on one
+building, and everything it looked at was a review arriving. Two things were
+therefore invisible.
+
+The lever an unhappy owner actually has is not writing reviews — it is
+**reporting** them. Twelve reports against one property in a day is the shape of
+a campaign to get honest reviews taken down, and nothing noticed it, which
+meant the abuse most likely to be aimed at reviewers was the one with no signal
+attached. Upholding a report has never removed anything, so a campaign could
+not mechanically succeed; but it could exhaust somebody into agreeing, and
+nobody would have seen the shape of it.
+
+The second is one account across many buildings. One glowing review of each of
+twenty properties in an afternoon is not a burst anywhere — the pattern only
+exists when you stop looking property by property.
+
+Severity for `report_campaign` keys on the number of *reporters*, not the
+number of reports: many people reporting is a building people are genuinely
+angry about; two accounts filing ten is a campaign.
+
+`serial_reporter` requires reports to have been **dismissed**, not merely filed.
+An unresolved report counts as neither, so nobody is ever flagged for a backlog
+that is the fault of the queue rather than of the reporter.
+
+### Two live-test findings worth recording
+
+The first attempt at row 2 tried to reassign authorship on existing reviews to
+build the fixture. `livd_guard_review_update()` refused it — *"Only the written
+review and recommendation may be corrected"* — which is an existing protection
+working exactly as intended, on a test rather than on an attack.
+
+The second is that the *test script* hit the parameter-shadowing trap twice
+(`case_id`, `author_id`) while probing this migration. The detector added in
+Phase 10 covers migrations, not ad-hoc harnesses, so it did not catch these —
+but it is a useful reminder of how ordinary the mistake is.

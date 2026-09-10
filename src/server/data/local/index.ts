@@ -9,6 +9,7 @@ import { matchScore, normaliseForSearch } from '@/lib/search/matching';
 import { formatAddressInline, propertyContextLine, propertyDisplayName } from '@/lib/format';
 import { propertySlug, shortId } from '@/lib/utils';
 import type {
+  AccountSignal,
   AdminUserDetail,
   AdminUserFilters,
   AuthorityRequest,
@@ -1569,12 +1570,153 @@ export class LocalRepository implements LivdRepository {
           status: decision?.status ?? 'open',
           reviewedBy: decision?.reviewedBy ?? null,
           reviewedAt: decision?.reviewedAt ?? null,
+          caseId: decision?.caseId ?? null,
+          caseReference:
+            database.cases.find((entry) => entry.id === decision?.caseId)?.reference ?? null,
           createdAt: finding.windowEnd,
         };
 
         return [{ flag, property }];
       })
       .filter((entry) => entry.flag.status === status);
+  }
+
+  async listAccountSignals(status: PropertyFlagStatus | null = 'open'): Promise<AccountSignal[]> {
+    const database = await getDatabase();
+    const casesById = new Map(database.cases.map((entry) => [entry.id, entry]));
+
+    return database.accountSignals
+      .filter((signal) => !status || signal.status === status)
+      .sort((a, b) => b.severity - a.severity || b.createdAt.localeCompare(a.createdAt))
+      .map((signal) => ({
+        id: signal.id,
+        userId: signal.userId,
+        kind: signal.kind,
+        severity: signal.severity,
+        windowStart: signal.windowStart,
+        windowEnd: signal.windowEnd,
+        observed: signal.observed,
+        detail: signal.detail,
+        status: signal.status,
+        caseId: signal.caseId,
+        caseReference: signal.caseId ? (casesById.get(signal.caseId)?.reference ?? null) : null,
+        createdAt: signal.createdAt,
+      }));
+  }
+
+  async decideAccountSignal(
+    signalId: string,
+    status: Extract<PropertyFlagStatus, 'reviewed' | 'dismissed'>,
+    actorId: string,
+  ): Promise<void> {
+    await mutate((database) => {
+      requireModerator(database, actorId, 'Only a moderator may decide a signal');
+
+      const signal = database.accountSignals.find((entry) => entry.id === signalId);
+      if (!signal) throw new Error('No such signal');
+
+      // Deciding a signal changes the signal. Nothing here touches the
+      // account's standing or their reviews — those are separate decisions
+      // with their own authorisation and their own written reasons.
+      signal.status = status;
+      signal.reviewedBy = actorId;
+      signal.reviewedAt = nowIso();
+    });
+  }
+
+  /**
+   * Turns a signal into a case.
+   *
+   * The arithmetic goes into the case's first timeline event so somebody
+   * reading it in three weeks sees what was observed rather than a paraphrase.
+   * Nothing about the property, the reviews or the account changes.
+   */
+  async openCaseFromSignal(input: {
+    signalKind: 'property' | 'account';
+    signalId: string;
+    why: string;
+    actorId: string;
+  }): Promise<string> {
+    if (!input.why || input.why.trim().length < 3) {
+      throw new Error('Say what you want looked into');
+    }
+
+    let observed: Record<string, number | string | null> = {};
+    let subjectUserId: string | null = null;
+    let subjectPropertyId: string | null = null;
+
+    if (input.signalKind === 'account') {
+      const database = await getDatabase();
+      const signal = database.accountSignals.find((entry) => entry.id === input.signalId);
+      if (!signal) throw new Error('No such signal');
+
+      // Already investigated: hand back the case rather than opening a second.
+      if (signal.caseId) return signal.caseId;
+
+      observed = signal.observed;
+      subjectUserId = signal.userId;
+    } else {
+      const flags = await this.listPropertyFlags('open');
+      const decided = await this.listPropertyFlags('reviewed');
+      const found = [...flags, ...decided].find((entry) => entry.flag.id === input.signalId);
+      if (!found) throw new Error('No such signal');
+
+      if (found.flag.caseId) return found.flag.caseId;
+
+      observed = found.flag.observed;
+      subjectPropertyId = found.flag.propertyId;
+    }
+
+    const caseId = await this.openCase({
+      category: 'review_manipulation',
+      summary: input.why.trim(),
+      actorId: input.actorId,
+    });
+
+    await mutate((database) => {
+      const entry = database.cases.find((c) => c.id === caseId);
+      if (entry) {
+        if (subjectUserId) entry.subjectUserId = subjectUserId;
+        if (subjectPropertyId) entry.subjectPropertyId = subjectPropertyId;
+      }
+
+      if (input.signalKind === 'account') {
+        const signal = database.accountSignals.find((sig) => sig.id === input.signalId);
+        if (signal) {
+          signal.caseId = caseId;
+          signal.status = 'reviewed';
+          signal.reviewedBy = input.actorId;
+          signal.reviewedAt = nowIso();
+        }
+      } else {
+        const [, propertyId, kind] = /^flag-(.+)-([a-z_]+)$/.exec(input.signalId) ?? [];
+        const existing = database.flagDecisions.find(
+          (d) => d.propertyId === propertyId && d.kind === kind,
+        );
+        const decision = {
+          propertyId: propertyId ?? '',
+          kind: (kind ?? 'review_burst') as PropertyFlag['kind'],
+          status: 'reviewed' as const,
+          reviewedBy: input.actorId,
+          reviewedAt: nowIso(),
+          caseId,
+        };
+
+        if (existing) Object.assign(existing, decision);
+        else database.flagDecisions.push(decision);
+      }
+
+      appendCaseEvent(
+        database,
+        caseId,
+        input.actorId,
+        'signal_linked',
+        'Opened from an automated signal',
+        { signalKind: input.signalKind, signalId: input.signalId, ...observed },
+      );
+    });
+
+    return caseId;
   }
 
   async decidePropertyFlag(

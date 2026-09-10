@@ -1,0 +1,29 @@
+-- ===========================================================================
+-- Livd — 0038 · Two more things worth noticing
+--
+-- Enum values only, and alone in their own migration. Postgres will not let a
+-- transaction *use* an enum value it added, so `report_campaign` cannot be
+-- referenced by the detection function until this has committed. Same reason
+-- `trust_admin` needed 0019 and `banned` needed 0031.
+--
+-- WHY THESE TWO
+--
+-- The detector built in 0010 can only see abuse that concentrates on one
+-- building: a burst of reviews, a swing in ratings, a cluster of new accounts.
+-- Everything it looks at is a review arriving.
+--
+-- That leaves the whole other half of the problem invisible. The lever an
+-- unhappy owner actually has is not writing reviews — it is *reporting* them,
+-- and twelve reports against one property in a day is exactly the shape of a
+-- campaign to get honest reviews taken down. Nothing in Livd noticed that,
+-- which meant the one abuse most likely to be aimed at reviewers was the one
+-- abuse with no signal attached to it.
+--
+-- `report_campaign` closes that. `account_signal_kind` in 0039 closes the
+-- other half — an account whose behaviour is only visible when you stop
+-- looking property by property.
+--
+-- Neither changes what a signal *is*. It stays a question put to a person.
+-- ===========================================================================
+
+alter type property_flag_kind add value if not exists 'report_campaign';

@@ -1,4 +1,5 @@
 import type {
+  AccountSignal,
   AdminUserDetail,
   AdminUserFilters,
   AdminUserPage,
@@ -648,6 +649,49 @@ export interface LivdRepository {
     status: Extract<PropertyFlagStatus, 'reviewed' | 'dismissed'>,
     actorId: string,
   ): Promise<void>;
+
+  /**
+   * Patterns in one account's behaviour.
+   *
+   * The half of the problem the property detector cannot see. An account
+   * writing one glowing review of each of twenty buildings in an afternoon
+   * raises nothing property by property — one review is not a burst anywhere —
+   * and the pattern only exists when you stop looking building by building.
+   */
+  listAccountSignals(status?: PropertyFlagStatus | null): Promise<AccountSignal[]>;
+
+  /**
+   * Records a decision on one.
+   *
+   * Changes the signal and nothing else. Restricting the account, hiding their
+   * reviews or altering their standing are separate decisions with their own
+   * authorisation and their own written reasons, and none of them is a side
+   * effect of clearing a queue.
+   */
+  decideAccountSignal(
+    signalId: string,
+    status: Extract<PropertyFlagStatus, 'reviewed' | 'dismissed'>,
+    actorId: string,
+  ): Promise<void>;
+
+  /**
+   * Turns a signal into a case.
+   *
+   * The point of the signals layer. A signal used to end at reviewed or
+   * dismissed — a verdict on the *signal*, which leaves no room for the answer
+   * an unexplained pattern most often warrants: this needs looking into.
+   *
+   * The arithmetic is copied into the case's first timeline event, so somebody
+   * reading it in three weeks sees what was observed rather than somebody's
+   * paraphrase. Nothing about the property, the reviews or the account
+   * changes.
+   */
+  openCaseFromSignal(input: {
+    signalKind: 'property' | 'account';
+    signalId: string;
+    why: string;
+    actorId: string;
+  }): Promise<string>;
 
   recordModerationAction(input: Omit<ModerationAction, 'id' | 'createdAt'>): Promise<ModerationAction>;
   listModerationActions(subjectId?: string, limit?: number): Promise<ModerationAction[]>;

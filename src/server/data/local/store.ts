@@ -14,6 +14,7 @@ import type {
   OwnerResponse,
   Property,
   PropertyClaim,
+  AccountSignalKind,
   PropertyFlagKind,
   PropertyFlagStatus,
   PropertyVerification,
@@ -86,6 +87,31 @@ export interface LocalDatabase {
     status: Exclude<PropertyFlagStatus, 'open'>;
     reviewedBy: string;
     reviewedAt: string;
+    /** The case opened from the finding, when somebody investigated it. */
+    caseId?: string | null;
+  }>;
+  /**
+   * Signals about one account.
+   *
+   * Stored rather than derived, unlike property flags — a signal about an
+   * account is not recomputed from the account's current reviews, it is a
+   * record that a pattern was observed in a particular window. Postgres keeps
+   * this in `account_signals`.
+   */
+  accountSignals: Array<{
+    id: string;
+    userId: string;
+    kind: AccountSignalKind;
+    severity: 1 | 2 | 3;
+    windowStart: string;
+    windowEnd: string;
+    observed: Record<string, number | string | null>;
+    detail: string;
+    status: PropertyFlagStatus;
+    reviewedBy: string | null;
+    reviewedAt: string | null;
+    caseId: string | null;
+    createdAt: string;
   }>;
   /**
    * The administrative audit log.
@@ -311,6 +337,7 @@ function emptyDatabase(): LocalDatabase {
     verifications: [],
     propertyVerifications: [],
     flagDecisions: [],
+    accountSignals: [],
     adminAudit: [],
     cases: [],
     caseEvents: [],

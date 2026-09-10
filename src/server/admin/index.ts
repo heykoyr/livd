@@ -42,6 +42,11 @@ export {
 } from './audit';
 export { readAuditTrail, readAuditSummary, readAuditActors } from './trail';
 export { readAttention } from './attention';
+export {
+  decideAccountSignal,
+  investigateSignal,
+  listAccountSignals,
+} from './signals';
 export { readReviewInvestigation } from './reviews';
 export {
   openAuthorityRequest,

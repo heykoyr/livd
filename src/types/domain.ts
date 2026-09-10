@@ -747,7 +747,8 @@ export interface VerificationStanding {
  * Automated trust-and-safety signals
  * ---------------------------------------------------------------------- */
 
-export type PropertyFlagKind = 'review_burst' | 'rating_anomaly' | 'new_account_concentration';
+export type PropertyFlagKind = 'review_burst' | 'rating_anomaly' | 'new_account_concentration'
+  | 'report_campaign';
 
 export type PropertyFlagStatus = 'open' | 'reviewed' | 'dismissed';
 
@@ -759,6 +760,38 @@ export type PropertyFlagStatus = 'open' | 'reviewed' | 'dismissed';
  * astroturfed; telling those apart is a judgement, and `observed` carries the
  * arithmetic so a moderator can make it rather than be handed a verdict.
  */
+/**
+ * Something one account did that is invisible property by property.
+ *
+ * Deliberately the same shape as `PropertyFlag` — same severity scale, same
+ * open/reviewed/dismissed, same rule that the arithmetic travels with the
+ * finding — so a moderator learns one idea rather than two.
+ *
+ * Like a property flag, it is a question rather than a finding. Deciding one
+ * changes the signal and nothing else: not the account's standing, not their
+ * reviews, not their score.
+ */
+export interface AccountSignal {
+  id: string;
+  /** The account the pattern is about. Never their address. */
+  userId: string;
+  kind: AccountSignalKind;
+  /** 1 unusual · 2 hard to explain innocently · 3 look at this today. */
+  severity: 1 | 2 | 3;
+  windowStart: string;
+  windowEnd: string;
+  /** The numbers behind the signal. Shape depends on `kind`. */
+  observed: Record<string, number | string | null>;
+  detail: string;
+  status: PropertyFlagStatus;
+  /** The case opened from this signal, when somebody decided to investigate. */
+  caseId: string | null;
+  caseReference: string | null;
+  createdAt: string;
+}
+
+export type AccountSignalKind = 'author_spread' | 'serial_reporter';
+
 export interface PropertyFlag {
   id: string;
   propertyId: string;
@@ -773,6 +806,9 @@ export interface PropertyFlag {
   status: PropertyFlagStatus;
   reviewedBy: string | null;
   reviewedAt: string | null;
+  /** The case opened from this signal, when somebody decided to investigate. */
+  caseId?: string | null;
+  caseReference?: string | null;
   createdAt: string;
 }
 
