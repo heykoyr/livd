@@ -300,6 +300,8 @@ export function toClaim(row: ClaimRow): PropertyClaim {
 export interface ModerationActionRow {
   id: string;
   actor_id: string;
+  /** Null for rows written before 0035. Never back-filled. */
+  actor_role: ModerationAction['actorRole'];
   subject_type: ModerationAction['subjectType'];
   subject_id: string;
   action: string;
@@ -313,6 +315,7 @@ export function toModerationAction(row: ModerationActionRow): ModerationAction {
   return {
     id: row.id,
     actorId: row.actor_id,
+    actorRole: row.actor_role ?? null,
     subjectType: row.subject_type,
     subjectId: row.subject_id,
     action: row.action,

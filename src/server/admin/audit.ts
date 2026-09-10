@@ -11,6 +11,34 @@ import 'server-only';
  *
  * This union is therefore the real definition of what Livd audits. Adding an
  * entry needs no migration; using one that is not here does not compile.
+ *
+ * IT COVERS BOTH TRAILS
+ *
+ * Livd keeps two, and 0035 explains why they are not merged:
+ *
+ *   `moderation_actions`  what was decided about content and accounts, with
+ *                         the previous and new state of the thing decided
+ *   `admin_audit_log`     who touched a person's information, including the
+ *                         reads, and including the refused attempts
+ *
+ * Some names below are written directly by the administrative layer into the
+ * audit log; others exist only in the moderation trail, under a different
+ * string, and reach this vocabulary through `normaliseAuditAction`. Both kinds
+ * are listed, because this union is what a reader filters by and a reader does
+ * not care which table a decision was recorded in.
+ *
+ * NOTHING IS LISTED HERE THAT NOTHING EMITS
+ *
+ * A vocabulary entry for an action no code takes is a claim that Livd audits
+ * something it does not. Five were removed in Phase 10 for exactly that
+ * reason — `data_exported` and `security_config_changed` (nothing exports and
+ * nothing changes security configuration from the application),
+ * `review_snapshot_taken` (a trigger writes snapshots, with no actor to
+ * attribute), `case_closed` (a closure is a `case_status_changed`), and
+ * `location_checks_reviewed` (the page reads decisions, and holds neither an
+ * identity nor a position — there is nothing there to cross a boundary with).
+ *
+ * `tests/safety/audit-coverage.test.ts` keeps it that way.
  */
 
 export type AdminAuditAction =
@@ -28,7 +56,6 @@ export type AdminAuditAction =
   /* Content */
   | 'review_status_changed'
   | 'review_verification_changed'
-  | 'review_snapshot_taken'
 
   /* Reports and cases */
   | 'report_resolved'
@@ -37,7 +64,6 @@ export type AdminAuditAction =
   | 'case_status_changed'
   | 'case_priority_changed'
   | 'case_note_added'
-  | 'case_closed'
 
   /* Evidence */
   | 'evidence_added'
@@ -46,8 +72,7 @@ export type AdminAuditAction =
   | 'verification_evidence_accessed'
   | 'verification_decided'
 
-  /* Verification and claims */
-  | 'location_checks_reviewed'
+  /* Claims */
   | 'property_claim_decided'
 
   /* Legal */
@@ -55,10 +80,30 @@ export type AdminAuditAction =
   | 'authority_request_updated'
   | 'disclosure_recorded'
 
-  /* Platform */
-  | 'data_exported'
-  | 'audit_log_read'
-  | 'security_config_changed';
+  /* The trail itself */
+  | 'audit_log_read';
+
+/**
+ * Maps a `moderation_actions` action string onto this vocabulary.
+ *
+ * Mirrors `livd_normalise_audit_action` in 0036 exactly — the local adapter
+ * uses this, Postgres uses that, and `tests/safety/audit-coverage.test.ts`
+ * checks they agree on every case.
+ *
+ * Unmapped values pass through unchanged rather than becoming 'other'. An
+ * action nobody has taught this function about should look conspicuous in the
+ * list, not disappear into a bucket.
+ */
+export function normaliseAuditAction(raw: string): string {
+  if (raw.startsWith('set_status:')) return 'review_status_changed';
+  if (raw.startsWith('set_verification:')) return 'review_verification_changed';
+  if (raw.startsWith('report_')) return 'report_resolved';
+  if (raw.startsWith('claim_')) return 'property_claim_decided';
+  if (raw.startsWith('verification_')) return 'verification_decided';
+  if (raw === 'role_changed') return 'user_role_changed';
+  if (raw === 'status_changed') return 'user_status_changed';
+  return raw;
+}
 
 /** What an audit entry is about. Mirrors the check constraint in 0023. */
 export type AdminSubjectType =
@@ -113,6 +158,11 @@ export interface AdminAuditEntry {
  * a UI convention — `runAdminAction` enforces it before the operation is
  * reached, so an action added later inherits the rule by being listed here
  * rather than by its author remembering.
+ *
+ * `audit_log_read` is deliberately absent. Requiring a written reason to open
+ * the trail would mean the people meant to be checking it stop opening it, and
+ * an audit log nobody reads deters nothing. The read is recorded; it does not
+ * have to be justified.
  */
 export const REASON_REQUIRED: ReadonlySet<AdminAuditAction> = new Set<AdminAuditAction>([
   'identity_revealed',
@@ -124,6 +174,4 @@ export const REASON_REQUIRED: ReadonlySet<AdminAuditAction> = new Set<AdminAudit
   'evidence_accessed',
   'verification_evidence_accessed',
   'disclosure_recorded',
-  'data_exported',
-  'security_config_changed',
 ]);

@@ -63,7 +63,7 @@ import type {
 } from '@/types/domain';
 import { detectPropertyFlags } from '@/lib/safety/burst-detection';
 import { maskEmail } from '@/lib/safety/identity';
-import type { AdminAuditEntry } from '@/server/admin/audit';
+import { normaliseAuditAction, type AdminAuditEntry } from '@/server/admin/audit';
 import { VERIFICATION_LIFETIME } from '@/config/verification';
 import { haversineMeters, isValidCoordinates } from '@/lib/geo/distance';
 import { decideProximity, isImplausibleMovement } from '@/lib/geo/proximity';
@@ -72,6 +72,11 @@ import { decideProximity, isImplausibleMovement } from '@/lib/geo/proximity';
 const FLAG_DECISION_COOLDOWN_DAYS = 7;
 import type {
   AdminAuditPage,
+  AuditActionSummary,
+  AuditActorSummary,
+  AuditFeedEntry,
+  AuditFeedFilters,
+  AuditFeedPage,
   AdminOverview,
   IdentityAccessReason,
   IdentityAccessRecord,
@@ -355,6 +360,25 @@ function requireModerator(database: LocalDatabase, actorId: string, message: str
 
   if (!actor || !canModerate) throw new Error(message);
   return actor;
+}
+
+/**
+ * The next id for an entry in either audit trail.
+ *
+ * Both trails are read together and sorted by timestamp then by id, and
+ * entries written inside one `mutate` share a millisecond — a random id would
+ * then decide the order of the record, which is the one thing a record must
+ * not leave to chance. Zero-padded so lexicographic order is chronological,
+ * matching the `bigserial` Postgres uses.
+ *
+ * Shared between the two trails rather than one counter each, so an
+ * interleaved sequence of decisions and accesses reads in the order it
+ * actually happened.
+ */
+function trailId(database: LocalDatabase): string {
+  const sequence = String(database.nextTrailSeq).padStart(12, '0');
+  database.nextTrailSeq += 1;
+  return `trail-${sequence}`;
 }
 
 /**
@@ -1004,8 +1028,9 @@ export class LocalRepository implements LivdRepository {
       review.updatedAt = nowIso();
 
       database.moderationActions.push({
-        id: `action-${shortId(12)}`,
+        id: trailId(database),
         actorId,
+        actorRole: database.users.find((u) => u.id === actorId)?.role ?? null,
         subjectType: 'review',
         subjectId: reviewId,
         action: `set_status:${status}`,
@@ -1021,7 +1046,12 @@ export class LocalRepository implements LivdRepository {
     reviewId: string,
     level: VerificationLevel,
     actorId: string,
+    reason: string,
   ): Promise<void> {
+    if (!reason || reason.trim().length < 3) {
+      throw new Error('A reason is required, for the audit trail');
+    }
+
     await mutate((database) => {
       const review = database.reviews.find((r) => r.id === reviewId);
       if (!review) throw new Error('Review not found');
@@ -1036,12 +1066,13 @@ export class LocalRepository implements LivdRepository {
       review.updatedAt = nowIso();
 
       database.moderationActions.push({
-        id: `action-${shortId(12)}`,
+        id: trailId(database),
         actorId,
+        actorRole: database.users.find((u) => u.id === actorId)?.role ?? null,
         subjectType: 'review',
         subjectId: reviewId,
         action: `set_verification:${level}`,
-        reason: null,
+        reason: reason.trim(),
         previousStatus: previous,
         newStatus: level,
         createdAt: nowIso(),
@@ -1130,8 +1161,9 @@ export class LocalRepository implements LivdRepository {
       report.resolvedAt = nowIso();
 
       database.moderationActions.push({
-        id: `action-${shortId(12)}`,
+        id: trailId(database),
         actorId,
+        actorRole: database.users.find((u) => u.id === actorId)?.role ?? null,
         subjectType: 'review',
         subjectId: report.reviewId,
         action: `report_${status}`,
@@ -1421,8 +1453,9 @@ export class LocalRepository implements LivdRepository {
       record.decidedAt = nowIso();
 
       database.moderationActions.push({
-        id: `action-${shortId(12)}`,
+        id: trailId(database),
         actorId,
+        actorRole: database.users.find((u) => u.id === actorId)?.role ?? null,
         subjectType: 'review',
         subjectId: record.subjectId,
         action: `verification_${outcome}`,
@@ -1438,7 +1471,15 @@ export class LocalRepository implements LivdRepository {
     if (outcome === 'approved') {
       // Rejection deliberately leaves the level alone. Failing to produce a
       // document is not evidence of having lied.
-      await this.setReviewVerification(reviewId, 'verified_resident', actorId);
+      // The reason names the record this came from, so the entry in the trail
+      // traces back to a document somebody approved rather than looking like
+      // an unexplained manual override.
+      await this.setReviewVerification(
+        reviewId,
+        'verified_resident',
+        actorId,
+        `Residency verification ${recordId} approved.`,
+      );
     }
   }
 
@@ -1555,8 +1596,9 @@ export class LocalRepository implements LivdRepository {
       else database.flagDecisions.push(decision);
 
       database.moderationActions.push({
-        id: `action-${shortId(12)}`,
+        id: trailId(database),
         actorId,
+        actorRole: database.users.find((u) => u.id === actorId)?.role ?? null,
         subjectType: 'property',
         subjectId: propertyId,
         action: `flag_${status}:${kind}`,
@@ -1574,7 +1616,11 @@ export class LocalRepository implements LivdRepository {
     return mutate((database) => {
       const action: ModerationAction = {
         ...input,
-        id: `action-${shortId(12)}`,
+        actorRole:
+          input.actorRole ??
+          database.users.find((u) => u.id === input.actorId)?.role ??
+          null,
+        id: trailId(database),
         createdAt: nowIso(),
       };
       database.moderationActions.push(action);
@@ -1653,7 +1699,7 @@ export class LocalRepository implements LivdRepository {
 
       const actor = database.users.find((u) => u.id === input.actorId);
       database.adminAudit.push({
-        id: `audit-${shortId(12)}`,
+        id: trailId(database),
         actorId: input.actorId,
         actorRole: actor?.role ?? 'resident',
         action: 'authority_request_created',
@@ -2873,6 +2919,212 @@ export class LocalRepository implements LivdRepository {
     };
   }
 
+  /**
+   * Both trails, unified for reading.
+   *
+   * The union happens here rather than in the store, exactly as it happens in
+   * a query rather than in a table in Postgres. Two rows for one act could
+   * disagree; one row read two ways cannot.
+   *
+   * Reading writes an `audit_log_read` entry, as `livd_admin_audit_feed` does.
+   * There the read and the record are one statement block and cannot come
+   * apart; here they are one `mutate` and the same discipline applies by
+   * convention, which is the usual difference between the two adapters.
+   */
+  async listAuditFeed(filters: AuditFeedFilters = {}): Promise<AuditFeedPage> {
+    const pageSize = Math.min(Math.max(filters.pageSize ?? 50, 1), 200);
+    const page = Math.max(filters.page ?? 1, 1);
+
+    const database = await getDatabase();
+    const usersById = new Map(database.users.map((user) => [user.id, user]));
+
+    const fromAudit: AuditFeedEntry[] = database.adminAudit.map((entry) => ({
+      id: `a:${entry.id}`,
+      source: 'audit' as const,
+      actorId: entry.actorId,
+      actorRole: entry.actorRole,
+      actorEmailMasked: entry.actorId
+        ? maskEmail(usersById.get(entry.actorId)?.email ?? null)
+        : null,
+      action: normaliseAuditAction(entry.action),
+      rawAction: entry.action,
+      subjectType: entry.subjectType,
+      subjectId: entry.subjectId,
+      outcome: entry.outcome,
+      reason: entry.reason,
+      detail: entry.detail,
+      createdAt: entry.createdAt,
+    }));
+
+    const fromModeration: AuditFeedEntry[] = database.moderationActions.map((entry) => ({
+      id: `m:${entry.id}`,
+      source: 'moderation' as const,
+      actorId: entry.actorId,
+      actorRole: entry.actorRole ?? null,
+      actorEmailMasked: entry.actorId
+        ? maskEmail(usersById.get(entry.actorId)?.email ?? null)
+        : null,
+      action: normaliseAuditAction(entry.action),
+      rawAction: entry.action,
+      subjectType: entry.subjectType,
+      subjectId: entry.subjectId,
+      // A moderation row exists only because the decision was made. There is
+      // no refused-attempt equivalent in that trail, which is one of the
+      // reasons the audit log exists alongside it.
+      outcome: 'succeeded' as const,
+      reason: entry.reason,
+      detail: {
+        ...(entry.previousStatus === null ? {} : { previousStatus: entry.previousStatus }),
+        ...(entry.newStatus === null ? {} : { newStatus: entry.newStatus }),
+      },
+      createdAt: entry.createdAt,
+    }));
+
+    const all = [...fromAudit, ...fromModeration]
+      .filter((entry) => !filters.source || entry.source === filters.source)
+      .filter((entry) => !filters.action || entry.action === filters.action)
+      .filter((entry) => !filters.actorId || entry.actorId === filters.actorId)
+      .filter((entry) => !filters.outcome || entry.outcome === filters.outcome)
+      .filter((entry) => !filters.subjectType || entry.subjectType === filters.subjectType)
+      .filter((entry) => !filters.subjectId || entry.subjectId === filters.subjectId)
+      .filter((entry) => !filters.since || entry.createdAt >= filters.since)
+      .filter((entry) => !filters.until || entry.createdAt <= filters.until)
+      // Hidden unless asked for, never removed. The page shows the count it is
+      // hiding, which makes it a filter rather than a secret.
+      .filter((entry) => filters.includeReads || entry.action !== 'audit_log_read')
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+
+    const start = (page - 1) * pageSize;
+    const items = all.slice(start, start + pageSize);
+
+    // After the page is taken, so a read does not appear in its own results.
+    // `readerId` is how this adapter learns who is asking; Postgres reads it
+    // from the session and ignores the argument entirely.
+    if (filters.readerId) {
+      await this.recordAdminAudit({
+        actorId: filters.readerId,
+        action: 'audit_log_read',
+        subjectType: 'security',
+        subjectId: filters.subjectId ?? null,
+        outcome: 'succeeded',
+        reason: null,
+        detail: {
+          source: filters.source ?? null,
+          action: filters.action ?? null,
+          actor: filters.actorId ?? null,
+          outcome: filters.outcome ?? null,
+          subjectType: filters.subjectType ?? null,
+          since: filters.since ?? null,
+          until: filters.until ?? null,
+          includeReads: filters.includeReads ?? false,
+          page,
+        },
+        actorIpHash: null,
+      });
+    }
+
+    return { items, total: all.length, page, pageSize };
+  }
+
+  async auditActionSummary(since: string | null = null): Promise<AuditActionSummary[]> {
+    const rows = await this.allTrailRows(since);
+    const byAction = new Map<string, { entries: number; actors: Set<string>; denials: number; lastAt: string }>();
+
+    for (const row of rows) {
+      const bucket = byAction.get(row.action) ?? {
+        entries: 0,
+        actors: new Set<string>(),
+        denials: 0,
+        lastAt: row.createdAt,
+      };
+      bucket.entries += 1;
+      if (row.actorId) bucket.actors.add(row.actorId);
+      if (row.outcome === 'denied') bucket.denials += 1;
+      if (row.createdAt > bucket.lastAt) bucket.lastAt = row.createdAt;
+      byAction.set(row.action, bucket);
+    }
+
+    return [...byAction.entries()]
+      .map(([action, bucket]) => ({
+        action,
+        entries: bucket.entries,
+        actors: bucket.actors.size,
+        denials: bucket.denials,
+        lastAt: bucket.lastAt,
+      }))
+      .sort((a, b) => b.entries - a.entries || a.action.localeCompare(b.action));
+  }
+
+  async auditActors(since: string | null = null): Promise<AuditActorSummary[]> {
+    const database = await getDatabase();
+    const usersById = new Map(database.users.map((user) => [user.id, user]));
+    const rows = await this.allTrailRows(since);
+
+    const byActor = new Map<
+      string,
+      { role: UserProfile['role'] | null; entries: number; denials: number; lastAt: string }
+    >();
+
+    for (const row of rows) {
+      if (!row.actorId) continue;
+      const bucket = byActor.get(row.actorId) ?? {
+        role: row.actorRole,
+        entries: 0,
+        denials: 0,
+        lastAt: row.createdAt,
+      };
+      bucket.entries += 1;
+      if (row.outcome === 'denied') bucket.denials += 1;
+      // The most recent role seen in the trail, not the current one.
+      if (row.createdAt >= bucket.lastAt) {
+        bucket.lastAt = row.createdAt;
+        if (row.actorRole) bucket.role = row.actorRole;
+      }
+      byActor.set(row.actorId, bucket);
+    }
+
+    return [...byActor.entries()]
+      .map(([actorId, bucket]) => ({
+        actorId,
+        actorRole: bucket.role,
+        actorEmailMasked: maskEmail(usersById.get(actorId)?.email ?? null),
+        entries: bucket.entries,
+        denials: bucket.denials,
+        lastAt: bucket.lastAt,
+      }))
+      .sort((a, b) => (b.lastAt ?? '').localeCompare(a.lastAt ?? ''));
+  }
+
+  /** Both trails, unfiltered and unrecorded — the input to the two summaries. */
+  private async allTrailRows(since: string | null): Promise<
+    Array<{
+      action: string;
+      actorId: string | null;
+      actorRole: UserProfile['role'] | null;
+      outcome: 'succeeded' | 'denied' | 'failed';
+      createdAt: string;
+    }>
+  > {
+    const database = await getDatabase();
+
+    return [
+      ...database.adminAudit.map((entry) => ({
+        action: normaliseAuditAction(entry.action),
+        actorId: entry.actorId,
+        actorRole: entry.actorRole as UserProfile['role'] | null,
+        outcome: entry.outcome,
+        createdAt: entry.createdAt,
+      })),
+      ...database.moderationActions.map((entry) => ({
+        action: normaliseAuditAction(entry.action),
+        actorId: entry.actorId,
+        actorRole: entry.actorRole ?? null,
+        outcome: 'succeeded' as const,
+        createdAt: entry.createdAt,
+      })),
+    ].filter((row) => !since || row.createdAt >= since);
+  }
+
   /* ---------------------------------------------------------------------
    * Claims & owner responses
    * ------------------------------------------------------------------ */
@@ -2921,18 +3173,40 @@ export class LocalRepository implements LivdRepository {
     claimId: string,
     status: Extract<ClaimStatus, 'approved' | 'rejected'>,
     actorId: string,
+    reason: string,
   ): Promise<void> {
+    if (!reason || reason.trim().length < 3) {
+      throw new Error('A reason is required, for the audit trail');
+    }
+
     await mutate((database) => {
       const claim = database.claims.find((c) => c.id === claimId);
       if (!claim) throw new Error('Claim not found');
 
-      // One approved claim per property.
+      if (claim.status !== 'pending') {
+        throw new Error('That claim has already been decided');
+      }
+
+      // One approved claim per property — a unique index in Postgres, and the
+      // same rule here.
+      //
+      // This used to revoke the other claim silently as a side effect of
+      // approving this one. Taking a commercial party's access to a property
+      // page away is a decision with consequences, and it now needs its own
+      // act and its own reason rather than happening quietly inside somebody
+      // else's approval.
       if (status === 'approved') {
-        for (const other of database.claims) {
-          if (other.propertyId === claim.propertyId && other.id !== claim.id && other.status === 'approved') {
-            other.status = 'revoked';
-            other.decidedAt = nowIso();
-          }
+        const held = database.claims.find(
+          (other) =>
+            other.propertyId === claim.propertyId &&
+            other.id !== claim.id &&
+            other.status === 'approved',
+        );
+
+        if (held) {
+          throw new Error(
+            'Another claim on this property is already approved. Revoke it first.',
+          );
         }
       }
 
@@ -2941,12 +3215,13 @@ export class LocalRepository implements LivdRepository {
       claim.decidedAt = nowIso();
 
       database.moderationActions.push({
-        id: `action-${shortId(12)}`,
+        id: trailId(database),
         actorId,
+        actorRole: database.users.find((u) => u.id === actorId)?.role ?? null,
         subjectType: 'claim',
         subjectId: claimId,
         action: `claim_${status}`,
-        reason: null,
+        reason: reason.trim(),
         previousStatus: 'pending',
         newStatus: status,
         createdAt: nowIso(),
@@ -3336,8 +3611,9 @@ export class LocalRepository implements LivdRepository {
       user.role = role;
 
       database.moderationActions.push({
-        id: `action-${shortId(12)}`,
+        id: trailId(database),
         actorId,
+        actorRole: database.users.find((u) => u.id === actorId)?.role ?? null,
         subjectType: 'user',
         subjectId: userId,
         action: 'role_changed',
@@ -3392,8 +3668,9 @@ export class LocalRepository implements LivdRepository {
       user.status = status;
 
       database.moderationActions.push({
-        id: `action-${shortId(12)}`,
+        id: trailId(database),
         actorId,
+        actorRole: database.users.find((u) => u.id === actorId)?.role ?? null,
         subjectType: 'user',
         subjectId: userId,
         action: 'status_changed',

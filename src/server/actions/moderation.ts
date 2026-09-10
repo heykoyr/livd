@@ -76,9 +76,17 @@ export async function setReviewStatus(
   return { error: null, message: `Review ${parsed.data.status.replace('_', ' ')}.` };
 }
 
+/**
+ * `verified_resident` multiplies a review's weight in the property score, so
+ * setting it by hand is a judgement about how much a stranger should trust a
+ * number. The reason is required for the same purpose it is on a status
+ * change: "why is this one verified when no document was ever approved" has to
+ * have an answer somewhere. `livd_set_review_verification` refuses without it.
+ */
 const verificationSchema = z.object({
   reviewId: z.string().min(1).max(80),
   level: z.enum(['unverified', 'verified_resident', 'disputed']),
+  reason: z.string().trim().min(3, 'Record why, for the audit trail.').max(500),
 });
 
 export async function setReviewVerification(
@@ -98,14 +106,22 @@ export async function setReviewVerification(
   const parsed = verificationSchema.safeParse({
     reviewId: formData.get('reviewId'),
     level: formData.get('level'),
+    reason: formData.get('reason'),
   });
-  if (!parsed.success) return { error: copy.errors.validationTitle, message: null };
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? copy.errors.validationTitle, message: null };
+  }
 
   const repository = await getRepository();
   const review = await repository.getReviewById(parsed.data.reviewId);
   if (!review) return { error: 'That review no longer exists.', message: null };
 
-  await repository.setReviewVerification(parsed.data.reviewId, parsed.data.level, actor.id);
+  await repository.setReviewVerification(
+    parsed.data.reviewId,
+    parsed.data.level,
+    actor.id,
+    parsed.data.reason,
+  );
 
   // Verification changes a review's weight, so the score moves with it.
   await invalidateProperty(review.propertyId);
@@ -166,9 +182,16 @@ export async function resolveReport(
   };
 }
 
+/**
+ * Approving a claim hands a commercial party a standing relationship with a
+ * property page — the ability to respond publicly to reviews of it. That is
+ * the decision an owner dispute turns on eighteen months later, and it used to
+ * be recorded with no reason at all.
+ */
 const claimDecisionSchema = z.object({
   claimId: z.string().min(1).max(80),
   status: z.enum(['approved', 'rejected']),
+  reason: z.string().trim().min(3, 'Record why, for the audit trail.').max(500),
 });
 
 export async function decideClaim(
@@ -188,11 +211,36 @@ export async function decideClaim(
   const parsed = claimDecisionSchema.safeParse({
     claimId: formData.get('claimId'),
     status: formData.get('status'),
+    reason: formData.get('reason'),
   });
-  if (!parsed.success) return { error: copy.errors.validationTitle, message: null };
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? copy.errors.validationTitle, message: null };
+  }
 
   const repository = await getRepository();
-  await repository.decideClaim(parsed.data.claimId, parsed.data.status, actor.id);
+
+  try {
+    await repository.decideClaim(
+      parsed.data.claimId,
+      parsed.data.status,
+      actor.id,
+      parsed.data.reason,
+    );
+  } catch (error) {
+    // Two refusals here are the operator's business rather than a fault: the
+    // claim has already been decided, or another claim on the property is
+    // approved. Revoking somebody else's access to a property page is its own
+    // decision with its own reason, not a side effect of approving a stranger.
+    const raw = error instanceof Error ? error.message : '';
+    const known = ['already been decided', 'already approved'].find((m) => raw.includes(m));
+
+    return {
+      error: known
+        ? raw.replace(/^decideClaim: /, '')
+        : 'That claim could not be decided. Nothing was changed.',
+      message: null,
+    };
+  }
 
   revalidatePath('/admin/claims');
   return { error: null, message: `Claim ${parsed.data.status}.` };

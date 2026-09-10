@@ -243,6 +243,112 @@ export interface AdminAuditPage {
   pageSize: number;
 }
 
+/**
+ * Which trail an entry came from.
+ *
+ * Livd keeps two, and they are not merged:
+ *
+ *   `moderation`  what was decided about content and accounts, with the
+ *                 previous and new state of the thing decided
+ *   `audit`       who touched a person's information — including the reads,
+ *                 and including the attempts that were refused
+ *
+ * They answer different questions and a row in one is not a row in the other.
+ * The union happens only where they are read, so there is never a second row
+ * for one act that could disagree with the first.
+ */
+export type AuditSource = 'audit' | 'moderation';
+
+/** One entry from either trail, in the shape a reader sees. */
+export interface AuditFeedEntry {
+  /** Unique across both trails: `a:123` or `m:uuid`. */
+  id: string;
+  source: AuditSource;
+  actorId: string | null;
+  /**
+   * What the actor was at the time. Null for moderation rows written before
+   * 0035, which genuinely do not know — never back-filled from today's role.
+   */
+  actorRole: UserRole | null;
+  /**
+   * The actor's address, masked — `ali***@example.com`.
+   *
+   * Note which way this points. Everywhere else in Livd the masking protects a
+   * resident from being identified; here it identifies an *administrator* to
+   * Trust & Safety, because a trail whose actor column reads `a4f3b2c1` is a
+   * trail nobody uses. The mask is applied in SQL, so no raw address enters
+   * the application to produce it.
+   */
+  actorEmailMasked: string | null;
+  /** The `AdminAuditAction` vocabulary, normalised across both trails. */
+  action: string;
+  /** What the trail actually stored — `set_status:removed`, say. */
+  rawAction: string;
+  subjectType: string;
+  subjectId: string | null;
+  outcome: 'succeeded' | 'denied' | 'failed';
+  reason: string | null;
+  detail: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AuditFeedPage {
+  items: AuditFeedEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AuditFeedFilters {
+  page?: number;
+  pageSize?: number;
+  source?: AuditSource | null;
+  action?: string | null;
+  actorId?: string | null;
+  outcome?: 'succeeded' | 'denied' | 'failed' | null;
+  subjectType?: string | null;
+  subjectId?: string | null;
+  since?: string | null;
+  until?: string | null;
+  /**
+   * Who is reading — used only by the local adapter, which has no session.
+   *
+   * Postgres reads the actor from `auth.uid()` inside
+   * `livd_admin_audit_feed` and ignores anything passed here, which is what
+   * makes the entry unforgeable there. Same asymmetry as `revealUserIdentity`,
+   * and the same reason. Omitting it means no entry is written, which is
+   * correct for a summary but never for a page of the trail.
+   */
+  readerId?: string | null;
+  /**
+   * Whether to include the entries recording that the trail itself was read.
+   *
+   * False by default because they would otherwise drown everything else — the
+   * page shows the count it is hiding and a control to show them, which makes
+   * it a filter rather than a secret.
+   */
+  includeReads?: boolean;
+}
+
+/** How often each kind of thing has happened, and when it last did. */
+export interface AuditActionSummary {
+  action: string;
+  entries: number;
+  actors: number;
+  denials: number;
+  lastAt: string | null;
+}
+
+/** Who appears in the trail, and how much. */
+export interface AuditActorSummary {
+  actorId: string;
+  actorRole: UserRole | null;
+  actorEmailMasked: string | null;
+  entries: number;
+  denials: number;
+  lastAt: string | null;
+}
+
 export interface AdminOverview {
   propertyCount: number;
   reviewCount: number;
@@ -306,8 +412,32 @@ export interface LivdRepository {
 
   /* ---- Moderation ---- */
 
+  /**
+   * Moves a review between statuses, and records who and why.
+   *
+   * Atomic in Postgres since 0035. It used to be an UPDATE followed by an
+   * unchecked INSERT into `moderation_actions` — so a failed record left a
+   * removed review with nothing anywhere saying who removed it, and the
+   * operation reported success. `livd_set_review_status` does both in one
+   * statement block, which is the only version of this that is a record rather
+   * than a record most of the time.
+   */
   setReviewStatus(reviewId: string, status: ReviewStatus, actorId: string, reason: string): Promise<void>;
-  setReviewVerification(reviewId: string, level: VerificationLevel, actorId: string): Promise<void>;
+
+  /**
+   * Sets a review's verification level by hand.
+   *
+   * `reason` is required, and is new in 0035. `verified_resident` multiplies a
+   * review's weight in the property score, so an override is a judgement about
+   * how much a stranger should trust a number — "why is this verified when no
+   * document was ever approved" has to have an answer somewhere.
+   */
+  setReviewVerification(
+    reviewId: string,
+    level: VerificationLevel,
+    actorId: string,
+    reason: string,
+  ): Promise<void>;
   listReviewsByStatus(status: ReviewStatus, limit?: number): Promise<Array<{ review: Review; property: Property }>>;
 
   createReport(input: {
@@ -719,6 +849,34 @@ export interface LivdRepository {
     subjectId?: string | null;
   }): Promise<AdminAuditPage>;
 
+  /**
+   * Both trails, unified for reading, newest first.
+   *
+   * Trust & Safety and above. **Reading it is itself recorded**, in the same
+   * transaction as the read: `livd_admin_audit_feed` writes its
+   * `audit_log_read` entry inside the statement block that answers the query,
+   * so there is no ordering of events in which somebody pages through the
+   * trail and nothing notes it.
+   *
+   * That is not suspicion of colleagues. This is the one place that lists, in
+   * order, every account whose identity has been looked at — and a log that
+   * exempts its own readers has a hole exactly where the most curious person
+   * would look.
+   */
+  listAuditFeed(filters?: AuditFeedFilters): Promise<AuditFeedPage>;
+
+  /**
+   * Counts by action across both trails.
+   *
+   * Does not record a read. It runs on the same page load as the feed, which
+   * does, and two entries for one visit would say something false about how
+   * many times the trail was opened.
+   */
+  auditActionSummary(since?: string | null): Promise<AuditActionSummary[]>;
+
+  /** The administrators present in either trail. Also not a recorded read. */
+  auditActors(since?: string | null): Promise<AuditActorSummary[]>;
+
   /* ---- Claims & owner responses ---- */
 
   createClaim(input: {
@@ -729,10 +887,24 @@ export interface LivdRepository {
     contactEmail: string;
   }): Promise<PropertyClaim>;
   listClaims(status?: ClaimStatus): Promise<Array<{ claim: PropertyClaim; property: Property }>>;
+  /**
+   * Decides a pending claim, with a reason. Required since 0035.
+   *
+   * Approving one hands a commercial party a standing relationship with a
+   * property page — the ability to respond publicly to reviews of it. That is
+   * the decision an owner dispute turns on eighteen months later, and it used
+   * to be recorded with no reason at all.
+   *
+   * Refuses a claim that has already been decided, and refuses to approve one
+   * while another claim on the same property is approved. Revoking somebody
+   * else's access is its own decision and needs its own reason; it is not a
+   * side effect of approving a stranger.
+   */
   decideClaim(
     claimId: string,
     status: Extract<ClaimStatus, 'approved' | 'rejected'>,
     actorId: string,
+    reason: string,
   ): Promise<void>;
   getApprovedClaim(propertyId: string): Promise<PropertyClaim | null>;
   /**

@@ -47,7 +47,10 @@ const SECTION_GROUPS: Array<{ label: string; items: Array<{ href: string; label:
   },
   {
     label: 'Trust & Safety',
-    items: [{ href: '/admin/authority-requests', label: copy.admin.authorityRequests }],
+    items: [
+      { href: '/admin/audit', label: copy.admin.auditTrail },
+      { href: '/admin/authority-requests', label: copy.admin.authorityRequests },
+    ],
   },
   {
     label: 'People',

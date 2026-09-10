@@ -268,6 +268,16 @@ export interface LocalDatabase {
    * timeline in the wrong order is a timeline that misrepresents what happened.
    */
   nextCaseEventSeq: number;
+  /**
+   * The same monotonic-id trick for the two audit trails.
+   *
+   * The unified feed sorts by timestamp then by id, and several entries
+   * written inside one `mutate` share a millisecond. A random id then decides
+   * the order of a trail, which is exactly the thing a trail must not leave to
+   * chance. Postgres has `bigserial` for the audit log; here the counter does
+   * the same job. Zero-padded, so lexicographic order is chronological.
+   */
+  nextTrailSeq: number;
   saved: SavedProperty[];
   helpfulVotes: Array<{ reviewId: string; voterId: string }>;
   searchEvents: Array<{
@@ -312,6 +322,7 @@ function emptyDatabase(): LocalDatabase {
     disclosures: [],
     nextCaseReference: 1000,
     nextCaseEventSeq: 1,
+    nextTrailSeq: 1,
     saved: [],
     helpfulVotes: [],
     searchEvents: [],

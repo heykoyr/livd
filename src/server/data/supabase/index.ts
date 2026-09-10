@@ -68,6 +68,10 @@ import type {
 import type {
   AdminAuditPage,
   AdminOverview,
+  AuditActionSummary,
+  AuditActorSummary,
+  AuditFeedFilters,
+  AuditFeedPage,
   IdentityAccessReason,
   IdentityAccessRecord,
   IdentityReveal,
@@ -280,6 +284,41 @@ interface AdminAuditRow {
   detail: unknown;
   created_at: string;
   total_count: number | string;
+}
+
+/** One row of `livd_admin_audit_feed`. Carries a mask, never an address. */
+interface AuditFeedRow {
+  entry_id: string;
+  source: 'audit' | 'moderation';
+  actor_id: string | null;
+  actor_role: UserProfile['role'] | null;
+  actor_email_masked: string | null;
+  action: string;
+  raw_action: string;
+  subject_type: string;
+  subject_id: string | null;
+  outcome: 'succeeded' | 'denied' | 'failed';
+  reason: string | null;
+  detail: unknown;
+  created_at: string;
+  total_count: number | string;
+}
+
+interface AuditSummaryRow {
+  action: string;
+  entries: number | string;
+  actors: number | string;
+  denials: number | string;
+  last_at: string | null;
+}
+
+interface AuditActorRow {
+  actor_id: string;
+  actor_role: UserProfile['role'] | null;
+  actor_email_masked: string | null;
+  entries: number | string;
+  denials: number | string;
+  last_at: string | null;
 }
 
 /** One row of `livd_admin_user_directory`. Carries a mask, never an address. */
@@ -1081,57 +1120,67 @@ export class SupabaseRepository implements LivdRepository {
   }
 
   /* ---------------------------------------------------------------------
-   * Moderation — service role, always behind a guard
+   * Moderation — through the caller's own session, never the service role
+   *
+   * These four used to be service-role UPDATEs followed by a separate INSERT
+   * into `moderation_actions`, and the insert's error was never examined:
+   *
+   *     const { error } = await admin.from('reviews').update({ status })...
+   *     if (error) throw ...
+   *
+   *     await admin.from('moderation_actions').insert({ ... });   // unchecked
+   *
+   * So a failed record left a review removed with nothing anywhere saying who
+   * removed it or why, and the operation reported success. Two statements
+   * rather than one meant a process dying in between produced the same result
+   * on a good day.
+   *
+   * 0035 moved all four into the database, where the change and the entry that
+   * explains it are one statement block. The actor comes from `auth.uid()`
+   * rather than from an argument, and `livd_is_moderator()` is checked there
+   * rather than only in a Server Action — PostgREST does not run Server
+   * Actions.
+   *
+   * `actorId` is unused as a result, and kept in the signature for the local
+   * adapter, which has no session. Same asymmetry as `setUserRole`.
    * ------------------------------------------------------------------ */
 
   async setReviewStatus(
     reviewId: string,
     status: ReviewStatus,
-    actorId: string,
+    _actorId: string,
     reason: string,
   ): Promise<void> {
-    const admin = this.admin();
+    const supabase = await this.client();
 
-    const { data: current } = await admin
-      .from('reviews')
-      .select('status')
-      .eq('id', reviewId)
-      .maybeSingle();
-
-    const { error } = await admin.from('reviews').update({ status }).eq('id', reviewId);
-    if (error) throw new Error(`setReviewStatus: ${error.message}`);
-
-    await admin.from('moderation_actions').insert({
-      actor_id: actorId,
-      subject_type: 'review',
-      subject_id: reviewId,
-      action: `set_status:${status}`,
-      reason,
-      previous_status: (current as { status: string } | null)?.status ?? null,
+    const { error } = await supabase.rpc('livd_set_review_status', {
+      target_review: reviewId,
       new_status: status,
+      why: reason,
     });
+
+    if (error) throw new Error(`setReviewStatus: ${error.message}`);
   }
 
+  /**
+   * As `setReviewStatus`, for how much a review counts rather than whether it
+   * is visible. A reason is required since 0035.
+   */
   async setReviewVerification(
     reviewId: string,
     level: VerificationLevel,
-    actorId: string,
+    _actorId: string,
+    reason: string,
   ): Promise<void> {
-    const admin = this.admin();
+    const supabase = await this.client();
 
-    const { error } = await admin
-      .from('reviews')
-      .update({ verification_level: level })
-      .eq('id', reviewId);
-    if (error) throw new Error(`setReviewVerification: ${error.message}`);
-
-    await admin.from('moderation_actions').insert({
-      actor_id: actorId,
-      subject_type: 'review',
-      subject_id: reviewId,
-      action: `set_verification:${level}`,
-      new_status: level,
+    const { error } = await supabase.rpc('livd_set_review_verification', {
+      target_review: reviewId,
+      new_level: level,
+      why: reason,
     });
+
+    if (error) throw new Error(`setReviewVerification: ${error.message}`);
   }
 
   async listReviewsByStatus(
@@ -1573,7 +1622,16 @@ export class SupabaseRepository implements LivdRepository {
     if (outcome === 'approved') {
       // Rejection deliberately does not mark the review disputed. Failing to
       // produce a document is not evidence of having lied.
-      await this.setReviewVerification(reviewId, 'verified_resident', actorId);
+      //
+      // The reason names the record this came from, so the verification entry
+      // in the trail can be traced back to a document somebody approved rather
+      // than looking like an unexplained manual override.
+      await this.setReviewVerification(
+        reviewId,
+        'verified_resident',
+        actorId,
+        `Residency verification ${recordId} approved.`,
+      );
     }
 
     await this.recordModerationAction({
@@ -1675,28 +1733,21 @@ export class SupabaseRepository implements LivdRepository {
   async resolveReport(
     reportId: string,
     status: Extract<ReportStatus, 'upheld' | 'dismissed'>,
-    actorId: string,
+    _actorId: string,
     resolution: string,
   ): Promise<void> {
-    const admin = this.admin();
+    const supabase = await this.client();
 
-    const { data: report, error } = await admin
-      .from('review_reports')
-      .update({ status, resolution, resolved_at: new Date().toISOString() })
-      .eq('id', reportId)
-      .select('review_id')
-      .single();
+    // Resolving a report does not touch the review it concerns. Removal is a
+    // separate act with its own reason, so a coordinated reporting campaign
+    // cannot mechanically produce one.
+    const { error } = await supabase.rpc('livd_resolve_report', {
+      target_report: reportId,
+      new_status: status,
+      why: resolution,
+    });
 
     if (error) throw new Error(`resolveReport: ${error.message}`);
-
-    await admin.from('moderation_actions').insert({
-      actor_id: actorId,
-      subject_type: 'review',
-      subject_id: (report as { review_id: string }).review_id,
-      action: `report_${status}`,
-      reason: resolution,
-      new_status: status,
-    });
   }
 
   async recordModerationAction(
@@ -1704,11 +1755,21 @@ export class SupabaseRepository implements LivdRepository {
   ): Promise<ModerationAction> {
     const admin = this.admin();
 
+    // The role at the time, read now rather than at display time. This is the
+    // last app-side writer to `moderation_actions`; the four moderation
+    // decisions moved into the database in 0035 and stamp it there.
+    const { data: actor } = await admin
+      .from('profiles')
+      .select('role')
+      .eq('id', input.actorId ?? '')
+      .maybeSingle();
+
     const data = unwrap(
       await admin
         .from('moderation_actions')
         .insert({
           actor_id: input.actorId,
+          actor_role: (actor as { role: UserProfile['role'] } | null)?.role ?? null,
           subject_type: input.subjectType,
           subject_id: input.subjectId,
           action: input.action,
@@ -1797,25 +1858,18 @@ export class SupabaseRepository implements LivdRepository {
   async decideClaim(
     claimId: string,
     status: Extract<ClaimStatus, 'approved' | 'rejected'>,
-    actorId: string,
+    _actorId: string,
+    reason: string,
   ): Promise<void> {
-    const admin = this.admin();
+    const supabase = await this.client();
 
-    const { error } = await admin
-      .from('property_claims')
-      .update({ status, reviewed_by: actorId, decided_at: new Date().toISOString() })
-      .eq('id', claimId);
+    const { error } = await supabase.rpc('livd_decide_claim', {
+      target_claim: claimId,
+      new_status: status,
+      why: reason,
+    });
 
     if (error) throw new Error(`decideClaim: ${error.message}`);
-
-    await admin.from('moderation_actions').insert({
-      actor_id: actorId,
-      subject_type: 'claim',
-      subject_id: claimId,
-      action: `claim_${status}`,
-      previous_status: 'pending',
-      new_status: status,
-    });
   }
 
   async getApprovedClaim(propertyId: string): Promise<PropertyClaim | null> {
@@ -2895,6 +2949,92 @@ export class SupabaseRepository implements LivdRepository {
       page,
       pageSize,
     };
+  }
+
+  /**
+   * Both trails, unified for reading.
+   *
+   * Through the caller's own session, and for two reasons rather than one.
+   * `livd_admin_audit_feed` checks `livd_is_trust_admin()` against
+   * `auth.uid()`, so the boundary holds; and it writes its own
+   * `audit_log_read` entry from that same session, so the record of the read
+   * names the person who did it. The service role could do neither.
+   */
+  async listAuditFeed(filters: AuditFeedFilters = {}): Promise<AuditFeedPage> {
+    const pageSize = Math.min(Math.max(filters.pageSize ?? 50, 1), 200);
+    const page = Math.max(filters.page ?? 1, 1);
+
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_admin_audit_feed', {
+      page_size: pageSize,
+      page_offset: (page - 1) * pageSize,
+      filter_source: filters.source ?? null,
+      filter_action: filters.action ?? null,
+      filter_actor: filters.actorId ?? null,
+      filter_outcome: filters.outcome ?? null,
+      filter_subject_type: filters.subjectType ?? null,
+      filter_subject: filters.subjectId ?? null,
+      since: filters.since ?? null,
+      until: filters.until ?? null,
+      include_reads: filters.includeReads ?? false,
+    });
+
+    if (error) throw new Error(`listAuditFeed: ${error.message}`);
+
+    const rows = (data ?? []) as AuditFeedRow[];
+
+    return {
+      items: rows.map((row) => ({
+        id: row.entry_id,
+        source: row.source,
+        actorId: row.actor_id,
+        actorRole: row.actor_role,
+        actorEmailMasked: row.actor_email_masked,
+        action: row.action,
+        rawAction: row.raw_action,
+        subjectType: row.subject_type,
+        subjectId: row.subject_id,
+        outcome: row.outcome,
+        reason: row.reason,
+        detail: (row.detail ?? {}) as Record<string, unknown>,
+        createdAt: row.created_at,
+      })),
+      total: rows[0]?.total_count ? Number(rows[0].total_count) : 0,
+      page,
+      pageSize,
+    };
+  }
+
+  async auditActionSummary(since: string | null = null): Promise<AuditActionSummary[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_admin_audit_summary', { since });
+    if (error) throw new Error(`auditActionSummary: ${error.message}`);
+
+    return ((data ?? []) as AuditSummaryRow[]).map((row) => ({
+      action: row.action,
+      entries: Number(row.entries),
+      actors: Number(row.actors),
+      denials: Number(row.denials),
+      lastAt: row.last_at,
+    }));
+  }
+
+  async auditActors(since: string | null = null): Promise<AuditActorSummary[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_admin_audit_actors', { since });
+    if (error) throw new Error(`auditActors: ${error.message}`);
+
+    return ((data ?? []) as AuditActorRow[]).map((row) => ({
+      actorId: row.actor_id,
+      actorRole: row.actor_role,
+      actorEmailMasked: row.actor_email_masked,
+      entries: Number(row.entries),
+      denials: Number(row.denials),
+      lastAt: row.last_at,
+    }));
   }
 
   /* ---------------------------------------------------------------------

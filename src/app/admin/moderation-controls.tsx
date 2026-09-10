@@ -104,27 +104,39 @@ export function VerificationControls({ reviewId }: { reviewId: string }) {
   );
 
   return (
-    <form action={formAction} className="flex flex-wrap items-center gap-2">
+    <form action={formAction} className="flex flex-col gap-2.5">
       <input type="hidden" name="reviewId" value={reviewId} />
-      <span className="text-label text-ink-muted">Verification:</span>
 
-      {[
-        { value: 'verified_resident', label: 'Verify' },
-        { value: 'unverified', label: 'Unverify' },
-        { value: 'disputed', label: 'Dispute' },
-      ].map((option) => (
-        <Button
-          key={option.value}
-          type="submit"
-          name="level"
-          value={option.value}
-          variant="ghost"
-          size="sm"
-          loading={pending}
-        >
-          {option.label}
-        </Button>
-      ))}
+      <label className="flex flex-col gap-1.5">
+        <span className="text-label text-ink-muted">Verification — why</span>
+        <Input
+          name="reason"
+          required
+          minLength={3}
+          maxLength={500}
+          placeholder="Setting this by hand changes how much the review counts."
+        />
+      </label>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {[
+          { value: 'verified_resident', label: 'Verify' },
+          { value: 'unverified', label: 'Unverify' },
+          { value: 'disputed', label: 'Dispute' },
+        ].map((option) => (
+          <Button
+            key={option.value}
+            type="submit"
+            name="level"
+            value={option.value}
+            variant="ghost"
+            size="sm"
+            loading={pending}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
 
       <Feedback state={state} />
     </form>
@@ -172,14 +184,34 @@ export function ClaimControls({ claimId }: { claimId: string }) {
   const [state, formAction, pending] = useActionState(decideClaim, initialModerationState);
 
   return (
-    <form action={formAction} className="flex flex-wrap items-center gap-2">
+    <form action={formAction} className="flex flex-col gap-2.5">
       <input type="hidden" name="claimId" value={claimId} />
-      <Button type="submit" name="status" value="approved" variant="secondary" size="sm" loading={pending}>
-        Approve
-      </Button>
-      <Button type="submit" name="status" value="rejected" variant="ghost" size="sm" loading={pending}>
-        Reject
-      </Button>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-label text-ink-muted">{copyReason}</span>
+        <Input
+          name="reason"
+          required
+          minLength={3}
+          maxLength={500}
+          placeholder="What was checked, and against what?"
+        />
+      </label>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" name="status" value="approved" variant="secondary" size="sm" loading={pending}>
+          Approve
+        </Button>
+        <Button type="submit" name="status" value="rejected" variant="ghost" size="sm" loading={pending}>
+          Reject
+        </Button>
+      </div>
+
+      <p className="text-micro text-ink-subtle">
+        Approving gives this party a public voice on the property page. One approved claim per
+        property — revoking an existing one is a separate decision.
+      </p>
+
       <Feedback state={state} />
     </form>
   );

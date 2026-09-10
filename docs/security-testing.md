@@ -500,3 +500,126 @@ time anybody passed that argument.
 
 Fixed in `0034` by renaming it. Recorded because it looks completely fine in
 review and only a test that actually exercises the argument finds it.
+
+## 2026-09-11 · Phase 10 · the audit trail
+
+Migrations under test: `0035_moderation_trail`, `0036_audit_feed`.
+
+### The gap this phase closed was not in the new code
+
+Phase 2 built `admin_audit_log` and the administrative layer that writes to it,
+and every operation added since has gone through them. The four *oldest*
+moderation paths never did. They still ran the way they always had:
+
+```ts
+const { error } = await admin.from('reviews').update({ status })...
+if (error) throw ...
+
+await admin.from('moderation_actions').insert({ ... });   // unchecked
+```
+
+The record's error is never examined. If that insert failed — a constraint, a
+dropped connection, a policy nobody thought about — the review was removed and
+nothing anywhere said who removed it or why, and the operation reported
+success. Two statements rather than one meant a process dying in between
+produced the same result on a good day.
+
+A record written on a best-effort basis is not a record. It is a record most of
+the time, which is indistinguishable from a record right up to the moment
+somebody needs it.
+
+All four are now database functions that do the change and write the entry in
+one statement block, with the actor read from `auth.uid()` rather than accepted
+as an argument.
+
+### The trail
+
+| # | Attack / behaviour | Result |
+|---|---|---|
+| 1 | Resident reads `livd_admin_audit_feed` | BLOCKED — `Not authorised to read the audit trail` |
+| 2 | Resident reads `livd_admin_audit_summary` | BLOCKED — same |
+| 3 | Resident calls `livd_set_review_status` | BLOCKED — `Only a moderator may change a review status` |
+| 4 | Moderator, with a blank reason | BLOCKED — `A reason is required, for the audit trail` |
+| 5 | Moderator does all four decisions | 4 rows in `moderation_actions`, one per decision |
+| 6 | **Moderator reads the trail they just wrote to** | BLOCKED — `Not authorised to read the audit trail` |
+| 7 | Approving a second claim on one property | BLOCKED — `Another claim on this property is already approved` |
+| 8 | Re-deciding a decided claim | BLOCKED — `That claim has already been decided` |
+| 9 | Trust & Safety reads the feed | 4 moderation rows + 5 audit rows, unified |
+| 10 | Actor identity in the feed | `res***@demo.livd.invalid`, `the***@gmail.com` — masks only |
+| 11 | Entries recording the read | exactly one per call, three calls, three entries |
+| 12 | Moderation rows normalised | `property_claim_decided`, `report_resolved`, `review_status_changed`, `review_verification_changed` |
+| 13 | Role stamped on a decision | `moderator` — the role held at the time |
+| 14 | Read entries hidden by default / shown on request | 0 / 5 |
+
+Row 6 is the one worth pausing on. A moderator is one of the people the trail
+exists to hold accountable, so they cannot read it — but they are not shut out
+of their own work: the case timeline shows them the history they are entitled
+to see, attached to the case they did it under.
+
+Row 10 points the opposite way to every other mask in this schema. Everywhere
+else masking protects a resident from being identified; here it identifies an
+*administrator* to Trust & Safety, because a trail whose actor column reads
+`a4f3b2c1` is a trail nobody uses. It is still applied in SQL, so no raw
+address enters the application to produce it.
+
+### Reading the trail is recorded, in the same transaction as the read
+
+`livd_admin_audit_feed` writes its `audit_log_read` entry inside the statement
+block that answers the query. The pattern is Phase 4's: there is no ordering of
+events in which somebody pages through the trail and nothing notes it.
+
+This is the one place in Livd that lists, in order, every account whose
+identity has been looked at. A log that exempts its own readers has a hole
+exactly where the most curious person would look.
+
+The consequence is noise, and the answer to it is a filter rather than a
+secret: the page hides those entries by default, shows the count it is hiding,
+and offers a checkbox. Row 14 checks both halves.
+
+The two summary functions deliberately do **not** record a read. They run on the
+same page load as the feed, which does, and three entries for one visit would
+say something false about how many times the trail was opened.
+
+### The same parameter-shadowing bug, twice
+
+`livd_resolve_report` took a parameter named `resolution`, which is also the
+column the UPDATE writes to. Inside an UPDATE the target table's columns are in
+scope, so the reference was ambiguous — and Postgres resolves that at *call*
+time, not at creation. The function was created without complaint and failed
+the first time it was used.
+
+This is the second occurrence: `documentation_received` in 0033 was the first.
+Two is a pattern, so it now has a detector.
+`tests/safety/audit-coverage.test.ts` extracts every function's parameters from
+every migration, extracts the columns each one assigns in an UPDATE, and fails
+on any overlap. An INSERT's VALUES list is deliberately not checked, because
+table columns are not in scope there — which is why
+`livd_open_authority_request` may take a `documentation_received` argument
+quite safely.
+
+**The detector was written, passed immediately, and was wrong.** The `\b` word
+boundaries in its regex had been mangled into literal backspace characters by
+the shell path used to write the file, so the pattern could never match
+anything. It reported a clean corpus because it reported nothing at all.
+
+What caught it was a second test that runs the same extraction over a function
+carrying the bug on purpose and requires it to be found. That test is the
+reason the detector is worth having: a detector nobody has watched fail is a
+detector nobody knows works, and this one had already produced one silent
+green tick.
+
+### Vocabulary that claimed more than the system did
+
+`AdminAuditAction` listed five actions nothing emitted: `data_exported`,
+`security_config_changed`, `review_snapshot_taken`, `case_closed` and
+`location_checks_reviewed`.
+
+That is worse than a missing entry. A gap looks like a gap; a name in a list
+looks like a guarantee. `data_exported` was the most misleading of the five —
+Phase 9's defining property is that nothing in Livd gathers or transmits an
+account's data, and a vocabulary entry for exporting quietly contradicted it.
+
+All five are gone, and the coverage test now requires every remaining name to
+be produced by the administrative layer, by a migration, or by the normaliser —
+and, in the other direction, requires every action a migration writes to be one
+the vocabulary knows.

@@ -279,7 +279,7 @@ describe('the property context', () => {
       organisation: 'Example Lettings',
       contactEmail: 'lettings@example.test',
     });
-    await repository.decideClaim(claim.id, 'approved', moderator.id);
+    await repository.decideClaim(claim.id, 'approved', moderator.id, 'Companies House record matched.');
 
     const result = await admin.readReviewInvestigation(review.id);
 

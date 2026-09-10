@@ -785,6 +785,14 @@ export interface ModerationAction {
    * holes in it is not a history, so the row is severed rather than removed.
    */
   actorId: string | null;
+  /**
+   * What the actor was at the time, not what they are now.
+   *
+   * Null for rows written before 0035 — those genuinely do not know, and
+   * back-filling from today's `profiles.role` would be inventing an answer. A
+   * trail that invents answers is worse than one with an honest gap in it.
+   */
+  actorRole?: UserRole | null;
   subjectType: 'review' | 'property' | 'user' | 'claim' | 'owner_response';
   subjectId: string;
   action: string;

@@ -34,11 +34,13 @@ export { runAdminAction, type AdminContext, type AdminResult } from './run';
 export { AdminActionError, notAuthorised, refused, fromDatabaseError } from './errors';
 export {
   REASON_REQUIRED,
+  normaliseAuditAction,
   type AdminAuditAction,
   type AdminAuditEntry,
   type AdminAuditOutcome,
   type AdminSubjectType,
 } from './audit';
+export { readAuditTrail, readAuditSummary, readAuditActors } from './trail';
 export { readReviewInvestigation } from './reviews';
 export {
   openAuthorityRequest,

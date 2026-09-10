@@ -220,7 +220,7 @@ describe('a written reason', () => {
       'evidence_accessed',
       'verification_evidence_accessed',
       'disclosure_recorded',
-      'data_exported',
+      'review_status_changed',
     ];
 
     for (const action of mustBeListed) {

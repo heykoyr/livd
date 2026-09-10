@@ -191,7 +191,7 @@ describe('removing a review does not destroy what it said', () => {
   it('preserves the state before a verification level changes', async () => {
     const { repository, actor, review } = await world();
 
-    await repository.setReviewVerification(review.id, 'disputed', actor.id);
+    await repository.setReviewVerification(review.id, 'disputed', actor.id, 'Contested tenancy.');
 
     const snapshots = await repository.listReviewSnapshots(review.id);
     expect(snapshots[0]?.reason).toBe('verification');
