@@ -19,6 +19,14 @@ import type {
   AdminUserPage,
   AdminUserReport,
   AdminUserReview,
+  CaseCategory,
+  CaseEvent,
+  CaseFilters,
+  CaseNote,
+  CasePage,
+  CasePriority,
+  CaseStatus,
+  CaseSummary,
   ClaimStatus,
   ModerationAction,
   Property,
@@ -127,6 +135,82 @@ const EVIDENCE_LINK_SECONDS = 300;
 /** Default page size for administrative listings. */
 const ADMIN_PAGE_SIZE = 25;
 
+/** One row of `livd_list_cases`. */
+interface CaseRow {
+  id: string;
+  reference: string;
+  status: CaseStatus;
+  priority: CasePriority;
+  category: string;
+  summary: string;
+  outcome: string | null;
+  assigned_to: string | null;
+  opened_by: string | null;
+  subject_review_id: string | null;
+  subject_user_id: string | null;
+  subject_property_id: string | null;
+  property_slug: string | null;
+  building_name: string | null;
+  street_address: string | null;
+  neighbourhood: string | null;
+  locality: string | null;
+  admin_area: string | null;
+  postal_code: string | null;
+  country_code: string | null;
+  report_count: number | string;
+  note_count: number | string;
+  preservation_hold: boolean;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  total_count: number | string;
+}
+
+/**
+ * One case row, shaped once.
+ *
+ * Both the listing and the single-case read go through `livd_list_cases`, so
+ * there is one query and one mapper — two screens cannot drift into disagreeing
+ * about what a case is.
+ */
+function toCaseSummary(row: CaseRow): CaseSummary {
+  return {
+    id: row.id,
+    reference: row.reference,
+    status: row.status,
+    priority: row.priority,
+    category: row.category,
+    summary: row.summary,
+    outcome: row.outcome,
+    assignedTo: row.assigned_to,
+    openedBy: row.opened_by,
+    subjectReviewId: row.subject_review_id,
+    subjectUserId: row.subject_user_id,
+    subjectPropertyId: row.subject_property_id,
+    property:
+      row.property_slug && row.locality && row.country_code
+        ? {
+            slug: row.property_slug,
+            address: {
+              buildingName: row.building_name,
+              streetAddress: row.street_address,
+              neighbourhood: row.neighbourhood,
+              locality: row.locality,
+              adminArea: row.admin_area,
+              postalCode: row.postal_code,
+              countryCode: row.country_code,
+            },
+          }
+        : null,
+    reportCount: Number(row.report_count ?? 0),
+    noteCount: Number(row.note_count ?? 0),
+    preservationHold: row.preservation_hold,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    resolvedAt: row.resolved_at,
+  };
+}
+
 /** One row of `livd_admin_audit_log`. */
 interface AdminAuditRow {
   id: number | string;
@@ -208,6 +292,7 @@ interface AdminUserReportRow {
   detail: string | null;
   status: AdminUserReport['status'];
   resolution: string | null;
+  case_id: string | null;
   created_at: string;
   resolved_at: string | null;
   total_count: number | string;
@@ -1832,6 +1917,231 @@ export class SupabaseRepository implements LivdRepository {
   }
 
   /* ---------------------------------------------------------------------
+   * Trust & Safety cases
+   *
+   * Every write here is one RPC, and each of those functions emits its timeline
+   * event in the same transaction as the change it makes. There is deliberately
+   * no path from this adapter to `ts_cases` directly — a status that moved
+   * without an event is not a state the database can reach, and it stays that
+   * way because nothing here can write the table.
+   * ------------------------------------------------------------------ */
+
+  async openCase(input: {
+    category: string;
+    summary: string;
+    fromReportId?: string | null;
+    reviewId?: string | null;
+    priority?: CasePriority | null;
+    actorId: string;
+  }): Promise<string> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_open_case', {
+      case_category: input.category,
+      case_summary: input.summary,
+      from_report_id: input.fromReportId ?? null,
+      review_id: input.reviewId ?? null,
+      case_priority_override: input.priority ?? null,
+    });
+
+    if (error) throw new Error(`openCase: ${error.message}`);
+    return data as string;
+  }
+
+  async listCases(filters: CaseFilters = {}): Promise<CasePage> {
+    const pageSize = Math.min(Math.max(filters.pageSize ?? ADMIN_PAGE_SIZE, 1), 100);
+    const page = Math.max(filters.page ?? 1, 1);
+
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_list_cases', {
+      page_size: pageSize,
+      page_offset: (page - 1) * pageSize,
+      filter_status: filters.status ?? null,
+      filter_priority: filters.priority ?? null,
+      filter_category: filters.category ?? null,
+      filter_assignee: filters.assignedTo ?? null,
+      only_unassigned: filters.unassignedOnly ?? false,
+      only_open: filters.openOnly ?? false,
+      search_reference: filters.reference ?? null,
+    });
+
+    if (error) throw new Error(`listCases: ${error.message}`);
+
+    const rows = (data ?? []) as CaseRow[];
+
+    return {
+      items: rows.map(toCaseSummary),
+      total: rows[0]?.total_count ? Number(rows[0].total_count) : 0,
+      page,
+      pageSize,
+    };
+  }
+
+  async getCase(caseId: string): Promise<CaseSummary | null> {
+    const supabase = await this.client();
+
+    // Filtered by reference through the same listing function rather than a
+    // second query against the table, so a case reads identically whichever
+    // screen asked for it — and so there stays exactly one place where a case
+    // row is shaped.
+    const { data, error } = await supabase.rpc('livd_list_cases', {
+      page_size: 1,
+      page_offset: 0,
+      filter_case_id: caseId,
+    });
+
+    if (error) throw new Error(`getCase: ${error.message}`);
+
+    const row = ((data ?? []) as CaseRow[])[0];
+    return row ? toCaseSummary(row) : null;
+  }
+
+  async listCaseEvents(caseId: string, limit = 200): Promise<CaseEvent[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_case_timeline', {
+      target_case_id: caseId,
+      page_size: limit,
+    });
+
+    if (error) throw new Error(`listCaseEvents: ${error.message}`);
+
+    return ((data ?? []) as Array<{
+      id: number | string;
+      actor_id: string | null;
+      kind: string;
+      summary: string;
+      detail: unknown;
+      created_at: string;
+    }>).map((row) => ({
+      id: String(row.id),
+      actorId: row.actor_id,
+      kind: row.kind,
+      summary: row.summary,
+      detail: (row.detail ?? {}) as Record<string, unknown>,
+      createdAt: row.created_at,
+    }));
+  }
+
+  async listCaseNotes(caseId: string, limit = 100): Promise<CaseNote[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase
+      .from('case_notes')
+      .select('id, author_id, body, created_at')
+      .eq('case_id', caseId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw new Error(`listCaseNotes: ${error.message}`);
+
+    return ((data ?? []) as Array<{
+      id: string;
+      author_id: string | null;
+      body: string;
+      created_at: string;
+    }>).map((row) => ({
+      id: row.id,
+      authorId: row.author_id,
+      body: row.body,
+      createdAt: row.created_at,
+    }));
+  }
+
+  async listCaseReports(caseId: string): Promise<ReviewReport[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase
+      .from('review_reports')
+      .select(
+        'id, review_id, reporter_id, reason, detail, status, resolution, case_id, created_at, resolved_at',
+      )
+      .eq('case_id', caseId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw new Error(`listCaseReports: ${error.message}`);
+
+    return ((data ?? []) as unknown as ReportRow[]).map(toReport);
+  }
+
+  async listCaseCategories(): Promise<CaseCategory[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase
+      .from('case_category_defs')
+      .select('key, label, description, default_priority')
+      .eq('is_active', true)
+      .order('sort_order');
+
+    if (error) throw new Error(`listCaseCategories: ${error.message}`);
+
+    return ((data ?? []) as Array<{
+      key: string;
+      label: string;
+      description: string;
+      default_priority: CasePriority;
+    }>).map((row) => ({
+      key: row.key,
+      label: row.label,
+      description: row.description,
+      defaultPriority: row.default_priority,
+    }));
+  }
+
+  async assignCase(caseId: string, assigneeId: string | null): Promise<void> {
+    const supabase = await this.client();
+    const { error } = await supabase.rpc('livd_assign_case', {
+      target_case_id: caseId,
+      assignee: assigneeId,
+    });
+    if (error) throw new Error(`assignCase: ${error.message}`);
+  }
+
+  async setCaseStatus(caseId: string, status: CaseStatus, outcome: string | null): Promise<void> {
+    const supabase = await this.client();
+    const { error } = await supabase.rpc('livd_set_case_status', {
+      target_case_id: caseId,
+      new_status: status,
+      case_outcome: outcome,
+    });
+    if (error) throw new Error(`setCaseStatus: ${error.message}`);
+  }
+
+  async setCasePriority(
+    caseId: string,
+    priority: CasePriority,
+    why: string | null,
+  ): Promise<void> {
+    const supabase = await this.client();
+    const { error } = await supabase.rpc('livd_set_case_priority', {
+      target_case_id: caseId,
+      new_priority: priority,
+      why,
+    });
+    if (error) throw new Error(`setCasePriority: ${error.message}`);
+  }
+
+  async addCaseNote(caseId: string, body: string): Promise<void> {
+    const supabase = await this.client();
+    const { error } = await supabase.rpc('livd_add_case_note', {
+      target_case_id: caseId,
+      note_body: body,
+    });
+    if (error) throw new Error(`addCaseNote: ${error.message}`);
+  }
+
+  async setCasePreservation(caseId: string, hold: boolean, why: string): Promise<void> {
+    const supabase = await this.client();
+    const { error } = await supabase.rpc('livd_set_case_preservation', {
+      target_case_id: caseId,
+      hold,
+      why,
+    });
+    if (error) throw new Error(`setCasePreservation: ${error.message}`);
+  }
+
+  /* ---------------------------------------------------------------------
    * Identity
    * ------------------------------------------------------------------ */
 
@@ -2157,6 +2467,7 @@ export class SupabaseRepository implements LivdRepository {
         detail: row.detail,
         status: row.status,
         resolution: row.resolution,
+        caseId: row.case_id ?? null,
         createdAt: row.created_at,
         resolvedAt: row.resolved_at,
       })),

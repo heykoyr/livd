@@ -5,6 +5,8 @@ import { copy } from '@/content/copy';
 import { formatRelativeTime, propertyDisplayName } from '@/lib/format';
 import { getRepository } from '@/server/data';
 import { ReportControls, ReviewStatusControls } from '../moderation-controls';
+import { OpenCaseControls } from '../cases/case-controls';
+import { caseCategories } from '@/server/admin';
 
 /**
  * Open reports.
@@ -13,8 +15,19 @@ import { ReportControls, ReviewStatusControls } from '../moderation-controls';
  * is an accusation and deciding on one without reading what was actually
  * written is how legitimate reviews get removed.
  */
+/** Report reason → the case category it most often turns out to be. */
+const REASON_TO_CATEGORY: Record<string, string> = {
+  inappropriate: 'hate_speech',
+  false_information: 'false_information',
+  privacy: 'personal_information',
+  spam: 'spam',
+  harassment: 'harassment',
+  not_a_resident: 'fake_review',
+  other: 'other',
+};
+
 export default async function ReportsPage() {
-  const repository = await getRepository();
+  const [repository, categories] = await Promise.all([getRepository(), caseCategories()]);
   const reports = await repository.listReports('open');
 
   if (reports.length === 0) {
@@ -66,7 +79,37 @@ export default async function ReportsPage() {
             )}
 
             <div className="mt-6 flex flex-col gap-6 border-t border-border pt-5">
-              <ReportControls reportId={report.id} />
+              {report.caseId ? (
+                <p className="text-label text-ink-muted">
+                  Being investigated under{' '}
+                  <Link
+                    href={`/admin/cases/${report.caseId}`}
+                    className="font-mono text-ink underline underline-offset-4"
+                  >
+                    an open case
+                  </Link>
+                  .
+                </p>
+              ) : (
+                <div>
+                  <h3 className="mb-3 text-micro font-semibold uppercase tracking-micro text-ink-subtle">
+                    Investigate this properly
+                  </h3>
+                  <OpenCaseControls
+                    reportId={report.id}
+                    categories={categories}
+                    defaultCategory={REASON_TO_CATEGORY[report.reason] ?? 'other'}
+                    defaultSummary={`${copy.safety.reportReasons[report.reason]} — ${propertyDisplayName(
+                      property.address,
+                    )}`}
+                  />
+                </div>
+              )}
+
+              <div className="border-t border-border pt-5">
+                <ReportControls reportId={report.id} />
+              </div>
+
               <div className="border-t border-border pt-5">
                 <h3 className="mb-3 text-micro font-semibold uppercase tracking-micro text-ink-subtle">
                   Act on the review itself

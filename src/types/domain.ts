@@ -556,6 +556,14 @@ export interface AdminUserReport {
   detail: string | null;
   status: ReportStatus;
   resolution: string | null;
+  /**
+   * The Trust & Safety case this report belongs to, once one has been opened.
+   *
+   * Null is the ordinary state, not a broken one: a report is a report whether
+   * or not anybody has escalated it into an investigation, and every report
+   * written before cases existed still reads correctly.
+   */
+  caseId: string | null;
   createdAt: string;
   resolvedAt: string | null;
 }
@@ -580,6 +588,14 @@ export interface ReviewReport {
   detail: string | null;
   status: ReportStatus;
   resolution: string | null;
+  /**
+   * The Trust & Safety case this report belongs to, once one is opened.
+   *
+   * Null is the ordinary state rather than a broken one: a report is a report
+   * whether or not anybody escalated it into an investigation, and every report
+   * written before cases existed still reads correctly.
+   */
+  caseId: string | null;
   createdAt: string;
   resolvedAt: string | null;
 }
@@ -820,4 +836,116 @@ export interface SearchResults {
   pageSize: number;
   /** Set when the query was matched fuzzily, so the UI can say so. */
   correctedFrom: string | null;
+}
+
+/* -------------------------------------------------------------------------
+ * Trust & Safety cases
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Where a case is.
+ *
+ * Nine, which is more than most systems need and fewer than most systems have.
+ * The three at the end are all conclusions and are genuinely different:
+ * `resolved` means something was wrong and was dealt with, `dismissed` means
+ * nothing was wrong, and `closed` means filed. Collapsing them would lose the
+ * only distinction anybody reads a case history for.
+ */
+export type CaseStatus =
+  | 'new'
+  | 'open'
+  | 'investigating'
+  | 'awaiting_information'
+  | 'action_taken'
+  | 'escalated'
+  | 'resolved'
+  | 'dismissed'
+  | 'closed';
+
+/**
+ * How urgently this needs a person.
+ *
+ * `critical` is never set by a machine, and raising a case to it requires
+ * Trust & Safety authorisation. A keyword is not a threat, and a system that
+ * lets one reach the top of the queue is a system anybody can steer by
+ * choosing their words.
+ */
+export type CasePriority = 'low' | 'medium' | 'high' | 'critical';
+
+export interface CaseCategory {
+  key: string;
+  label: string;
+  description: string;
+  defaultPriority: CasePriority;
+}
+
+/** One case, as a list row. */
+export interface CaseSummary {
+  id: string;
+  /** `LV-1048`. Stable and human — what somebody quotes in a note or an email. */
+  reference: string;
+  status: CaseStatus;
+  priority: CasePriority;
+  category: string;
+  summary: string;
+  /** What was decided. Required before a case may be concluded. */
+  outcome: string | null;
+  assignedTo: string | null;
+  openedBy: string | null;
+  subjectReviewId: string | null;
+  subjectUserId: string | null;
+  subjectPropertyId: string | null;
+  /** Present when the case names a property. */
+  property: { slug: string; address: PropertyAddress } | null;
+  reportCount: number;
+  noteCount: number;
+  /** While true, nothing belonging to this case is eligible for routine deletion. */
+  preservationHold: boolean;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+}
+
+export interface CasePage {
+  items: CaseSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * One timeline entry.
+ *
+ * Written in the same transaction as the change it describes, so a status that
+ * moved without an event is not a state the database can reach. `kind` is text
+ * rather than an enum for the same reason the audit log's is: a timeline write
+ * must never fail because somebody added an event type and forgot a migration.
+ */
+export interface CaseEvent {
+  id: string;
+  actorId: string | null;
+  kind: string;
+  summary: string;
+  detail: Record<string, unknown>;
+  createdAt: string;
+}
+
+/** An internal note. Never shown to a reviewer, reporter, owner or the public. */
+export interface CaseNote {
+  id: string;
+  authorId: string | null;
+  body: string;
+  createdAt: string;
+}
+
+export interface CaseFilters {
+  page?: number;
+  pageSize?: number;
+  status?: CaseStatus | null;
+  priority?: CasePriority | null;
+  category?: string | null;
+  assignedTo?: string | null;
+  unassignedOnly?: boolean;
+  openOnly?: boolean;
+  reference?: string | null;
 }

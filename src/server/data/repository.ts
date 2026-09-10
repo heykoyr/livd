@@ -4,6 +4,14 @@ import type {
   AdminUserPage,
   AdminUserReport,
   AdminUserReview,
+  CaseCategory,
+  CaseEvent,
+  CaseFilters,
+  CaseNote,
+  CasePage,
+  CasePriority,
+  CaseStatus,
+  CaseSummary,
   ClaimStatus,
   UserRole,
   ModerationAction,
@@ -448,6 +456,57 @@ export interface LivdRepository {
 
   recordModerationAction(input: Omit<ModerationAction, 'id' | 'createdAt'>): Promise<ModerationAction>;
   listModerationActions(subjectId?: string, limit?: number): Promise<ModerationAction[]>;
+
+  /* ---- Trust & Safety cases ---- */
+
+  /**
+   * Opens a case, optionally from a report.
+   *
+   * Opening a case does **nothing** to the review it concerns — it is not
+   * hidden, not flagged, not touched. If opening a case had a visible effect,
+   * opening cases would become the attack, in the same way that hiding on
+   * report would make reporting one.
+   *
+   * Idempotent on the report: one already attached to a case returns that case
+   * rather than opening a second. Two moderators clicking at once is a normal
+   * Tuesday, not an error.
+   */
+  openCase(input: {
+    category: string;
+    summary: string;
+    fromReportId?: string | null;
+    reviewId?: string | null;
+    priority?: CasePriority | null;
+    actorId: string;
+  }): Promise<string>;
+
+  listCases(filters?: CaseFilters): Promise<CasePage>;
+  getCase(caseId: string): Promise<CaseSummary | null>;
+  listCaseEvents(caseId: string, limit?: number): Promise<CaseEvent[]>;
+  listCaseNotes(caseId: string, limit?: number): Promise<CaseNote[]>;
+  listCaseReports(caseId: string): Promise<ReviewReport[]>;
+  listCaseCategories(): Promise<CaseCategory[]>;
+
+  assignCase(caseId: string, assigneeId: string | null, actorId: string): Promise<void>;
+  setCaseStatus(
+    caseId: string,
+    status: CaseStatus,
+    outcome: string | null,
+    actorId: string,
+  ): Promise<void>;
+  setCasePriority(
+    caseId: string,
+    priority: CasePriority,
+    why: string | null,
+    actorId: string,
+  ): Promise<void>;
+  addCaseNote(caseId: string, body: string, actorId: string): Promise<void>;
+  setCasePreservation(
+    caseId: string,
+    hold: boolean,
+    why: string,
+    actorId: string,
+  ): Promise<void>;
 
   /* ---- Administrative audit ---- */
 

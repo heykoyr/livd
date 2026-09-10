@@ -604,6 +604,7 @@ export const copy = {
     dashboard: 'Dashboard',
     queue: 'Moderation queue',
     reports: 'Reports',
+    cases: 'Cases',
     flags: 'Signals',
     verificationQueue: 'Residency proof',
     verificationAttempts: 'Location checks',

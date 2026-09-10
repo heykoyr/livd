@@ -40,6 +40,17 @@ export {
   type AdminSubjectType,
 } from './audit';
 export {
+  openCase,
+  assignCase,
+  setCaseStatus,
+  setCasePriority,
+  addCaseNote,
+  setCasePreservation,
+  listCases,
+  readCase,
+  caseCategories,
+} from './cases';
+export {
   revealIdentity,
   identityAccessReasons,
   identityAccessHistory,

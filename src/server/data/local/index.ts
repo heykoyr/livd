@@ -11,6 +11,14 @@ import { propertySlug, shortId } from '@/lib/utils';
 import type {
   AdminUserDetail,
   AdminUserFilters,
+  CaseCategory,
+  CaseEvent,
+  CaseFilters,
+  CaseNote,
+  CasePage,
+  CasePriority,
+  CaseStatus,
+  CaseSummary,
   AdminUserPage,
   AdminUserReport,
   AdminUserReview,
@@ -200,6 +208,110 @@ const IDENTITY_ACCESS_REASONS: IdentityAccessReason[] = [
     requiresDetail: true,
   },
 ];
+
+/** Mirrors `case_category_defs`, migration 0026. */
+const CASE_CATEGORIES: CaseCategory[] = [
+  { key: 'spam', label: 'Spam', description: 'Promotional or automated content.', defaultPriority: 'low' },
+  { key: 'fake_review', label: 'Fake review', description: 'A review by somebody who did not live there.', defaultPriority: 'medium' },
+  { key: 'review_manipulation', label: 'Review manipulation', description: 'Coordinated or incentivised reviewing.', defaultPriority: 'high' },
+  { key: 'harassment', label: 'Harassment', description: 'Targeted abuse of a person.', defaultPriority: 'high' },
+  { key: 'threatening_content', label: 'Threatening content', description: 'Content that threatens harm.', defaultPriority: 'critical' },
+  { key: 'hate_speech', label: 'Hate or abusive content', description: 'Abuse directed at a group.', defaultPriority: 'high' },
+  { key: 'personal_information', label: 'Personal information', description: 'Content identifying a person.', defaultPriority: 'high' },
+  { key: 'fraud', label: 'Fraud or scam', description: 'Attempted deception for gain.', defaultPriority: 'high' },
+  { key: 'impersonation', label: 'Impersonation', description: 'Claiming to be somebody they are not.', defaultPriority: 'high' },
+  { key: 'false_information', label: 'False or misleading information', description: 'Factual claims that appear untrue.', defaultPriority: 'medium' },
+  { key: 'owner_dispute', label: 'Property owner dispute', description: 'An owner contests a resident experience.', defaultPriority: 'medium' },
+  { key: 'safety_concern', label: 'Safety concern', description: 'A concern about conditions at a property.', defaultPriority: 'high' },
+  { key: 'illegal_activity', label: 'Illegal activity claim', description: 'An allegation of unlawful conduct.', defaultPriority: 'high' },
+  { key: 'other', label: 'Other', description: 'Anything else. Say what it is.', defaultPriority: 'medium' },
+];
+
+/** Postgres sorts `case_priority desc`; this is that order, explicitly. */
+const CASE_PRIORITY_ORDER: Record<CasePriority, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3,
+};
+
+/**
+ * Establishes that the caller may work cases.
+ *
+ * Postgres asks `livd_is_moderator()`, which reads `auth.uid()`. There is no
+ * session here, so the actor is passed in and checked the same way.
+ */
+function requireModerator(database: LocalDatabase, actorId: string, message: string) {
+  const actor = database.users.find((u) => u.id === actorId);
+  const canModerate =
+    actor?.status === 'active' &&
+    (actor.role === 'moderator' || actor.role === 'trust_admin' || actor.role === 'admin');
+
+  if (!actor || !canModerate) throw new Error(message);
+  return actor;
+}
+
+/**
+ * Appends to a case timeline.
+ *
+ * Always called inside the same `mutate` as the change it describes, so a
+ * status that moved without an event is not a state this store reaches either.
+ */
+function appendCaseEvent(
+  database: LocalDatabase,
+  caseId: string,
+  actorId: string | null,
+  kind: string,
+  summary: string,
+  detail: Record<string, unknown> = {},
+): void {
+  // Zero-padded so lexicographic order is chronological order, matching the
+  // bigserial Postgres uses. Events written in the same millisecond still read
+  // in the order they happened.
+  const sequence = String(database.nextCaseEventSeq).padStart(12, '0');
+  database.nextCaseEventSeq += 1;
+
+  database.caseEvents.push({
+    id: `event-${sequence}`,
+    caseId,
+    actorId,
+    kind,
+    summary,
+    detail,
+    createdAt: nowIso(),
+  });
+}
+
+function toLocalCase(
+  database: LocalDatabase,
+  entry: LocalDatabase['cases'][number],
+): CaseSummary {
+  const property = entry.subjectPropertyId
+    ? database.properties.find((p) => p.id === entry.subjectPropertyId)
+    : undefined;
+
+  return {
+    id: entry.id,
+    reference: entry.reference,
+    status: entry.status,
+    priority: entry.priority,
+    category: entry.category,
+    summary: entry.summary,
+    outcome: entry.outcome,
+    assignedTo: entry.assignedTo,
+    openedBy: entry.openedBy,
+    subjectReviewId: entry.subjectReviewId,
+    subjectUserId: entry.subjectUserId,
+    subjectPropertyId: entry.subjectPropertyId,
+    property: property ? { slug: property.slug, address: property.address } : null,
+    reportCount: database.reports.filter((r) => r.caseId === entry.id).length,
+    noteCount: database.caseNotes.filter((n) => n.caseId === entry.id).length,
+    preservationHold: entry.preservationHold,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+    resolvedAt: entry.resolvedAt,
+  };
+}
 
 function countsFor(database: LocalDatabase, userId: string) {
   const authored = database.reviews.filter((review) => review.authorId === userId);
@@ -848,6 +960,7 @@ export class LocalRepository implements LivdRepository {
         detail: input.detail,
         status: 'open',
         resolution: null,
+        caseId: null,
         createdAt: nowIso(),
         resolvedAt: null,
       };
@@ -1348,6 +1461,351 @@ export class LocalRepository implements LivdRepository {
       .filter((action) => !subjectId || action.subjectId === subjectId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Trust & Safety cases
+   *
+   * Every rule the `livd_*_case` functions enforce in Postgres is enforced
+   * here, in the same order, and every write appends its timeline event
+   * alongside the change. That mirroring is what lets the case tests run in
+   * process on every commit and still mean something.
+   * ------------------------------------------------------------------ */
+
+  async openCase(input: {
+    category: string;
+    summary: string;
+    fromReportId?: string | null;
+    reviewId?: string | null;
+    priority?: CasePriority | null;
+    actorId: string;
+  }): Promise<string> {
+    return mutate((database) => {
+      requireModerator(database, input.actorId, 'Only a moderator may open a case');
+
+      if (input.summary.trim().length < 3) {
+        throw new Error('A case needs a one-line summary');
+      }
+
+      const category = CASE_CATEGORIES.find((entry) => entry.key === input.category);
+      if (!category) throw new Error('Select a category for this case');
+
+      let reviewId = input.reviewId ?? null;
+
+      if (input.fromReportId) {
+        const report = database.reports.find((r) => r.id === input.fromReportId);
+        if (!report) throw new Error('No such report');
+
+        // Idempotent: a report already attached to a case hands that case back
+        // rather than opening a second. Two moderators clicking at once is a
+        // normal Tuesday.
+        if (report.caseId) return report.caseId;
+
+        reviewId = report.reviewId;
+      }
+
+      const review = reviewId ? database.reviews.find((r) => r.id === reviewId) : undefined;
+
+      const id = `case-${shortId(12)}`;
+      const reference = `LV-${database.nextCaseReference}`;
+      database.nextCaseReference += 1;
+
+      const timestamp = nowIso();
+
+      database.cases.push({
+        id,
+        reference,
+        status: 'new',
+        priority: input.priority ?? category.defaultPriority,
+        category: input.category,
+        summary: input.summary.trim(),
+        outcome: null,
+        subjectReviewId: reviewId,
+        subjectUserId: review?.authorId ?? null,
+        subjectPropertyId: review?.propertyId ?? null,
+        openedBy: input.actorId,
+        assignedTo: null,
+        preservationHold: false,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        resolvedAt: null,
+      });
+
+      appendCaseEvent(database, id, input.actorId, 'created', `Case opened as ${category.label}`, {
+        category: input.category,
+        priority: input.priority ?? category.defaultPriority,
+        reference,
+      });
+
+      if (input.fromReportId) {
+        const report = database.reports.find((r) => r.id === input.fromReportId);
+        if (report) report.caseId = id;
+
+        appendCaseEvent(database, id, input.actorId, 'report_linked', 'Report attached to this case', {
+          reportId: input.fromReportId,
+        });
+      }
+
+      return id;
+    });
+  }
+
+  async listCases(filters: CaseFilters = {}): Promise<CasePage> {
+    const pageSize = Math.min(Math.max(filters.pageSize ?? 25, 1), 100);
+    const page = Math.max(filters.page ?? 1, 1);
+
+    const database = await getDatabase();
+
+    const all = database.cases
+      .filter((entry) => !filters.status || entry.status === filters.status)
+      .filter((entry) => !filters.priority || entry.priority === filters.priority)
+      .filter((entry) => !filters.category || entry.category === filters.category)
+      .filter((entry) => !filters.assignedTo || entry.assignedTo === filters.assignedTo)
+      .filter((entry) => !filters.unassignedOnly || entry.assignedTo === null)
+      .filter(
+        (entry) =>
+          !filters.openOnly ||
+          !(['resolved', 'dismissed', 'closed'] as CaseStatus[]).includes(entry.status),
+      )
+      .filter(
+        (entry) =>
+          !filters.reference ||
+          entry.reference.toUpperCase().startsWith(filters.reference.trim().toUpperCase()),
+      )
+      .sort(
+        (a, b) =>
+          CASE_PRIORITY_ORDER[b.priority] - CASE_PRIORITY_ORDER[a.priority] ||
+          b.createdAt.localeCompare(a.createdAt),
+      );
+
+    const start = (page - 1) * pageSize;
+
+    return {
+      items: all.slice(start, start + pageSize).map((entry) => toLocalCase(database, entry)),
+      total: all.length,
+      page,
+      pageSize,
+    };
+  }
+
+  async getCase(caseId: string): Promise<CaseSummary | null> {
+    const database = await getDatabase();
+    const entry = database.cases.find((c) => c.id === caseId);
+    return entry ? toLocalCase(database, entry) : null;
+  }
+
+  async listCaseEvents(caseId: string, limit = 200): Promise<CaseEvent[]> {
+    const database = await getDatabase();
+
+    return database.caseEvents
+      .filter((event) => event.caseId === caseId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .slice(0, limit)
+      .map((event) => ({
+        id: event.id,
+        actorId: event.actorId,
+        kind: event.kind,
+        summary: event.summary,
+        detail: event.detail,
+        createdAt: event.createdAt,
+      }));
+  }
+
+  async listCaseNotes(caseId: string, limit = 100): Promise<CaseNote[]> {
+    const database = await getDatabase();
+
+    return database.caseNotes
+      .filter((note) => note.caseId === caseId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit)
+      .map((note) => ({
+        id: note.id,
+        authorId: note.authorId,
+        body: note.body,
+        createdAt: note.createdAt,
+      }));
+  }
+
+  async listCaseReports(caseId: string): Promise<ReviewReport[]> {
+    const database = await getDatabase();
+    return database.reports
+      .filter((report) => report.caseId === caseId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listCaseCategories(): Promise<CaseCategory[]> {
+    return CASE_CATEGORIES.map((entry) => ({ ...entry }));
+  }
+
+  async assignCase(caseId: string, assigneeId: string | null, actorId: string): Promise<void> {
+    await mutate((database) => {
+      requireModerator(database, actorId, 'Only a moderator may assign a case');
+
+      const entry = database.cases.find((c) => c.id === caseId);
+      if (!entry) throw new Error('No such case');
+
+      if (assigneeId !== null) {
+        const assignee = database.users.find((u) => u.id === assigneeId);
+        const canWork =
+          assignee?.status === 'active' &&
+          (assignee.role === 'moderator' ||
+            assignee.role === 'trust_admin' ||
+            assignee.role === 'admin');
+
+        if (!canWork) throw new Error('A case can only be assigned to an active moderator');
+      }
+
+      const previous = entry.assignedTo;
+      if (previous === assigneeId) return;
+
+      entry.assignedTo = assigneeId;
+      // Picking up a new case starts it. Anything further along keeps its
+      // status: reassigning an escalated case does not un-escalate it.
+      if (entry.status === 'new' && assigneeId !== null) entry.status = 'open';
+      entry.updatedAt = nowIso();
+
+      appendCaseEvent(
+        database,
+        caseId,
+        actorId,
+        assigneeId === null ? 'unassigned' : 'assigned',
+        assigneeId === null ? 'Case unassigned' : 'Case assigned',
+        { from: previous, to: assigneeId },
+      );
+    });
+  }
+
+  async setCaseStatus(
+    caseId: string,
+    status: CaseStatus,
+    outcome: string | null,
+    actorId: string,
+  ): Promise<void> {
+    await mutate((database) => {
+      requireModerator(database, actorId, 'Only a moderator may change a case');
+
+      const entry = database.cases.find((c) => c.id === caseId);
+      if (!entry) throw new Error('No such case');
+
+      const concluding = (['resolved', 'dismissed', 'closed'] as CaseStatus[]).includes(status);
+
+      // The point of the whole object: somebody reading LV-1048 in a year should
+      // find what was decided, not just that it stopped being open.
+      if (concluding && (outcome ?? '').trim().length < 3) {
+        throw new Error('Say what was decided before closing a case');
+      }
+
+      const previous = entry.status;
+      if (previous === status) return;
+
+      entry.status = status;
+      if (concluding) entry.outcome = (outcome ?? '').trim();
+      if (status === 'resolved' || status === 'dismissed') entry.resolvedAt = nowIso();
+      entry.updatedAt = nowIso();
+
+      appendCaseEvent(
+        database,
+        caseId,
+        actorId,
+        'status_changed',
+        `Status changed from ${previous} to ${status}`,
+        { from: previous, to: status },
+      );
+    });
+  }
+
+  async setCasePriority(
+    caseId: string,
+    priority: CasePriority,
+    why: string | null,
+    actorId: string,
+  ): Promise<void> {
+    await mutate((database) => {
+      const actor = requireModerator(database, actorId, 'Only a moderator may change a case');
+
+      // Critical means somebody may be about to be hurt. It is a judgement, and
+      // one Trust & Safety makes rather than one a queue drifts into.
+      if (priority === 'critical' && actor.role !== 'trust_admin' && actor.role !== 'admin') {
+        throw new Error('Raising a case to critical requires Trust and Safety authorisation');
+      }
+
+      const entry = database.cases.find((c) => c.id === caseId);
+      if (!entry) throw new Error('No such case');
+
+      const previous = entry.priority;
+      if (previous === priority) return;
+
+      entry.priority = priority;
+      entry.updatedAt = nowIso();
+
+      appendCaseEvent(
+        database,
+        caseId,
+        actorId,
+        'priority_changed',
+        `Priority changed from ${previous} to ${priority}`,
+        { from: previous, to: priority, why },
+      );
+    });
+  }
+
+  async addCaseNote(caseId: string, body: string, actorId: string): Promise<void> {
+    await mutate((database) => {
+      requireModerator(database, actorId, 'Only a moderator may add a note');
+
+      if (body.trim().length < 1) throw new Error('A note needs something in it');
+
+      const entry = database.cases.find((c) => c.id === caseId);
+      if (!entry) throw new Error('No such case');
+
+      database.caseNotes.push({
+        id: `note-${shortId(12)}`,
+        caseId,
+        authorId: actorId,
+        body: body.trim(),
+        createdAt: nowIso(),
+      });
+
+      appendCaseEvent(database, caseId, actorId, 'note_added', 'Note added');
+    });
+  }
+
+  async setCasePreservation(
+    caseId: string,
+    hold: boolean,
+    why: string,
+    actorId: string,
+  ): Promise<void> {
+    await mutate((database) => {
+      const actor = database.users.find((u) => u.id === actorId);
+      const trusted =
+        actor?.status === 'active' && (actor.role === 'trust_admin' || actor.role === 'admin');
+
+      if (!trusted) {
+        throw new Error('Preservation holds require Trust and Safety authorisation');
+      }
+
+      if (why.trim().length < 3) {
+        throw new Error('A reason is required, for the audit trail');
+      }
+
+      const entry = database.cases.find((c) => c.id === caseId);
+      if (!entry) throw new Error('No such case');
+
+      if (entry.preservationHold === hold) return;
+
+      entry.preservationHold = hold;
+      entry.updatedAt = nowIso();
+
+      appendCaseEvent(
+        database,
+        caseId,
+        actorId,
+        hold ? 'preservation_applied' : 'preservation_lifted',
+        hold ? 'Preservation hold applied' : 'Preservation hold lifted',
+        { reason: why.trim() },
+      );
+    });
   }
 
   /* ---------------------------------------------------------------------
@@ -1920,6 +2378,7 @@ export class LocalRepository implements LivdRepository {
         detail: report.detail,
         status: report.status,
         resolution: report.resolution,
+        caseId: report.caseId,
         createdAt: report.createdAt,
         resolvedAt: report.resolvedAt,
       })),

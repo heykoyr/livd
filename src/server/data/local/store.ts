@@ -4,6 +4,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import type {
+  CasePriority,
+  CaseStatus,
   ModerationAction,
   OwnerResponse,
   Property,
@@ -99,6 +101,60 @@ export interface LocalDatabase {
     detail: Record<string, unknown>;
     createdAt: string;
   }>;
+  /**
+   * Trust & Safety cases, their timelines and their notes.
+   *
+   * Three arrays that nothing ever removes from. Postgres enforces that with
+   * triggers on `case_events` and `case_notes`; here the discipline is in the
+   * code, which is one of several reasons this store refuses to run in
+   * production.
+   */
+  cases: Array<{
+    id: string;
+    reference: string;
+    status: CaseStatus;
+    priority: CasePriority;
+    category: string;
+    summary: string;
+    outcome: string | null;
+    subjectReviewId: string | null;
+    subjectUserId: string | null;
+    subjectPropertyId: string | null;
+    openedBy: string | null;
+    assignedTo: string | null;
+    preservationHold: boolean;
+    createdAt: string;
+    updatedAt: string;
+    resolvedAt: string | null;
+  }>;
+  caseEvents: Array<{
+    id: string;
+    caseId: string;
+    actorId: string | null;
+    kind: string;
+    summary: string;
+    detail: Record<string, unknown>;
+    createdAt: string;
+  }>;
+  caseNotes: Array<{
+    id: string;
+    caseId: string;
+    authorId: string | null;
+    body: string;
+    createdAt: string;
+  }>;
+  /** Next case reference. Mirrors `case_reference_seq`, which starts at 1000. */
+  nextCaseReference: number;
+  /**
+   * Next timeline event number.
+   *
+   * Postgres gives `case_events.id` a bigserial, which is monotonic — two
+   * events written in the same transaction still order correctly. Timestamps
+   * alone do not: several events are appended inside one `mutate` here and
+   * share a millisecond, and a random id then sorts them arbitrarily. A
+   * timeline in the wrong order is a timeline that misrepresents what happened.
+   */
+  nextCaseEventSeq: number;
   saved: SavedProperty[];
   helpfulVotes: Array<{ reviewId: string; voterId: string }>;
   searchEvents: Array<{
@@ -133,6 +189,11 @@ function emptyDatabase(): LocalDatabase {
     propertyVerifications: [],
     flagDecisions: [],
     adminAudit: [],
+    cases: [],
+    caseEvents: [],
+    caseNotes: [],
+    nextCaseReference: 1000,
+    nextCaseEventSeq: 1,
     saved: [],
     helpfulVotes: [],
     searchEvents: [],

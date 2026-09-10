@@ -174,6 +174,7 @@ export interface ReportRow {
   detail: string | null;
   status: ReviewReport['status'];
   resolution: string | null;
+  case_id?: string | null;
   created_at: string;
   resolved_at: string | null;
 }
@@ -187,6 +188,7 @@ export function toReport(row: ReportRow): ReviewReport {
     detail: row.detail,
     status: row.status,
     resolution: row.resolution,
+    caseId: row.case_id ?? null,
     createdAt: row.created_at,
     resolvedAt: row.resolved_at,
   };

@@ -280,3 +280,54 @@ The earlier probe that led to the mistake was itself faulty: it revoked from
 `authenticated` only, leaving the `PUBLIC` grant intact, so the function stayed
 callable and the policy kept evaluating. It proved nothing and looked like it
 proved something.
+
+## 2026-09-10 · Phase 5 · Trust & Safety cases
+
+Migrations under test: `0026_trust_safety_cases`, `0027_case_operations`,
+`0028_case_lookup_by_id`.
+
+| Behaviour | Result |
+|---|---|
+| Case opened from a report | `LV-1001 / new / medium` |
+| Timeline after opening | 2 events — `created`, `report_linked` |
+| Report linked to the case | 1 |
+| Subjects inherited from the report's review (review / author) | true / true |
+| Opening again from the same report | Returns the same case |
+| Concluding with no outcome | BLOCKED — `Say what was decided before closing a case` |
+| **Moderator** raising a case to critical | BLOCKED — `requires Trust and Safety authorisation` |
+| Assigning a `new` case | Moves it to `open` |
+| Full timeline | `created > report_linked > assigned > note_added > status_changed` |
+| Open-only listing after resolving | 0 |
+| Resident reads `ts_cases` directly | 0 rows |
+| Resident reads `case_notes` directly | 0 rows |
+| Service role deletes timeline events | BLOCKED — grant revoked |
+| **Table owner** rewrites a case note | BLOCKED — `case_notes is append-only` |
+
+Two properties are worth stating on their own.
+
+**Opening a case does nothing to the review.** Not hidden, not flagged, not
+touched — verified in `tests/safety/cases.test.ts`, which checks the review's
+status, verification level and body are unchanged and that it is still on the
+property page. It is the same reasoning that stops a report from removing
+anything by itself: if opening a case had a visible effect, opening cases would
+become the attack, and anybody who disliked a review would have the lever.
+
+**A case that moved left a timeline entry.** Each `livd_*_case` function writes
+its event in the same transaction as the change, so a status that moved without
+an event is not a state the database can reach.
+
+### A timeline that lied about its own order
+
+The local adapter gave each timeline event a random id and sorted by timestamp,
+then id. Several events are appended inside one `mutate` and share a
+millisecond, so the tie-break was effectively random — the full suite caught
+`report_linked` sorting before `created`.
+
+Postgres never had the bug: `case_events.id` is a `bigserial`, which is
+monotonic. The local store now uses a zero-padded counter for the same reason,
+so lexicographic order is chronological order.
+
+Worth recording because of *how* it surfaced: running the case file alone
+passed every time. Only the full suite, with different timing, exposed it. A
+timeline in the wrong order is not a cosmetic bug — it misrepresents what
+happened, which is the one thing a case history exists to get right.
