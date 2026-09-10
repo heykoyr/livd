@@ -5,11 +5,19 @@ import { notFound } from 'next/navigation';
 import { Badge, Card, EmptyState, Stat } from '@/components/ui/primitives';
 import { copy } from '@/content/copy';
 import { formatRelativeTime, propertyContextLine, propertyDisplayName } from '@/lib/format';
-import { identityAccessHistory, identityAccessReasons, readUserDetail } from '@/server/admin';
+import {
+  identityAccessHistory,
+  identityAccessReasons,
+  listCases,
+  listSanctions,
+  readUserDetail,
+  sanctionReasons,
+} from '@/server/admin';
 import { hasRole } from '@/server/auth/guards';
 import { getCurrentUser } from '@/server/auth/session';
-import { RoleControls, StatusControls } from '../../moderation-controls';
+import { RoleControls } from '../../moderation-controls';
 import { RevealIdentity } from './reveal-identity';
+import { ApplySanctionControls, LiftSanctionControls } from './sanction-controls';
 import {
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_TONES,
@@ -70,10 +78,22 @@ export default async function AdminUserPage({
   // account page — so the control is not offered for it either.
   const canRevealIdentity = hasRole(viewer, 'trust_admin') && !isSelf;
 
-  const [reasons, accessHistory] = await Promise.all([
+  const canSuspend = hasRole(viewer, 'trust_admin');
+  const canBan = hasRole(viewer, 'admin');
+
+  const [reasons, accessHistory, sanctions, sanctionOptions, openCases] = await Promise.all([
     canRevealIdentity ? identityAccessReasons() : Promise.resolve([]),
     identityAccessHistory(detail.id),
+    listSanctions({ userId: detail.id }),
+    sanctionReasons(),
+    // Cases naming this account, so a sanction can be tied to the investigation
+    // it came out of rather than floating free.
+    listCases({ pageSize: 25, openOnly: false }),
   ]);
+
+  const relatedCases = openCases.items
+    .filter((entry) => entry.subjectUserId === detail.id)
+    .map((entry) => ({ id: entry.id, reference: entry.reference }));
 
   return (
     <div className="flex flex-col gap-8">
@@ -412,6 +432,74 @@ export default async function AdminUserPage({
         )}
       </section>
 
+      {/* ---- Sanctions --------------------------------------------------- */}
+
+      {sanctions.length > 0 && (
+        <section aria-labelledby="sanctions-heading">
+          <h3
+            id="sanctions-heading"
+            className="text-micro font-semibold uppercase tracking-micro text-ink-subtle"
+          >
+            Sanctions
+          </h3>
+          <p className="mt-1.5 max-w-prose text-label text-ink-muted">
+            What was done to this account, under which category, in whose words, and out of which
+            investigation. Lifted sanctions stay on the record.
+          </p>
+
+          <ul className="mt-3 flex flex-col gap-px overflow-hidden rounded-lg border border-border bg-border">
+            {sanctions.map((sanction) => (
+              <li key={sanction.id} className="bg-surface p-4">
+                <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                  <Badge tone={sanction.isActive ? STATUS_TONES[sanction.action] : 'neutral'}>
+                    {STATUS_LABELS[sanction.action]}
+                  </Badge>
+                  {sanction.isActive ? (
+                    <span className="text-label text-ink-muted">
+                      {sanction.endsAt
+                        ? `until ${formatRelativeTime(sanction.endsAt)}`
+                        : 'no end date'}
+                    </span>
+                  ) : (
+                    <span className="text-label text-ink-subtle">
+                      {sanction.liftedAt ? 'lifted' : 'expired'}
+                    </span>
+                  )}
+                  {sanction.caseReference && (
+                    <Link
+                      href={`/admin/cases/${sanction.caseId}`}
+                      className="font-mono text-micro text-ink underline underline-offset-4"
+                    >
+                      {sanction.caseReference}
+                    </Link>
+                  )}
+                  <span className="ml-auto text-micro text-ink-subtle">
+                    {formatRelativeTime(sanction.startsAt)}
+                  </span>
+                </div>
+
+                <p className="mt-2 text-label text-ink">{sanction.reason}</p>
+
+                <p className="mt-1.5 font-mono text-micro text-ink-subtle">
+                  {sanction.reasonKey} · by{' '}
+                  {sanction.appliedBy ? sanction.appliedBy.slice(0, 8) : 'account deleted'}
+                </p>
+
+                {sanction.liftedAt && sanction.liftedReason && (
+                  <p className="mt-2 rounded-md border-l-2 border-border-strong bg-surface-sunken/60 p-2.5 text-label text-ink-muted">
+                    Lifted {formatRelativeTime(sanction.liftedAt)} — {sanction.liftedReason}
+                  </p>
+                )}
+
+                {sanction.isActive && !isSelf && (
+                  <LiftSanctionControls sanctionId={sanction.id} />
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* ---- Actions ---------------------------------------------------- */}
 
       <section aria-labelledby="actions-heading">
@@ -450,9 +538,16 @@ export default async function AdminUserPage({
               <h4 className="text-label font-semibold text-ink">Account standing</h4>
               <p className="mb-3 mt-1 max-w-prose text-label text-ink-muted">
                 Separate from anything that happens to what this account wrote. Suspending someone
-                does not touch their reviews, and removing a review does not touch their account.
+                does not touch their reviews, and removing a review does not touch their account —
+                all four combinations are ordinary.
               </p>
-              <StatusControls userId={detail.id} currentStatus={detail.status} />
+              <ApplySanctionControls
+                userId={detail.id}
+                reasons={sanctionOptions}
+                canSuspend={canSuspend}
+                canBan={canBan}
+                caseOptions={relatedCases}
+              />
             </div>
           </Card>
         )}

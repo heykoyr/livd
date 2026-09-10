@@ -30,6 +30,9 @@ import type {
   ReviewSnapshot,
   ReviewStatus,
   ReviewVerificationEntry,
+  Sanction,
+  SanctionAction,
+  SanctionReason,
   SavedProperty,
   SearchFilters,
   SearchResults,
@@ -461,6 +464,40 @@ export interface LivdRepository {
 
   recordModerationAction(input: Omit<ModerationAction, 'id' | 'createdAt'>): Promise<ModerationAction>;
   listModerationActions(subjectId?: string, limit?: number): Promise<ModerationAction[]>;
+
+  /* ---- Sanctions ---- */
+
+  /**
+   * Sanctions an account.
+   *
+   * The sanction row, the profile standing and the audit entry are one
+   * transaction, so an account whose standing changed without a recorded reason
+   * is not a state the database can reach.
+   *
+   * Nothing here touches a review. Removing content is a separate decision with
+   * its own reason and its own record — a system that conflates the two
+   * punishes people twice for one thing, or not at all for another.
+   */
+  applySanction(input: {
+    userId: string;
+    action: SanctionAction;
+    reasonKey: string;
+    reason: string;
+    durationDays: number | null;
+    caseId: string | null;
+    actorId: string;
+  }): Promise<string>;
+
+  /** Lifts a sanction early. Requires the tier that could have applied it. */
+  liftSanction(sanctionId: string, reason: string, actorId: string): Promise<void>;
+
+  listSanctions(options?: {
+    userId?: string | null;
+    activeOnly?: boolean;
+    limit?: number;
+  }): Promise<Sanction[]>;
+
+  listSanctionReasons(): Promise<SanctionReason[]>;
 
   /* ---- Evidence ---- */
 

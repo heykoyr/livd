@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { copy } from '@/content/copy';
 import { AuthorisationError, requireRole } from '@/server/auth/guards';
-import { changeUserRole, changeUserStatus } from '@/server/admin';
+import { changeUserRole } from '@/server/admin';
 import { getRepository } from '@/server/data';
 import { invalidateProperty } from '@/server/data/cache';
 import type { ModerationActionState } from './action-state';
@@ -224,28 +224,20 @@ export async function setUserRole(
   return { error: null, message: 'Role updated.' };
 }
 
-/**
- * Changes an account's standing.
+/*
+ * `setUserStatus` used to live here, and is gone.
  *
- * Separate from anything that happens to what the account wrote: suspending
- * someone does not touch their reviews, and removing a review does not touch
- * their account.
+ * The sanction system replaced it: the same effect on an account's standing,
+ * plus the category, the duration, the related case and the written reason that
+ * make a decision reviewable six months later. It lives in
+ * src/server/admin/sanctions.ts and calls `livd_apply_sanction`.
+ *
+ * `livd_set_user_status` stays in the database as the narrower path. It is what
+ * 0020 built to close the "standing changed with no record" hole, and removing
+ * it would take that guarantee with it — but nothing in the console calls it
+ * any more, so the Server Action that exposed it is gone rather than left
+ * sitting there as an endpoint nobody uses.
  */
-export async function setUserStatus(
-  _previous: ModerationActionState,
-  formData: FormData,
-): Promise<ModerationActionState> {
-  const result = await changeUserStatus({
-    userId: formData.get('userId'),
-    status: formData.get('status'),
-    reason: formData.get('reason'),
-  });
-
-  if (!result.ok) return { error: result.error, message: null };
-
-  revalidatePath('/admin/users');
-  return { error: null, message: 'Account standing updated.' };
-}
 
 /* -------------------------------------------------------------------------
  * Automated signals

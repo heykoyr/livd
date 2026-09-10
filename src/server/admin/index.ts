@@ -41,6 +41,12 @@ export {
 } from './audit';
 export { readReviewInvestigation } from './reviews';
 export {
+  applySanction,
+  liftSanction,
+  listSanctions,
+  sanctionReasons,
+} from './sanctions';
+export {
   openVerificationEvidence,
   addCaseEvidence,
   withdrawCaseEvidence,

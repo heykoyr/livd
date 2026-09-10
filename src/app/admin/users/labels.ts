@@ -28,12 +28,14 @@ export const STATUS_LABELS: Record<UserStatus, string> = {
   active: 'Active',
   restricted: 'Restricted',
   suspended: 'Suspended',
+  banned: 'Banned',
 };
 
 export const STATUS_TONES: Record<UserStatus, BadgeTone> = {
   active: 'neutral',
   restricted: 'caution',
   suspended: 'critical',
+  banned: 'critical',
 };
 
 export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {

@@ -33,6 +33,9 @@ import type {
   ReviewInvestigation,
   ReviewReportEntry,
   ReviewSnapshot,
+  Sanction,
+  SanctionAction,
+  SanctionReason,
   ReviewVerificationEntry,
   ModerationAction,
   Property,
@@ -1963,6 +1966,117 @@ export class SupabaseRepository implements LivdRepository {
       .eq('property_id', propertyId);
 
     if (error) throw new Error(`setSavedPropertyNote: ${error.message}`);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Sanctions
+   * ------------------------------------------------------------------ */
+
+  async applySanction(input: {
+    userId: string;
+    action: SanctionAction;
+    reasonKey: string;
+    reason: string;
+    durationDays: number | null;
+    caseId: string | null;
+    actorId: string;
+  }): Promise<string> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_apply_sanction', {
+      target_user_id: input.userId,
+      sanction_action: input.action,
+      reason_key: input.reasonKey,
+      sanction_reason: input.reason,
+      duration_days: input.durationDays,
+      related_case_id: input.caseId,
+    });
+
+    if (error) throw new Error(`applySanction: ${error.message}`);
+    return data as string;
+  }
+
+  async liftSanction(sanctionId: string, reason: string): Promise<void> {
+    const supabase = await this.client();
+
+    const { error } = await supabase.rpc('livd_lift_sanction', {
+      sanction_id: sanctionId,
+      why: reason,
+    });
+
+    if (error) throw new Error(`liftSanction: ${error.message}`);
+  }
+
+  async listSanctions(
+    options: { userId?: string | null; activeOnly?: boolean; limit?: number } = {},
+  ): Promise<Sanction[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_list_sanctions', {
+      target_user_id: options.userId ?? null,
+      only_active: options.activeOnly ?? false,
+      page_size: Math.min(Math.max(options.limit ?? 50, 1), 200),
+    });
+
+    if (error) throw new Error(`listSanctions: ${error.message}`);
+
+    return ((data ?? []) as Array<{
+      id: string;
+      user_id: string;
+      action: SanctionAction;
+      reason_key: string;
+      reason: string;
+      case_id: string | null;
+      case_reference: string | null;
+      applied_by: string | null;
+      starts_at: string;
+      ends_at: string | null;
+      lifted_at: string | null;
+      lifted_by: string | null;
+      lifted_reason: string | null;
+      is_active: boolean;
+      created_at: string;
+    }>).map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      action: row.action,
+      reasonKey: row.reason_key,
+      reason: row.reason,
+      caseId: row.case_id,
+      caseReference: row.case_reference,
+      appliedBy: row.applied_by,
+      startsAt: row.starts_at,
+      endsAt: row.ends_at,
+      liftedAt: row.lifted_at,
+      liftedBy: row.lifted_by,
+      liftedReason: row.lifted_reason,
+      isActive: row.is_active,
+      createdAt: row.created_at,
+    }));
+  }
+
+  async listSanctionReasons(): Promise<SanctionReason[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase
+      .from('sanction_reason_defs')
+      .select('key, label, description, suggested_action')
+      .eq('is_active', true)
+      .order('sort_order');
+
+    if (error) throw new Error(`listSanctionReasons: ${error.message}`);
+
+    return ((data ?? []) as Array<{
+      key: string;
+      label: string;
+      description: string;
+      suggested_action: SanctionAction;
+    }>).map((row) => ({
+      key: row.key,
+      label: row.label,
+      description: row.description,
+      suggestedAction: row.suggested_action,
+    }));
   }
 
   /* ---------------------------------------------------------------------

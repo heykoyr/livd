@@ -35,6 +35,10 @@ import type {
   ReviewInvestigation,
   ReviewReportEntry,
   ReviewSnapshot,
+  Sanction,
+  SanctionAction,
+  SanctionReason,
+  UserStatus,
   ReviewStatus,
   ReviewVerificationEntry,
   SavedProperty,
@@ -254,6 +258,52 @@ const CASE_PRIORITY_ORDER: Record<CasePriority, number> = {
  * explicitly from the two methods that change a review — which is weaker, and
  * exactly why the guarantee that matters is the database's.
  */
+/** Mirrors `sanction_reason_defs`, migration 0032. */
+const SANCTION_REASONS: SanctionReason[] = [
+  { key: 'spam', label: 'Spam', description: 'Promotional or automated posting.', suggestedAction: 'restricted' },
+  { key: 'review_manipulation', label: 'Review manipulation', description: 'Coordinated, incentivised or fabricated reviewing.', suggestedAction: 'suspended' },
+  { key: 'fabricated_content', label: 'Fabricated content', description: 'Reviewing a property they did not live at.', suggestedAction: 'suspended' },
+  { key: 'harassment', label: 'Harassment', description: 'Targeted abuse of another person.', suggestedAction: 'suspended' },
+  { key: 'threats', label: 'Threats', description: 'Content threatening harm to a person.', suggestedAction: 'banned' },
+  { key: 'personal_information', label: 'Publishing personal information', description: 'Posting content that identifies a person.', suggestedAction: 'suspended' },
+  { key: 'impersonation', label: 'Impersonation', description: 'Claiming to be somebody they are not.', suggestedAction: 'suspended' },
+  { key: 'ban_evasion', label: 'Ban evasion', description: 'Returning after a ban under another account.', suggestedAction: 'banned' },
+  { key: 'platform_abuse', label: 'Platform abuse', description: 'Abuse of reporting, verification or another system.', suggestedAction: 'restricted' },
+  { key: 'other', label: 'Other', description: 'Anything else. Say what it is — this one is read.', suggestedAction: 'restricted' },
+];
+
+/**
+ * Where an account sits on the administrative ladder.
+ *
+ * Postgres asks `livd_is_moderator` / `livd_is_trust_admin` /
+ * `livd_is_super_admin`; this is the same three questions as one number, so a
+ * severity check reads as a comparison rather than three branches.
+ */
+function adminRank(actor: UserProfile | undefined): number {
+  if (!actor || actor.status !== 'active') return 0;
+  if (actor.role === 'admin') return 3;
+  if (actor.role === 'trust_admin') return 2;
+  if (actor.role === 'moderator') return 1;
+  return 0;
+}
+
+/** The strongest sanction still standing, or `active` when none is. */
+function strongestStanding(database: LocalDatabase, userId: string): UserStatus {
+  const now = new Date().toISOString();
+  const severity: Record<SanctionAction, number> = { restricted: 1, suspended: 2, banned: 3 };
+
+  const standing = database.sanctions
+    .filter(
+      (entry) =>
+        entry.userId === userId &&
+        entry.liftedAt === null &&
+        (entry.endsAt === null || entry.endsAt > now),
+    )
+    .sort((a, b) => severity[b.action] - severity[a.action])[0];
+
+  return standing?.action ?? 'active';
+}
+
 function snapshotReview(
   database: LocalDatabase,
   review: Review,
@@ -1519,6 +1569,226 @@ export class LocalRepository implements LivdRepository {
       .filter((action) => !subjectId || action.subjectId === subjectId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Sanctions
+   *
+   * Every rule `livd_apply_sanction` enforces is enforced here in the same
+   * order: severity decides who may act, nobody sanctions themselves, only an
+   * administrator acts on a privileged account, and a written reason is
+   * required. Nothing here touches a review.
+   * ------------------------------------------------------------------ */
+
+  async applySanction(input: {
+    userId: string;
+    action: SanctionAction;
+    reasonKey: string;
+    reason: string;
+    durationDays: number | null;
+    caseId: string | null;
+    actorId: string;
+  }): Promise<string> {
+    return mutate((database) => {
+      const actor = database.users.find((u) => u.id === input.actorId);
+      const rank = adminRank(actor);
+
+      // Severity decides authorisation. The point at which a decision becomes
+      // hard to reverse is the point at which it should need somebody senior.
+      const required: Record<SanctionAction, number> = {
+        restricted: 1,
+        suspended: 2,
+        banned: 3,
+      };
+
+      if (rank < required[input.action]) {
+        throw new Error(
+          input.action === 'restricted'
+            ? 'Only a moderator may restrict an account'
+            : input.action === 'suspended'
+              ? 'Suspending an account requires Trust and Safety authorisation'
+              : 'Only an administrator may ban an account',
+        );
+      }
+
+      if (input.userId === input.actorId) {
+        throw new Error('You cannot sanction your own account');
+      }
+
+      const target = database.users.find((u) => u.id === input.userId);
+      if (!target) throw new Error('No such account');
+
+      const targetIsPrivileged =
+        target.role === 'moderator' || target.role === 'trust_admin' || target.role === 'admin';
+
+      if (targetIsPrivileged && rank < 3) {
+        throw new Error('Only an administrator may act on a privileged account');
+      }
+
+      const reasonDef = SANCTION_REASONS.find((entry) => entry.key === input.reasonKey);
+      if (!reasonDef) throw new Error('Select a reason for this sanction');
+
+      if (input.reason.trim().length < 3) {
+        throw new Error('A reason is required, for the audit trail');
+      }
+
+      // A ban has no end date. Accepting one would imply it lifts by itself.
+      const endsAt =
+        input.action === 'banned' || !input.durationDays || input.durationDays <= 0
+          ? null
+          : new Date(Date.now() + input.durationDays * 86_400_000).toISOString();
+
+      const id = `sanction-${shortId(12)}`;
+
+      database.sanctions.push({
+        id,
+        userId: input.userId,
+        action: input.action,
+        reasonKey: input.reasonKey,
+        reason: input.reason.trim(),
+        caseId: input.caseId,
+        appliedBy: input.actorId,
+        startsAt: nowIso(),
+        endsAt,
+        liftedAt: null,
+        liftedBy: null,
+        liftedReason: null,
+        createdAt: nowIso(),
+      });
+
+      target.status = input.action;
+
+      database.adminAudit.push({
+        id: `audit-${shortId(12)}`,
+        actorId: input.actorId,
+        actorRole: actor?.role ?? 'resident',
+        action: 'user_sanctioned',
+        subjectType: 'user',
+        subjectId: input.userId,
+        outcome: 'succeeded',
+        reason: `${reasonDef.label} — ${input.reason.trim()}`,
+        detail: {
+          sanctionId: id,
+          action: input.action,
+          reasonKey: input.reasonKey,
+          caseId: input.caseId,
+          endsAt,
+        },
+        createdAt: nowIso(),
+      });
+
+      if (input.caseId) {
+        appendCaseEvent(
+          database,
+          input.caseId,
+          input.actorId,
+          'sanction_applied',
+          `Account ${input.action}`,
+          { sanctionId: id, userId: input.userId },
+        );
+      }
+
+      return id;
+    });
+  }
+
+  async liftSanction(sanctionId: string, reason: string, actorId: string): Promise<void> {
+    await mutate((database) => {
+      if (reason.trim().length < 3) {
+        throw new Error('A reason is required, for the audit trail');
+      }
+
+      const sanction = database.sanctions.find((entry) => entry.id === sanctionId);
+      if (!sanction) throw new Error('No such sanction');
+
+      const actor = database.users.find((u) => u.id === actorId);
+      const rank = adminRank(actor);
+
+      const required: Record<SanctionAction, number> = {
+        restricted: 1,
+        suspended: 2,
+        banned: 3,
+      };
+
+      // Somebody who could not apply it should not be able to undo it either.
+      if (rank < required[sanction.action]) {
+        throw new Error(
+          sanction.action === 'restricted'
+            ? 'Only a moderator may lift a restriction'
+            : sanction.action === 'suspended'
+              ? 'Lifting a suspension requires Trust and Safety authorisation'
+              : 'Only an administrator may lift a ban',
+        );
+      }
+
+      if (sanction.liftedAt === null) {
+        sanction.liftedAt = nowIso();
+        sanction.liftedBy = actorId;
+        sanction.liftedReason = reason.trim();
+      }
+
+      const target = database.users.find((u) => u.id === sanction.userId);
+      if (target) target.status = strongestStanding(database, sanction.userId);
+
+      database.adminAudit.push({
+        id: `audit-${shortId(12)}`,
+        actorId,
+        actorRole: actor?.role ?? 'resident',
+        action: 'user_sanction_lifted',
+        subjectType: 'user',
+        subjectId: sanction.userId,
+        outcome: 'succeeded',
+        reason: reason.trim(),
+        detail: { sanctionId, was: sanction.action },
+        createdAt: nowIso(),
+      });
+
+      if (sanction.caseId) {
+        appendCaseEvent(
+          database,
+          sanction.caseId,
+          actorId,
+          'sanction_lifted',
+          'Sanction lifted',
+          { sanctionId },
+        );
+      }
+    });
+  }
+
+  async listSanctions(
+    options: { userId?: string | null; activeOnly?: boolean; limit?: number } = {},
+  ): Promise<Sanction[]> {
+    const database = await getDatabase();
+    const now = new Date().toISOString();
+
+    return database.sanctions
+      .filter((entry) => !options.userId || entry.userId === options.userId)
+      .map((entry) => ({
+        id: entry.id,
+        userId: entry.userId,
+        action: entry.action,
+        reasonKey: entry.reasonKey,
+        reason: entry.reason,
+        caseId: entry.caseId,
+        caseReference:
+          database.cases.find((c) => c.id === entry.caseId)?.reference ?? null,
+        appliedBy: entry.appliedBy,
+        startsAt: entry.startsAt,
+        endsAt: entry.endsAt,
+        liftedAt: entry.liftedAt,
+        liftedBy: entry.liftedBy,
+        liftedReason: entry.liftedReason,
+        isActive: entry.liftedAt === null && (entry.endsAt === null || entry.endsAt > now),
+        createdAt: entry.createdAt,
+      }))
+      .filter((entry) => !options.activeOnly || entry.isActive)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .slice(0, Math.min(Math.max(options.limit ?? 50, 1), 200));
+  }
+
+  async listSanctionReasons(): Promise<SanctionReason[]> {
+    return SANCTION_REASONS.map((entry) => ({ ...entry }));
   }
 
   /* ---------------------------------------------------------------------

@@ -47,7 +47,10 @@ const SECTION_GROUPS: Array<{ label: string; items: Array<{ href: string; label:
   },
   {
     label: 'People',
-    items: [{ href: '/admin/users', label: copy.admin.users }],
+    items: [
+      { href: '/admin/users', label: copy.admin.users },
+      { href: '/admin/sanctions', label: copy.admin.sanctions },
+    ],
   },
 ];
 

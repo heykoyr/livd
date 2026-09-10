@@ -17,6 +17,7 @@ import type {
   VerificationRecord,
   Review,
   ReviewReport,
+  SanctionAction,
   ReviewStatus,
   VerificationLevel,
   SavedProperty,
@@ -170,6 +171,28 @@ export interface LocalDatabase {
     changedBy: string | null;
     createdAt: string;
   }>;
+  /**
+   * Account sanctions.
+   *
+   * Never removed — lifting sets `liftedAt` and keeps the row, exactly as
+   * Postgres does. `profiles.status` is kept in step by the methods that write
+   * here, and is derived from the strongest sanction still standing.
+   */
+  sanctions: Array<{
+    id: string;
+    userId: string;
+    action: SanctionAction;
+    reasonKey: string;
+    reason: string;
+    caseId: string | null;
+    appliedBy: string | null;
+    startsAt: string;
+    endsAt: string | null;
+    liftedAt: string | null;
+    liftedBy: string | null;
+    liftedReason: string | null;
+    createdAt: string;
+  }>;
   /** Evidence attached to cases. Versioned, withdrawn, never removed. */
   caseEvidence: Array<{
     id: string;
@@ -241,6 +264,7 @@ function emptyDatabase(): LocalDatabase {
     caseNotes: [],
     reviewSnapshots: [],
     caseEvidence: [],
+    sanctions: [],
     nextCaseReference: 1000,
     nextCaseEventSeq: 1,
     saved: [],

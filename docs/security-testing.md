@@ -405,3 +405,49 @@ capability moved above moderator deliberately, and so did deciding a residency
 verification, because that decision means reading the document. Moderators keep
 the queue — the automated checks, the claimed tenancy, whether a document
 exists — which is the part that does not require seeing it.
+
+## 2026-09-10 · Phase 8 · user sanctions
+
+Migrations under test: `0031_banned_status`, `0032_user_sanctions`.
+
+| # | Attack / behaviour | Result |
+|---|---|---|
+| 1 | Moderator restricts | Applied — account `restricted`, 1 audit row |
+| 2 | Moderator suspends | BLOCKED — `Suspending an account requires Trust and Safety authorisation` |
+| 3 | Trust & Safety admin bans | BLOCKED — `Only an administrator may ban an account` |
+| 4 | Trust & Safety admin suspends | Applied — account `suspended` |
+| 5 | **The account's review after two sanctions** | `status=published`, body 382 chars — untouched |
+| 6 | Anybody sanctions themselves | BLOCKED — `You cannot sanction your own account` |
+| 7 | Moderator lifts a suspension | BLOCKED — `Lifting a suspension requires Trust and Safety authorisation` |
+| 8 | Lifting the suspension | Falls back to `restricted` — the restriction still standing |
+| 9 | Service role deletes sanctions | BLOCKED — grant revoked |
+| 10 | The account reads its own sanctions | 2 rows via `livd_my_sanctions` |
+| 10b | The same account reads the table directly | 0 rows |
+
+Row 5 is the one that matters most. `profiles.status` and `reviews.status` are
+separate columns changed by separate operations, and after a restriction *and*
+a suspension the account's review is still published with its full text. All
+four combinations are reachable and ordinary:
+
+```
+active + removed review        one bad review, nothing more
+active + a warning recorded
+suspended + published reviews  the reviews were fine; the conduct was not
+banned + published reviews     the same, permanently
+```
+
+Row 7 is symmetry that is easy to miss: somebody who could not *apply* a
+sanction cannot *undo* one either. A moderator who could lift a suspension they
+were not allowed to impose has the same power by another route.
+
+Row 8 is why the standing is derived rather than stored blindly. Lifting the
+strongest sanction returns the account to the next one still running, not
+straight to active.
+
+Row 10 gives the person on the receiving end the category, the written reason
+and the dates — and not who applied it. Naming the individual moderator to
+somebody they just sanctioned is how moderators get harassed, and the
+accountability that matters here is Livd's rather than any one person's.
+
+A `pg_cron` job returns accounts to their correct standing when a timed
+sanction ends, because nothing in a request path would notice that it had.

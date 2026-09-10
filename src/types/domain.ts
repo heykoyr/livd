@@ -418,7 +418,10 @@ export type AdminRole = Extract<UserRole, 'moderator' | 'trust_admin' | 'admin'>
  * about its author's standing. Conflating the two is how moderation systems
  * end up punishing people twice for one thing, or not at all for another.
  */
-export type UserStatus = 'active' | 'restricted' | 'suspended';
+export type UserStatus = 'active' | 'restricted' | 'suspended' | 'banned';
+
+/** The three standings that are a sanction. `active` is the absence of one. */
+export type SanctionAction = Exclude<UserStatus, 'active'>;
 
 /**
  * An account, as the account holder's own session sees it.
@@ -1103,5 +1106,50 @@ export interface CaseEvidenceItem {
   withdrawnAt: string | null;
   withdrawnBy: string | null;
   withdrawnReason: string | null;
+  createdAt: string;
+}
+
+
+/* -------------------------------------------------------------------------
+ * Sanctions
+ * ---------------------------------------------------------------------- */
+
+export interface SanctionReason {
+  key: string;
+  label: string;
+  description: string;
+  /** The lightest sanction this reason usually warrants. A default, not a rule. */
+  suggestedAction: SanctionAction;
+}
+
+/**
+ * One sanction.
+ *
+ * Everything a person reviewing the decision six months later needs: what was
+ * done, under which category, in whose words, by whom, for how long, and out of
+ * which investigation.
+ *
+ * Entirely separate from anything that happened to what the account wrote. A
+ * suspended account keeps its published reviews; a removed review says nothing
+ * about its author's standing. All four combinations are reachable and
+ * ordinary.
+ */
+export interface Sanction {
+  id: string;
+  userId: string;
+  action: SanctionAction;
+  reasonKey: string;
+  reason: string;
+  caseId: string | null;
+  caseReference: string | null;
+  appliedBy: string | null;
+  startsAt: string;
+  /** Null is indefinite — always for a ban, sometimes for a suspension. */
+  endsAt: string | null;
+  liftedAt: string | null;
+  liftedBy: string | null;
+  liftedReason: string | null;
+  /** Not lifted, and not expired. */
+  isActive: boolean;
   createdAt: string;
 }
