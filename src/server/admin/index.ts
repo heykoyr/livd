@@ -39,6 +39,7 @@ export {
   type AdminAuditOutcome,
   type AdminSubjectType,
 } from './audit';
+export { readReviewInvestigation } from './reviews';
 export {
   openCase,
   assignCase,

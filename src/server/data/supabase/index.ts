@@ -28,6 +28,9 @@ import type {
   CaseStatus,
   CaseSummary,
   ClaimStatus,
+  ReviewInvestigation,
+  ReviewReportEntry,
+  ReviewVerificationEntry,
   ModerationAction,
   Property,
   PropertyClaim,
@@ -134,6 +137,49 @@ const EVIDENCE_LINK_SECONDS = 300;
 
 /** Default page size for administrative listings. */
 const ADMIN_PAGE_SIZE = 25;
+
+/** One row of `livd_admin_review_investigation`. */
+interface ReviewInvestigationRow {
+  review_id: string;
+  body: string | null;
+  overall_rating: number;
+  would_recommend: boolean;
+  residency_status: ReviewInvestigation['residencyStatus'];
+  moved_in_month: string;
+  moved_out_month: string | null;
+  tenure_months: number;
+  verification_level: ReviewInvestigation['verificationLevel'];
+  verified_at: string | null;
+  status: ReviewInvestigation['status'];
+  safety_flags: string[] | null;
+  helpful_count: number;
+  created_at: string;
+  updated_at: string;
+  author_id: string | null;
+  author_status: UserProfile['status'];
+  author_created_at: string;
+  author_review_count: number | string;
+  author_removed_count: number | string;
+  author_reports_against: number | string;
+  author_verified_count: number | string;
+  property_id: string;
+  property_slug: string;
+  building_name: string | null;
+  street_address: string | null;
+  neighbourhood: string | null;
+  locality: string;
+  admin_area: string | null;
+  postal_code: string | null;
+  country_code: string;
+  property_review_count: number | string;
+  property_reported_count: number | string;
+  property_verified_count: number | string;
+  property_recent_count: number | string;
+  property_is_claimed: boolean;
+  report_count: number | string;
+  open_report_count: number | string;
+  case_count: number | string;
+}
 
 /** One row of `livd_list_cases`. */
 interface CaseRow {
@@ -1914,6 +1960,145 @@ export class SupabaseRepository implements LivdRepository {
       .eq('property_id', propertyId);
 
     if (error) throw new Error(`setSavedPropertyNote: ${error.message}`);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Review investigation
+   * ------------------------------------------------------------------ */
+
+  async getReviewInvestigation(reviewId: string): Promise<ReviewInvestigation | null> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_admin_review_investigation', {
+      target_review_id: reviewId,
+    });
+
+    if (error) throw new Error(`getReviewInvestigation: ${error.message}`);
+
+    const row = (Array.isArray(data) ? data[0] : data) as ReviewInvestigationRow | undefined;
+    if (!row) return null;
+
+    return {
+      reviewId: row.review_id,
+      body: row.body,
+      overallRating: row.overall_rating,
+      wouldRecommend: row.would_recommend,
+      residencyStatus: row.residency_status,
+      movedInMonth: row.moved_in_month,
+      movedOutMonth: row.moved_out_month,
+      tenureMonths: row.tenure_months,
+      verificationLevel: row.verification_level,
+      verifiedAt: row.verified_at,
+      status: row.status,
+      safetyFlags: row.safety_flags ?? [],
+      helpfulCount: row.helpful_count,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+
+      // Null for a review whose author deleted their account. The review stays
+      // on the property page, permanently unattributable, and this view still
+      // has to work.
+      author: row.author_id
+        ? {
+            id: row.author_id,
+            status: row.author_status,
+            createdAt: row.author_created_at,
+            reviewCount: Number(row.author_review_count ?? 0),
+            removedReviewCount: Number(row.author_removed_count ?? 0),
+            reportsAgainst: Number(row.author_reports_against ?? 0),
+            verifiedReviewCount: Number(row.author_verified_count ?? 0),
+          }
+        : null,
+
+      property: {
+        id: row.property_id,
+        slug: row.property_slug,
+        address: {
+          buildingName: row.building_name,
+          streetAddress: row.street_address,
+          neighbourhood: row.neighbourhood,
+          locality: row.locality,
+          adminArea: row.admin_area,
+          postalCode: row.postal_code,
+          countryCode: row.country_code,
+        },
+        reviewCount: Number(row.property_review_count ?? 0),
+        reportedReviewCount: Number(row.property_reported_count ?? 0),
+        verifiedReviewCount: Number(row.property_verified_count ?? 0),
+        recentReviewCount: Number(row.property_recent_count ?? 0),
+        isClaimed: row.property_is_claimed,
+      },
+
+      reportCount: Number(row.report_count ?? 0),
+      openReportCount: Number(row.open_report_count ?? 0),
+      caseCount: Number(row.case_count ?? 0),
+    };
+  }
+
+  async listReviewVerification(reviewId: string): Promise<ReviewVerificationEntry[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_admin_review_verification', {
+      target_review_id: reviewId,
+    });
+
+    if (error) throw new Error(`listReviewVerification: ${error.message}`);
+
+    return ((data ?? []) as Array<{
+      kind: 'location' | 'residency';
+      id: string;
+      method: string;
+      outcome: string;
+      failure_reason: string | null;
+      at_this_property: boolean;
+      created_at: string;
+      decided_at: string | null;
+      has_evidence: boolean;
+    }>).map((row) => ({
+      kind: row.kind,
+      id: row.id,
+      method: row.method,
+      outcome: row.outcome,
+      failureReason: row.failure_reason,
+      atThisProperty: row.at_this_property,
+      createdAt: row.created_at,
+      decidedAt: row.decided_at,
+      hasEvidence: row.has_evidence,
+    }));
+  }
+
+  async listReviewReports(reviewId: string): Promise<ReviewReportEntry[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_admin_review_reports', {
+      target_review_id: reviewId,
+    });
+
+    if (error) throw new Error(`listReviewReports: ${error.message}`);
+
+    return ((data ?? []) as Array<{
+      report_id: string;
+      reporter_id: string | null;
+      reason: ReviewReportEntry['reason'];
+      detail: string | null;
+      status: ReviewReportEntry['status'];
+      resolution: string | null;
+      case_id: string | null;
+      case_reference: string | null;
+      created_at: string;
+      resolved_at: string | null;
+    }>).map((row) => ({
+      reportId: row.report_id,
+      reporterId: row.reporter_id,
+      reason: row.reason,
+      detail: row.detail,
+      status: row.status,
+      resolution: row.resolution,
+      caseId: row.case_id,
+      caseReference: row.case_reference,
+      createdAt: row.created_at,
+      resolvedAt: row.resolved_at,
+    }));
   }
 
   /* ---------------------------------------------------------------------

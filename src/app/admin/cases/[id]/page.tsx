@@ -150,7 +150,12 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
               </dt>
               <dd className="mt-1.5 font-mono text-label text-ink">
                 {detail.subjectReviewId ? (
-                  detail.subjectReviewId.slice(0, 8)
+                  <Link
+                    href={`/admin/reviews/${detail.subjectReviewId}`}
+                    className="underline-offset-4 hover:underline"
+                  >
+                    {detail.subjectReviewId.slice(0, 8)}
+                  </Link>
                 ) : (
                   <span className="text-ink-subtle">—</span>
                 )}

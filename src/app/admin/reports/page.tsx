@@ -67,6 +67,18 @@ export default async function ReportsPage() {
               </p>
             )}
 
+            <p className="mt-4 text-label">
+              <Link
+                href={`/admin/reviews/${review.id}`}
+                className="text-ink underline underline-offset-4"
+              >
+                Investigate this review
+              </Link>
+              <span className="ml-2 text-ink-subtle">
+                — author history, verification and property activity
+              </span>
+            </p>
+
             {review.body && (
               <div className="mt-4">
                 <h3 className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">

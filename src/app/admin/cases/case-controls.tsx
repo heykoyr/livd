@@ -41,14 +41,24 @@ function Feedback({ state }: { state: typeof initialModerationState }) {
   return null;
 }
 
-/** Opens a case from a report, on the reports page. */
+/**
+ * Opens a case.
+ *
+ * Two entry points, because investigations start in two places. From a report
+ * — somebody complained — the case inherits that report's review, property and
+ * author. From a review under investigation, where nobody has complained but
+ * something needs looking at anyway: a signal fired, or the content linter held
+ * it, or a moderator simply noticed.
+ */
 export function OpenCaseControls({
   reportId,
+  reviewId,
   categories,
   defaultCategory,
   defaultSummary,
 }: {
-  reportId: string;
+  reportId?: string;
+  reviewId?: string;
   categories: CaseCategory[];
   defaultCategory: string;
   defaultSummary: string;
@@ -57,7 +67,8 @@ export function OpenCaseControls({
 
   return (
     <form action={formAction} className="flex flex-col gap-3">
-      <input type="hidden" name="reportId" value={reportId} />
+      {reportId && <input type="hidden" name="reportId" value={reportId} />}
+      {reviewId && <input type="hidden" name="reviewId" value={reviewId} />}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex flex-col gap-1.5 sm:w-56">

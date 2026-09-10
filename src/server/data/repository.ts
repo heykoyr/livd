@@ -24,7 +24,10 @@ import type {
   ResidencyStatus,
   Review,
   ReviewReport,
+  ReviewInvestigation,
+  ReviewReportEntry,
   ReviewStatus,
+  ReviewVerificationEntry,
   SavedProperty,
   SearchFilters,
   SearchResults,
@@ -456,6 +459,25 @@ export interface LivdRepository {
 
   recordModerationAction(input: Omit<ModerationAction, 'id' | 'createdAt'>): Promise<ModerationAction>;
   listModerationActions(subjectId?: string, limit?: number): Promise<ModerationAction[]>;
+
+  /* ---- Review investigation ---- */
+
+  /**
+   * Everything an investigation needs about one review, in one read.
+   *
+   * A single call rather than a join the caller assembles, so a page cannot
+   * accidentally omit the context that changes a decision. The author's other
+   * reviews are the obvious one: four reviews of four properties across three
+   * years reads very differently from four in a week, and a moderator who never
+   * sees the second number decides the first case wrong.
+   */
+  getReviewInvestigation(reviewId: string): Promise<ReviewInvestigation | null>;
+
+  /** What was checked about this review's author. Verdicts, never positions. */
+  listReviewVerification(reviewId: string): Promise<ReviewVerificationEntry[]>;
+
+  /** Reports about this review, with the case each belongs to. */
+  listReviewReports(reviewId: string): Promise<ReviewReportEntry[]>;
 
   /* ---- Trust & Safety cases ---- */
 

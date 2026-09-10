@@ -66,6 +66,21 @@ export default async function ModerationQueuePage() {
             )}
 
             <div className="mt-6 flex flex-col gap-5 border-t border-border pt-5">
+              {/* Deciding from the card is fine for something obvious. Anything
+                  that needs the author's history, the property's activity or
+                  the verification trail belongs on the investigation view. */}
+              <p className="text-label">
+                <Link
+                  href={`/admin/reviews/${review.id}`}
+                  className="text-ink underline underline-offset-4"
+                >
+                  Investigate this review
+                </Link>
+                <span className="ml-2 text-ink-subtle">
+                  — author history, verification and property activity
+                </span>
+              </p>
+
               <ReviewStatusControls reviewId={review.id} currentStatus={review.status} />
               <VerificationControls reviewId={review.id} />
             </div>

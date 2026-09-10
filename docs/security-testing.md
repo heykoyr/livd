@@ -331,3 +331,34 @@ Worth recording because of *how* it surfaced: running the case file alone
 passed every time. Only the full suite, with different timing, exposed it. A
 timeline in the wrong order is not a cosmetic bug — it misrepresents what
 happened, which is the one thing a case history exists to get right.
+
+## 2026-09-10 · Phase 6 · the review investigation view
+
+Migration under test: `0029_review_investigation`.
+
+| Attack / behaviour | Result |
+|---|---|
+| Moderator investigates a review | rating, status, verification, author review count, property review count, reports and cases — one row |
+| Resident calls `livd_admin_review_investigation` | BLOCKED — `Not authorised to investigate a review` |
+| Anonymous visitor calls `livd_admin_review_verification` | BLOCKED — `permission denied for function` |
+| A review whose author deleted their account | Still investigable: `author_id null`, counts 0, verification rows 0 |
+
+The last row is the one that would have broken in production. A deleted account
+leaves its reviews standing and permanently unattributable — that is what every
+legal page promises — so the investigation view has to keep working with a null
+author rather than throwing. Checked in both adapters.
+
+### What the payload cannot contain
+
+`tests/safety/review-investigation.test.ts` performs a real location check from
+a real position, then asserts the investigation payload contains none of
+`latitude`, `longitude`, `accuracy`, `distance`, or either coordinate value.
+
+That test passes for a structural reason rather than a careful one: the
+position is an argument to the verification decision and is gone when it
+returns. `property_verifications` has never had a column to put one in. The
+test exists to keep it that way.
+
+The same test asserts no email address appears anywhere in the payload — the
+author's or the reporter's — and that a claimed property changes nothing about
+the review or about what is knowable about its author.

@@ -31,7 +31,10 @@ import type {
   ReportStatus,
   Review,
   ReviewReport,
+  ReviewInvestigation,
+  ReviewReportEntry,
   ReviewStatus,
+  ReviewVerificationEntry,
   SavedProperty,
   SearchFilters,
   SearchResults,
@@ -1461,6 +1464,152 @@ export class LocalRepository implements LivdRepository {
       .filter((action) => !subjectId || action.subjectId === subjectId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Review investigation
+   * ------------------------------------------------------------------ */
+
+  async getReviewInvestigation(reviewId: string): Promise<ReviewInvestigation | null> {
+    const database = await getDatabase();
+
+    const review = database.reviews.find((r) => r.id === reviewId);
+    if (!review) return null;
+
+    const property = database.properties.find((p) => p.id === review.propertyId);
+    if (!property) return null;
+
+    const author = review.authorId
+      ? database.users.find((u) => u.id === review.authorId)
+      : undefined;
+    const authorCounts = review.authorId ? countsFor(database, review.authorId) : null;
+
+    const propertyReviews = database.reviews.filter((r) => r.propertyId === property.id);
+    const reportedReviewIds = new Set(
+      database.reports
+        .filter((report) => propertyReviews.some((r) => r.id === report.reviewId))
+        .map((report) => report.reviewId),
+    );
+
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const reports = database.reports.filter((report) => report.reviewId === reviewId);
+
+    return {
+      reviewId: review.id,
+      body: review.body,
+      overallRating: review.overallRating,
+      wouldRecommend: review.wouldRecommend,
+      residencyStatus: review.residencyStatus,
+      movedInMonth: review.movedInMonth,
+      movedOutMonth: review.movedOutMonth,
+      tenureMonths: review.tenureMonths,
+      verificationLevel: review.verificationLevel,
+      verifiedAt: review.verifiedAt,
+      status: review.status,
+      safetyFlags: review.safetyFlags,
+      helpfulCount: review.helpfulCount,
+      createdAt: review.createdAt,
+      updatedAt: review.updatedAt,
+
+      author:
+        author && authorCounts
+          ? {
+              id: author.id,
+              status: author.status,
+              createdAt: author.createdAt,
+              reviewCount: authorCounts.reviewCount,
+              removedReviewCount: authorCounts.removedReviewCount,
+              reportsAgainst: authorCounts.reportsAgainst,
+              verifiedReviewCount: authorCounts.verifiedReviewCount,
+            }
+          : null,
+
+      property: {
+        id: property.id,
+        slug: property.slug,
+        address: property.address,
+        reviewCount: propertyReviews.filter((r) => r.status === 'published').length,
+        reportedReviewCount: reportedReviewIds.size,
+        verifiedReviewCount: propertyReviews.filter(
+          (r) =>
+            r.verificationLevel === 'location_verified' ||
+            r.verificationLevel === 'verified_resident',
+        ).length,
+        recentReviewCount: propertyReviews.filter((r) => r.createdAt > ninetyDaysAgo).length,
+        isClaimed: database.claims.some(
+          (claim) => claim.propertyId === property.id && claim.status === 'approved',
+        ),
+      },
+
+      reportCount: reports.length,
+      openReportCount: reports.filter((report) => report.status === 'open').length,
+      caseCount: database.cases.filter((c) => c.subjectReviewId === reviewId).length,
+    };
+  }
+
+  async listReviewVerification(reviewId: string): Promise<ReviewVerificationEntry[]> {
+    const database = await getDatabase();
+
+    const review = database.reviews.find((r) => r.id === reviewId);
+    if (!review?.authorId) return [];
+
+    const location: ReviewVerificationEntry[] = database.propertyVerifications
+      .filter((entry) => entry.userId === review.authorId)
+      .map((entry) => ({
+        kind: 'location' as const,
+        id: entry.id,
+        method: entry.method,
+        outcome: entry.status,
+        failureReason: entry.failureReason,
+        atThisProperty: entry.propertyId === review.propertyId,
+        createdAt: entry.createdAt,
+        decidedAt: null,
+        hasEvidence: false,
+      }));
+
+    const residency: ReviewVerificationEntry[] = database.verifications
+      .filter((entry) => entry.submittedBy === review.authorId)
+      .map((entry) => ({
+        kind: 'residency' as const,
+        id: entry.id,
+        method: entry.method,
+        outcome: entry.outcome,
+        failureReason: null,
+        atThisProperty: entry.subjectId === reviewId,
+        createdAt: entry.createdAt,
+        decidedAt: entry.decidedAt,
+        hasEvidence: Boolean(entry.evidenceRef),
+      }));
+
+    return [...location, ...residency]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 50);
+  }
+
+  async listReviewReports(reviewId: string): Promise<ReviewReportEntry[]> {
+    const database = await getDatabase();
+
+    return database.reports
+      .filter((report) => report.reviewId === reviewId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((report) => {
+        const linked = report.caseId
+          ? database.cases.find((c) => c.id === report.caseId)
+          : undefined;
+
+        return {
+          reportId: report.id,
+          reporterId: report.reporterId,
+          reason: report.reason,
+          detail: report.detail,
+          status: report.status,
+          resolution: report.resolution,
+          caseId: report.caseId,
+          caseReference: linked?.reference ?? null,
+          createdAt: report.createdAt,
+          resolvedAt: report.resolvedAt,
+        };
+      });
   }
 
   /* ---------------------------------------------------------------------

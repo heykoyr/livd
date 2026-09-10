@@ -949,3 +949,100 @@ export interface CaseFilters {
   openOnly?: boolean;
   reference?: string | null;
 }
+
+
+/* -------------------------------------------------------------------------
+ * Review investigation
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Everything an investigation needs about one review.
+ *
+ * The privacy shape is the point. Every field here is INTERNAL: an account id,
+ * counts, statuses, decisions — enough to decide whether a review should stay
+ * up, and nothing that identifies who wrote it. The address and the residency
+ * document are RESTRICTED and are not on this type at all; reaching either is a
+ * separate operation with its own authorisation and its own audit entry.
+ *
+ * `authorId` is null for a review whose author deleted their account. The
+ * review stays on the property page, permanently unattributable, which is what
+ * every legal page promises — and the investigation view still has to work.
+ */
+export interface ReviewInvestigation {
+  reviewId: string;
+  body: string | null;
+  overallRating: number;
+  wouldRecommend: boolean;
+  residencyStatus: ResidencyStatus;
+  movedInMonth: string;
+  movedOutMonth: string | null;
+  tenureMonths: number;
+  verificationLevel: VerificationLevel;
+  verifiedAt: string | null;
+  status: ReviewStatus;
+  safetyFlags: string[];
+  helpfulCount: number;
+  createdAt: string;
+  updatedAt: string;
+
+  author: {
+    id: string;
+    status: UserStatus;
+    createdAt: string;
+    reviewCount: number;
+    removedReviewCount: number;
+    reportsAgainst: number;
+    verifiedReviewCount: number;
+  } | null;
+
+  property: {
+    id: string;
+    slug: string;
+    address: PropertyAddress;
+    reviewCount: number;
+    reportedReviewCount: number;
+    verifiedReviewCount: number;
+    recentReviewCount: number;
+    isClaimed: boolean;
+  };
+
+  reportCount: number;
+  openReportCount: number;
+  caseCount: number;
+}
+
+/**
+ * One thing that was checked about a review's author.
+ *
+ * A verdict, a method and a time. There is no position on this type because
+ * there is none in the database — `property_verifications` has never stored a
+ * coordinate, an accuracy or a distance.
+ */
+export interface ReviewVerificationEntry {
+  kind: 'location' | 'residency';
+  id: string;
+  method: string;
+  outcome: string;
+  failureReason: string | null;
+  /** Whether this check concerned the property under investigation. */
+  atThisProperty: boolean;
+  createdAt: string;
+  decidedAt: string | null;
+  /** Residency only. The document itself is reached separately, and audited. */
+  hasEvidence: boolean;
+}
+
+/** One report about the review being investigated. */
+export interface ReviewReportEntry {
+  reportId: string;
+  /** An id and nothing more. Who it belongs to is a separate question. */
+  reporterId: string | null;
+  reason: ReportReason;
+  detail: string | null;
+  status: ReportStatus;
+  resolution: string | null;
+  caseId: string | null;
+  caseReference: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
