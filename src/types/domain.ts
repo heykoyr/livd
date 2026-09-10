@@ -1153,3 +1153,83 @@ export interface Sanction {
   isActive: boolean;
   createdAt: string;
 }
+
+
+/* -------------------------------------------------------------------------
+ * Authority requests
+ * ---------------------------------------------------------------------- */
+
+export type AuthorityRequestStatus =
+  | 'received'
+  | 'under_review'
+  | 'needs_clarification'
+  | 'awaiting_legal_review'
+  | 'approved'
+  | 'partially_approved'
+  | 'declined'
+  | 'fulfilled'
+  | 'closed';
+
+export type AuthorityRequestType =
+  | 'account_information'
+  | 'content_preservation'
+  | 'content_removal'
+  | 'emergency_disclosure'
+  | 'other';
+
+/**
+ * A request from a body asserting a legal basis.
+ *
+ * Recorded and managed. Nothing in this system gathers or transmits the
+ * information a request asks for — `legalBasis` is what the requester claims,
+ * never a finding Livd has made, and `decision` is what Livd decided about it.
+ */
+export interface AuthorityRequest {
+  id: string;
+  /** `AR-1004`. What somebody quotes in correspondence. */
+  reference: string;
+  requestingAuthority: string;
+  jurisdiction: string;
+  requestType: AuthorityRequestType;
+  /** Their own reference, so a follow-up can be matched to it. */
+  externalReference: string | null;
+  requestedInformation: string;
+  /** The basis they assert. A claim recorded, never a finding made. */
+  legalBasis: string | null;
+  /** Whether Livd holds paperwork, as opposed to an assertion in an email. */
+  documentationReceived: boolean;
+  status: AuthorityRequestStatus;
+  receivedAt: string;
+  assignedTo: string | null;
+  decision: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  caseId: string | null;
+  caseReference: string | null;
+  subjectUserId: string | null;
+  disclosureCount: number;
+  createdAt: string;
+}
+
+/**
+ * What actually left the building.
+ *
+ * A separate record from the decision, because "approved but never sent" is a
+ * real and common outcome that would otherwise be unrecordable.
+ *
+ * `disclosedFields` is an explicit list with no "everything" value. Naming the
+ * fields is the moment "we sent them the account" becomes "we sent them the
+ * registration date".
+ */
+export interface DisclosureRecord {
+  id: string;
+  requestId: string;
+  subjectUserId: string | null;
+  disclosedFields: string[];
+  disclosedTo: string;
+  method: 'secure_email' | 'portal' | 'post' | 'in_person' | 'other';
+  authorisedBy: string | null;
+  recordedBy: string | null;
+  disclosedAt: string;
+  notes: string | null;
+}

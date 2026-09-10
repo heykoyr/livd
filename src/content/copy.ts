@@ -612,6 +612,8 @@ export const copy = {
     reviews: 'Reviews',
     users: 'Users',
     sanctions: 'Sanctions',
+    authorityRequests: 'Authority requests',
+    auditLog: 'Audit log',
     claims: 'Property claims',
     verification: 'Verification',
     emptyQueue: 'Nothing waiting. The queue is clear.',

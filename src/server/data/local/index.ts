@@ -11,6 +11,9 @@ import { propertySlug, shortId } from '@/lib/utils';
 import type {
   AdminUserDetail,
   AdminUserFilters,
+  AuthorityRequest,
+  AuthorityRequestStatus,
+  AuthorityRequestType,
   CaseCategory,
   CaseEvidenceItem,
   CaseEvent,
@@ -24,6 +27,7 @@ import type {
   AdminUserReport,
   AdminUserReview,
   ClaimStatus,
+  DisclosureRecord,
   ModerationAction,
   Property,
   PropertyClaim,
@@ -326,6 +330,21 @@ function snapshotReview(
     changedBy,
     createdAt: nowIso(),
   });
+}
+
+/**
+ * Establishes that the caller may handle legal requests.
+ *
+ * Postgres asks `livd_is_trust_admin()`, which reads `auth.uid()`. There is no
+ * session here, so the actor is passed in and checked the same way.
+ */
+function requireTrustAdmin(database: LocalDatabase, actorId: string, message: string) {
+  const actor = database.users.find((u) => u.id === actorId);
+  const trusted =
+    actor?.status === 'active' && (actor.role === 'trust_admin' || actor.role === 'admin');
+
+  if (!actor || !trusted) throw new Error(message);
+  return actor;
 }
 
 function requireModerator(database: LocalDatabase, actorId: string, message: string) {
@@ -1569,6 +1588,256 @@ export class LocalRepository implements LivdRepository {
       .filter((action) => !subjectId || action.subjectId === subjectId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Authority requests
+   *
+   * Records and reads. Nothing here gathers or transmits the information a
+   * request asks for — the same absence as in Postgres, and for the same
+   * reason.
+   * ------------------------------------------------------------------ */
+
+  async openAuthorityRequest(input: {
+    requestingAuthority: string;
+    jurisdiction: string;
+    requestType: AuthorityRequestType;
+    requestedInformation: string;
+    externalReference: string | null;
+    legalBasis: string | null;
+    documentationReceived: boolean;
+    subjectUserId: string | null;
+    caseId: string | null;
+    actorId: string;
+  }): Promise<string> {
+    return mutate((database) => {
+      requireTrustAdmin(
+        database,
+        input.actorId,
+        'Recording an authority request requires Trust and Safety authorisation',
+      );
+
+      if (input.requestingAuthority.trim().length < 2) {
+        throw new Error('Name the requesting authority');
+      }
+      if (input.jurisdiction.trim().length < 2) throw new Error('Name the jurisdiction');
+      if (input.requestedInformation.trim().length < 3) {
+        throw new Error('Record what was asked for');
+      }
+
+      const id = `request-${shortId(12)}`;
+      const reference = `AR-${database.nextCaseReference}`;
+      database.nextCaseReference += 1;
+
+      database.authorityRequests.push({
+        id,
+        reference,
+        requestingAuthority: input.requestingAuthority.trim(),
+        jurisdiction: input.jurisdiction.trim(),
+        requestType: input.requestType,
+        externalReference: input.externalReference?.trim() || null,
+        requestedInformation: input.requestedInformation.trim(),
+        legalBasis: input.legalBasis?.trim() || null,
+        documentationReceived: input.documentationReceived,
+        status: 'received',
+        receivedAt: nowIso(),
+        assignedTo: null,
+        openedBy: input.actorId,
+        decision: null,
+        decidedBy: null,
+        decidedAt: null,
+        caseId: input.caseId,
+        subjectUserId: input.subjectUserId,
+        createdAt: nowIso(),
+      });
+
+      const actor = database.users.find((u) => u.id === input.actorId);
+      database.adminAudit.push({
+        id: `audit-${shortId(12)}`,
+        actorId: input.actorId,
+        actorRole: actor?.role ?? 'resident',
+        action: 'authority_request_created',
+        subjectType: 'authority_request',
+        subjectId: id,
+        outcome: 'succeeded',
+        reason: `${input.requestingAuthority.trim()} — ${input.jurisdiction.trim()}`,
+        detail: { reference, requestType: input.requestType, subjectUserId: input.subjectUserId },
+        createdAt: nowIso(),
+      });
+
+      return id;
+    });
+  }
+
+  async decideAuthorityRequest(input: {
+    requestId: string;
+    status: AuthorityRequestStatus;
+    decision: string | null;
+    documentationReceived: boolean | null;
+    actorId: string;
+  }): Promise<void> {
+    await mutate((database) => {
+      requireTrustAdmin(
+        database,
+        input.actorId,
+        'Deciding an authority request requires Trust and Safety authorisation',
+      );
+
+      const request = database.authorityRequests.find((r) => r.id === input.requestId);
+      if (!request) throw new Error('No such request');
+
+      const concluding = (
+        ['approved', 'partially_approved', 'declined', 'fulfilled', 'closed'] as const
+      ).includes(input.status as 'approved');
+
+      if (concluding && (input.decision ?? '').trim().length < 3) {
+        throw new Error('Write the decision before concluding a request');
+      }
+
+      const previous = request.status;
+      request.status = input.status;
+
+      if (concluding) {
+        request.decision = (input.decision ?? '').trim();
+        request.decidedBy = input.actorId;
+        request.decidedAt = nowIso();
+      }
+      if (input.documentationReceived !== null) {
+        request.documentationReceived = input.documentationReceived;
+      }
+
+      const actor = database.users.find((u) => u.id === input.actorId);
+      database.adminAudit.push({
+        id: `audit-${shortId(12)}`,
+        actorId: input.actorId,
+        actorRole: actor?.role ?? 'resident',
+        action: 'authority_request_updated',
+        subjectType: 'authority_request',
+        subjectId: input.requestId,
+        outcome: 'succeeded',
+        reason: (input.decision ?? '').trim() || null,
+        detail: { from: previous, to: input.status },
+        createdAt: nowIso(),
+      });
+    });
+  }
+
+  async recordDisclosure(input: {
+    requestId: string;
+    disclosedFields: string[];
+    disclosedTo: string;
+    method: DisclosureRecord['method'];
+    notes: string | null;
+    actorId: string;
+  }): Promise<string> {
+    return mutate((database) => {
+      requireTrustAdmin(
+        database,
+        input.actorId,
+        'Recording a disclosure requires Trust and Safety authorisation',
+      );
+
+      const request = database.authorityRequests.find((r) => r.id === input.requestId);
+      if (!request) throw new Error('No such request');
+
+      // A disclosure against a declined or undecided request is either a
+      // mistake or something far worse. Either way it is refused.
+      if (!['approved', 'partially_approved', 'fulfilled'].includes(request.status)) {
+        throw new Error('That request has not been approved');
+      }
+
+      if (input.disclosedFields.length === 0) {
+        throw new Error('Name exactly what was disclosed');
+      }
+      if (input.disclosedTo.trim().length < 2) throw new Error('Record who received it');
+
+      const id = `disclosure-${shortId(12)}`;
+
+      database.disclosures.push({
+        id,
+        requestId: input.requestId,
+        subjectUserId: request.subjectUserId,
+        disclosedFields: [...input.disclosedFields],
+        disclosedTo: input.disclosedTo.trim(),
+        method: input.method,
+        authorisedBy: request.decidedBy,
+        recordedBy: input.actorId,
+        disclosedAt: nowIso(),
+        notes: input.notes?.trim() || null,
+      });
+
+      request.status = 'fulfilled';
+
+      const actor = database.users.find((u) => u.id === input.actorId);
+      database.adminAudit.push({
+        id: `audit-${shortId(12)}`,
+        actorId: input.actorId,
+        actorRole: actor?.role ?? 'resident',
+        action: 'disclosure_recorded',
+        subjectType: 'authority_request',
+        subjectId: input.requestId,
+        outcome: 'succeeded',
+        reason: `Disclosed to ${input.disclosedTo.trim()}`,
+        // The field names, never their values.
+        detail: {
+          disclosureId: id,
+          reference: request.reference,
+          fields: input.disclosedFields.join(','),
+          method: input.method,
+        },
+        createdAt: nowIso(),
+      });
+
+      return id;
+    });
+  }
+
+  async listAuthorityRequests(
+    options: { status?: AuthorityRequestStatus | null; openOnly?: boolean; limit?: number } = {},
+  ): Promise<AuthorityRequest[]> {
+    const database = await getDatabase();
+
+    return database.authorityRequests
+      .filter((request) => !options.status || request.status === options.status)
+      .filter(
+        (request) =>
+          !options.openOnly ||
+          !(['fulfilled', 'declined', 'closed'] as string[]).includes(request.status),
+      )
+      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt) || b.id.localeCompare(a.id))
+      .slice(0, Math.min(Math.max(options.limit ?? 50, 1), 200))
+      .map((request) => ({
+        id: request.id,
+        reference: request.reference,
+        requestingAuthority: request.requestingAuthority,
+        jurisdiction: request.jurisdiction,
+        requestType: request.requestType,
+        externalReference: request.externalReference,
+        requestedInformation: request.requestedInformation,
+        legalBasis: request.legalBasis,
+        documentationReceived: request.documentationReceived,
+        status: request.status,
+        receivedAt: request.receivedAt,
+        assignedTo: request.assignedTo,
+        decision: request.decision,
+        decidedBy: request.decidedBy,
+        decidedAt: request.decidedAt,
+        caseId: request.caseId,
+        caseReference:
+          database.cases.find((c) => c.id === request.caseId)?.reference ?? null,
+        subjectUserId: request.subjectUserId,
+        disclosureCount: database.disclosures.filter((d) => d.requestId === request.id).length,
+        createdAt: request.createdAt,
+      }));
+  }
+
+  async listDisclosures(requestId: string | null = null): Promise<DisclosureRecord[]> {
+    const database = await getDatabase();
+
+    return database.disclosures
+      .filter((entry) => !requestId || entry.requestId === requestId)
+      .sort((a, b) => b.disclosedAt.localeCompare(a.disclosedAt) || b.id.localeCompare(a.id))
+      .map((entry) => ({ ...entry, disclosedFields: [...entry.disclosedFields] }));
   }
 
   /* ---------------------------------------------------------------------

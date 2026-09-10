@@ -4,6 +4,9 @@ import type {
   AdminUserPage,
   AdminUserReport,
   AdminUserReview,
+  AuthorityRequest,
+  AuthorityRequestStatus,
+  AuthorityRequestType,
   CaseCategory,
   CaseEvent,
   CaseFilters,
@@ -14,6 +17,7 @@ import type {
   CaseEvidenceItem,
   CaseSummary,
   ClaimStatus,
+  DisclosureRecord,
   UserRole,
   ModerationAction,
   Property,
@@ -464,6 +468,62 @@ export interface LivdRepository {
 
   recordModerationAction(input: Omit<ModerationAction, 'id' | 'createdAt'>): Promise<ModerationAction>;
   listModerationActions(subjectId?: string, limit?: number): Promise<ModerationAction[]>;
+
+  /* ---- Authority requests ---- */
+
+  /**
+   * Records a request from a body asserting a legal basis.
+   *
+   * Records it. Nothing in this interface gathers or transmits the information
+   * a request asks for, and there is deliberately no method that could — a
+   * button that assembles and sends an account's data is a button that will
+   * eventually be pressed for a request nobody read properly.
+   */
+  openAuthorityRequest(input: {
+    requestingAuthority: string;
+    jurisdiction: string;
+    requestType: AuthorityRequestType;
+    requestedInformation: string;
+    externalReference: string | null;
+    legalBasis: string | null;
+    documentationReceived: boolean;
+    subjectUserId: string | null;
+    caseId: string | null;
+    actorId: string;
+  }): Promise<string>;
+
+  decideAuthorityRequest(input: {
+    requestId: string;
+    status: AuthorityRequestStatus;
+    decision: string | null;
+    documentationReceived: boolean | null;
+    actorId: string;
+  }): Promise<void>;
+
+  /**
+   * Records that a person disclosed something.
+   *
+   * Discloses nothing itself. Refuses unless the request has been approved in
+   * whole or in part — a disclosure against a declined or undecided request is
+   * either a mistake or something far worse, and the database should not
+   * quietly accept either.
+   */
+  recordDisclosure(input: {
+    requestId: string;
+    disclosedFields: string[];
+    disclosedTo: string;
+    method: DisclosureRecord['method'];
+    notes: string | null;
+    actorId: string;
+  }): Promise<string>;
+
+  listAuthorityRequests(options?: {
+    status?: AuthorityRequestStatus | null;
+    openOnly?: boolean;
+    limit?: number;
+  }): Promise<AuthorityRequest[]>;
+
+  listDisclosures(requestId?: string | null): Promise<DisclosureRecord[]>;
 
   /* ---- Sanctions ---- */
 

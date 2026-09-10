@@ -4,9 +4,12 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import type {
+  AuthorityRequestStatus,
+  AuthorityRequestType,
   CasePriority,
   CaseStatus,
   CategoryRating,
+  DisclosureRecord,
   ModerationAction,
   OwnerResponse,
   Property,
@@ -213,6 +216,46 @@ export interface LocalDatabase {
     withdrawnReason: string | null;
     createdAt: string;
   }>;
+  /**
+   * Authority requests and what was disclosed under them.
+   *
+   * Two arrays rather than one, because approving a request and disclosing
+   * something are two events — and "approved but never sent" is a real outcome
+   * that a single row could not express.
+   */
+  authorityRequests: Array<{
+    id: string;
+    reference: string;
+    requestingAuthority: string;
+    jurisdiction: string;
+    requestType: AuthorityRequestType;
+    externalReference: string | null;
+    requestedInformation: string;
+    legalBasis: string | null;
+    documentationReceived: boolean;
+    status: AuthorityRequestStatus;
+    receivedAt: string;
+    assignedTo: string | null;
+    openedBy: string | null;
+    decision: string | null;
+    decidedBy: string | null;
+    decidedAt: string | null;
+    caseId: string | null;
+    subjectUserId: string | null;
+    createdAt: string;
+  }>;
+  disclosures: Array<{
+    id: string;
+    requestId: string;
+    subjectUserId: string | null;
+    disclosedFields: string[];
+    disclosedTo: string;
+    method: DisclosureRecord['method'];
+    authorisedBy: string | null;
+    recordedBy: string | null;
+    disclosedAt: string;
+    notes: string | null;
+  }>;
   /** Next case reference. Mirrors `case_reference_seq`, which starts at 1000. */
   nextCaseReference: number;
   /**
@@ -265,6 +308,8 @@ function emptyDatabase(): LocalDatabase {
     reviewSnapshots: [],
     caseEvidence: [],
     sanctions: [],
+    authorityRequests: [],
+    disclosures: [],
     nextCaseReference: 1000,
     nextCaseEventSeq: 1,
     saved: [],

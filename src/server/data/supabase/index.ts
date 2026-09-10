@@ -26,8 +26,12 @@ import type {
   CasePage,
   CasePriority,
   CaseStatus,
+  AuthorityRequest,
+  AuthorityRequestStatus,
+  AuthorityRequestType,
   CaseEvidenceItem,
   CaseSummary,
+  DisclosureRecord,
   CategoryRating,
   ClaimStatus,
   ReviewInvestigation,
@@ -1966,6 +1970,146 @@ export class SupabaseRepository implements LivdRepository {
       .eq('property_id', propertyId);
 
     if (error) throw new Error(`setSavedPropertyNote: ${error.message}`);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Authority requests
+   *
+   * Every method here records or reads. None of them gathers or transmits the
+   * information a request asks for, and there is no code path from this section
+   * to an email address, a review, a verification record or a location check.
+   * That absence is the design, not an omission.
+   * ------------------------------------------------------------------ */
+
+  async openAuthorityRequest(input: {
+    requestingAuthority: string;
+    jurisdiction: string;
+    requestType: AuthorityRequestType;
+    requestedInformation: string;
+    externalReference: string | null;
+    legalBasis: string | null;
+    documentationReceived: boolean;
+    subjectUserId: string | null;
+    caseId: string | null;
+    actorId: string;
+  }): Promise<string> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_open_authority_request', {
+      requesting_authority: input.requestingAuthority,
+      jurisdiction: input.jurisdiction,
+      request_type: input.requestType,
+      requested_information: input.requestedInformation,
+      external_reference: input.externalReference,
+      legal_basis: input.legalBasis,
+      documentation_received: input.documentationReceived,
+      subject_user_id: input.subjectUserId,
+      related_case_id: input.caseId,
+    });
+
+    if (error) throw new Error(`openAuthorityRequest: ${error.message}`);
+    return data as string;
+  }
+
+  async decideAuthorityRequest(input: {
+    requestId: string;
+    status: AuthorityRequestStatus;
+    decision: string | null;
+    documentationReceived: boolean | null;
+    actorId: string;
+  }): Promise<void> {
+    const supabase = await this.client();
+
+    const { error } = await supabase.rpc('livd_decide_authority_request', {
+      request_id: input.requestId,
+      new_status: input.status,
+      decision_text: input.decision,
+      docs_received: input.documentationReceived,
+    });
+
+    if (error) throw new Error(`decideAuthorityRequest: ${error.message}`);
+  }
+
+  async recordDisclosure(input: {
+    requestId: string;
+    disclosedFields: string[];
+    disclosedTo: string;
+    method: DisclosureRecord['method'];
+    notes: string | null;
+    actorId: string;
+  }): Promise<string> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_record_disclosure', {
+      request_id: input.requestId,
+      disclosed_fields: input.disclosedFields,
+      disclosed_to: input.disclosedTo,
+      method: input.method,
+      notes: input.notes,
+    });
+
+    if (error) throw new Error(`recordDisclosure: ${error.message}`);
+    return data as string;
+  }
+
+  async listAuthorityRequests(
+    options: { status?: AuthorityRequestStatus | null; openOnly?: boolean; limit?: number } = {},
+  ): Promise<AuthorityRequest[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_list_authority_requests', {
+      filter_status: options.status ?? null,
+      only_open: options.openOnly ?? false,
+      page_size: Math.min(Math.max(options.limit ?? 50, 1), 200),
+    });
+
+    if (error) throw new Error(`listAuthorityRequests: ${error.message}`);
+
+    return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      id: row.id as string,
+      reference: row.reference as string,
+      requestingAuthority: row.requesting_authority as string,
+      jurisdiction: row.jurisdiction as string,
+      requestType: row.request_type as AuthorityRequestType,
+      externalReference: (row.external_reference as string | null) ?? null,
+      requestedInformation: row.requested_information as string,
+      legalBasis: (row.legal_basis as string | null) ?? null,
+      documentationReceived: Boolean(row.documentation_received),
+      status: row.status as AuthorityRequestStatus,
+      receivedAt: row.received_at as string,
+      assignedTo: (row.assigned_to as string | null) ?? null,
+      decision: (row.decision as string | null) ?? null,
+      decidedBy: (row.decided_by as string | null) ?? null,
+      decidedAt: (row.decided_at as string | null) ?? null,
+      caseId: (row.case_id as string | null) ?? null,
+      caseReference: (row.case_reference as string | null) ?? null,
+      subjectUserId: (row.subject_user_id as string | null) ?? null,
+      disclosureCount: Number(row.disclosure_count ?? 0),
+      createdAt: row.created_at as string,
+    }));
+  }
+
+  async listDisclosures(requestId: string | null = null): Promise<DisclosureRecord[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_list_disclosures', {
+      target_request_id: requestId,
+    });
+
+    if (error) throw new Error(`listDisclosures: ${error.message}`);
+
+    return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      id: row.id as string,
+      requestId: row.request_id as string,
+      subjectUserId: (row.subject_user_id as string | null) ?? null,
+      disclosedFields: (row.disclosed_fields as string[] | null) ?? [],
+      disclosedTo: row.disclosed_to as string,
+      method: row.method as DisclosureRecord['method'],
+      authorisedBy: (row.authorised_by as string | null) ?? null,
+      recordedBy: (row.recorded_by as string | null) ?? null,
+      disclosedAt: row.disclosed_at as string,
+      notes: (row.notes as string | null) ?? null,
+    }));
   }
 
   /* ---------------------------------------------------------------------

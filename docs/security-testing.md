@@ -451,3 +451,52 @@ accountability that matters here is Livd's rather than any one person's.
 
 A `pg_cron` job returns accounts to their correct standing when a timed
 sanction ends, because nothing in a request path would notice that it had.
+
+## 2026-09-10 · Phase 9 · authority requests and disclosure records
+
+Migrations under test: `0033_authority_requests`, `0034_fix_authority_decision_parameter`.
+
+| # | Attack / behaviour | Result |
+|---|---|---|
+| 1 | Moderator records a request | BLOCKED — `requires Trust and Safety authorisation` |
+| 2 | Moderator reads `authority_requests` | 0 rows |
+| 3 | Trust & Safety records one | `AR-1004 / received` |
+| 4 | Disclosure against an unapproved request | BLOCKED — `That request has not been approved` |
+| 5 | Concluding with no written decision | BLOCKED — `Write the decision before concluding a request` |
+| 6 | Disclosure naming no fields | BLOCKED — `Name exactly what was disclosed` |
+| 7 | After a disclosure, the request | `fulfilled`, fields `account_created_at`, 3 audit rows |
+| 8 | Does the disclosure audit entry contain an `@`? | 0 |
+| 9 | Service role deletes a disclosure record | BLOCKED — grant revoked |
+| 10 | **Table owner** rewrites a disclosure | BLOCKED — `disclosure_records is append-only` |
+| 11 | **The subject of the request** reads either table | 0 rows, 0 rows |
+
+### The most important property is an absence
+
+Nothing in this area gathers or transmits a user's information. There is no
+repository method, no administrative-layer function and no database function
+that takes an authority request and produces an account's data.
+
+`tests/safety/authority-requests.test.ts` asserts that directly — it checks the
+repository for `exportUserData`, `gatherUserData`, `fulfilAuthorityRequest`,
+`sendDisclosure` and four other plausible names, and scans the admin layer's
+exports for anything matching `export|transmit|send.*data|gather`.
+
+That test exists because this is precisely the thing somebody adds later in
+good faith. "Wouldn't it be easier if approving just exported the fields?" — and
+a button that assembles and sends an account's data on request is a button that
+will eventually be pressed for a request nobody read properly. The judgement
+stays with a person; what the software keeps is the memory of it.
+
+Row 8 matters for the same reason as its equivalents in Phases 4 and 6: the
+audit entry names the fields disclosed and never their values.
+
+### A parameter that shadowed its column
+
+`livd_decide_authority_request` took a parameter named `documentation_received`,
+which is also a column on the table it updates. The unqualified reference inside
+the UPDATE was ambiguous — and Postgres resolves that at *call* time, not at
+creation, so the function was created without complaint and failed the first
+time anybody passed that argument.
+
+Fixed in `0034` by renaming it. Recorded because it looks completely fine in
+review and only a test that actually exercises the argument finds it.
