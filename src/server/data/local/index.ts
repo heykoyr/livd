@@ -12,6 +12,7 @@ import type {
   AdminUserDetail,
   AdminUserFilters,
   CaseCategory,
+  CaseEvidenceItem,
   CaseEvent,
   CaseFilters,
   CaseNote,
@@ -33,6 +34,7 @@ import type {
   ReviewReport,
   ReviewInvestigation,
   ReviewReportEntry,
+  ReviewSnapshot,
   ReviewStatus,
   ReviewVerificationEntry,
   SavedProperty,
@@ -244,6 +246,38 @@ const CASE_PRIORITY_ORDER: Record<CasePriority, number> = {
  * Postgres asks `livd_is_moderator()`, which reads `auth.uid()`. There is no
  * session here, so the actor is passed in and checked the same way.
  */
+/**
+ * Preserves a review before it changes.
+ *
+ * Postgres does this with a BEFORE UPDATE trigger, so preservation happens
+ * whatever path changed the row. There is no trigger here, so this is called
+ * explicitly from the two methods that change a review — which is weaker, and
+ * exactly why the guarantee that matters is the database's.
+ */
+function snapshotReview(
+  database: LocalDatabase,
+  review: Review,
+  reason: 'moderation' | 'correction' | 'verification' | 'other',
+  changedBy: string | null,
+): void {
+  database.reviewSnapshots.push({
+    id: `snapshot-${shortId(12)}`,
+    reviewId: review.id,
+    reason,
+    body: review.body,
+    overallRating: review.overallRating,
+    wouldRecommend: review.wouldRecommend,
+    verificationLevel: review.verificationLevel,
+    status: review.status,
+    safetyFlags: [...review.safetyFlags],
+    categoryRatings: review.categoryRatings.map((rating) => ({ ...rating })),
+    positiveTags: [...review.positiveTags],
+    problemTags: [...review.problemTags],
+    changedBy,
+    createdAt: nowIso(),
+  });
+}
+
 function requireModerator(database: LocalDatabase, actorId: string, message: string) {
   const actor = database.users.find((u) => u.id === actorId);
   const canModerate =
@@ -818,6 +852,14 @@ export class LocalRepository implements LivdRepository {
         throw new Error('The edit window for this review has closed');
       }
 
+      const changed =
+        (patch.body !== undefined && patch.body !== review.body) ||
+        (patch.wouldRecommend !== undefined && patch.wouldRecommend !== review.wouldRecommend);
+
+      // Before the change, so the first snapshot a review gets is the state it
+      // was published in.
+      if (changed) snapshotReview(database, review, 'correction', authorId);
+
       if (patch.body !== undefined) review.body = patch.body;
       if (patch.wouldRecommend !== undefined) review.wouldRecommend = patch.wouldRecommend;
       review.updatedAt = nowIso();
@@ -881,6 +923,14 @@ export class LocalRepository implements LivdRepository {
       if (!review) throw new Error('Review not found');
 
       const previousStatus = review.status;
+
+      // What the review said, kept before anything touches it. Postgres does
+      // this with a trigger; here it is explicit, and the parity test is what
+      // keeps the two agreeing.
+      if (previousStatus !== status) {
+        snapshotReview(database, review, 'moderation', actorId);
+      }
+
       review.status = status;
       review.updatedAt = nowIso();
 
@@ -908,6 +958,11 @@ export class LocalRepository implements LivdRepository {
       if (!review) throw new Error('Review not found');
 
       const previous = review.verificationLevel;
+
+      if (previous !== level) {
+        snapshotReview(database, review, 'verification', actorId);
+      }
+
       review.verificationLevel = level;
       review.updatedAt = nowIso();
 
@@ -1464,6 +1519,158 @@ export class LocalRepository implements LivdRepository {
       .filter((action) => !subjectId || action.subjectId === subjectId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Evidence
+   *
+   * Postgres snapshots a review by trigger, so preservation happens whatever
+   * changed the row. There are no triggers here, so `snapshotReview` is called
+   * from the two methods that change a review — and the parity test is what
+   * keeps the two honest.
+   * ------------------------------------------------------------------ */
+
+  async listReviewSnapshots(reviewId: string): Promise<ReviewSnapshot[]> {
+    const database = await getDatabase();
+
+    return database.reviewSnapshots
+      .filter((snapshot) => snapshot.reviewId === reviewId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .slice(0, 50)
+      .map((snapshot) => ({
+        id: snapshot.id,
+        reason: snapshot.reason,
+        body: snapshot.body,
+        overallRating: snapshot.overallRating,
+        wouldRecommend: snapshot.wouldRecommend,
+        verificationLevel: snapshot.verificationLevel,
+        status: snapshot.status,
+        safetyFlags: snapshot.safetyFlags,
+        categoryRatings: snapshot.categoryRatings,
+        positiveTags: snapshot.positiveTags,
+        problemTags: snapshot.problemTags,
+        changedBy: snapshot.changedBy,
+        createdAt: snapshot.createdAt,
+      }));
+  }
+
+  async listCaseEvidence(caseId: string): Promise<CaseEvidenceItem[]> {
+    const database = await getDatabase();
+
+    return database.caseEvidence
+      .filter((item) => item.caseId === caseId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        description: item.description,
+        mime: item.mime,
+        bytes: item.bytes,
+        hasFile: item.storageRef !== null,
+        snapshotId: item.snapshotId,
+        version: item.version,
+        supersedes: item.supersedes,
+        superseded: database.caseEvidence.some((other) => other.supersedes === item.id),
+        addedBy: item.addedBy,
+        withdrawnAt: item.withdrawnAt,
+        withdrawnBy: item.withdrawnBy,
+        withdrawnReason: item.withdrawnReason,
+        createdAt: item.createdAt,
+      }));
+  }
+
+  async addCaseEvidence(input: {
+    caseId: string;
+    kind: CaseEvidenceItem['kind'];
+    title: string;
+    description: string | null;
+    supersedes: string | null;
+    actorId: string;
+  }): Promise<string> {
+    return mutate((database) => {
+      requireModerator(database, input.actorId, 'Only a moderator may add evidence');
+
+      if (input.title.trim().length < 1) throw new Error('Evidence needs a title');
+
+      if (!database.cases.some((c) => c.id === input.caseId)) {
+        throw new Error('No such case');
+      }
+
+      let version = 1;
+      if (input.supersedes) {
+        const previous = database.caseEvidence.find(
+          (item) => item.id === input.supersedes && item.caseId === input.caseId,
+        );
+        if (!previous) throw new Error('No such evidence on this case');
+        version = previous.version + 1;
+      }
+
+      const id = `evidence-${shortId(12)}`;
+
+      database.caseEvidence.push({
+        id,
+        caseId: input.caseId,
+        kind: input.kind,
+        title: input.title.trim(),
+        description: input.description?.trim() || null,
+        storageRef: null,
+        mime: null,
+        bytes: null,
+        sha256: null,
+        snapshotId: null,
+        version,
+        supersedes: input.supersedes,
+        addedBy: input.actorId,
+        withdrawnAt: null,
+        withdrawnBy: null,
+        withdrawnReason: null,
+        createdAt: nowIso(),
+      });
+
+      appendCaseEvent(
+        database,
+        input.caseId,
+        input.actorId,
+        'evidence_added',
+        input.supersedes ? `Evidence replaced with version ${version}` : 'Evidence added',
+        { evidenceId: id, kind: input.kind, version, supersedes: input.supersedes },
+      );
+
+      return id;
+    });
+  }
+
+  async withdrawCaseEvidence(
+    evidenceId: string,
+    reason: string,
+    actorId: string,
+  ): Promise<void> {
+    await mutate((database) => {
+      requireModerator(database, actorId, 'Only a moderator may withdraw evidence');
+
+      if (reason.trim().length < 3) {
+        throw new Error('A reason is required, for the audit trail');
+      }
+
+      const item = database.caseEvidence.find((entry) => entry.id === evidenceId);
+      if (!item) throw new Error('No such evidence');
+
+      if (item.withdrawnAt === null) {
+        item.withdrawnAt = nowIso();
+        item.withdrawnBy = actorId;
+        item.withdrawnReason = reason.trim();
+      }
+
+      appendCaseEvent(
+        database,
+        item.caseId,
+        actorId,
+        'evidence_withdrawn',
+        'Evidence withdrawn',
+        { evidenceId, reason: reason.trim() },
+      );
+    });
   }
 
   /* ---------------------------------------------------------------------

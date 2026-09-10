@@ -10,7 +10,7 @@ import {
   propertyContextLine,
   propertyDisplayName,
 } from '@/lib/format';
-import { caseCategories, readReviewInvestigation } from '@/server/admin';
+import { caseCategories, readReviewInvestigation, reviewSnapshots } from '@/server/admin';
 import { getCurrentUser } from '@/server/auth/session';
 import { ReviewStatusControls, VerificationControls } from '../../moderation-controls';
 import { OpenCaseControls } from '../../cases/case-controls';
@@ -62,10 +62,11 @@ export default async function ReviewInvestigationPage({
 }) {
   const { id } = await params;
 
-  const [viewer, result, categories] = await Promise.all([
+  const [viewer, result, categories, snapshots] = await Promise.all([
     getCurrentUser(),
     readReviewInvestigation(id),
     caseCategories(),
+    reviewSnapshots(id),
   ]);
 
   void viewer;
@@ -252,6 +253,54 @@ export default async function ReviewInvestigationPage({
           )}
         </Card>
       </section>
+
+      {/* ---- What it said before -------------------------------------- */}
+
+      {snapshots.length > 0 && (
+        <section aria-labelledby="snapshots-heading">
+          <h3
+            id="snapshots-heading"
+            className="text-micro font-semibold uppercase tracking-micro text-ink-subtle"
+          >
+            What it said before
+          </h3>
+          <p className="mt-1.5 max-w-prose text-label text-ink-muted">
+            Preserved automatically before each change, by the database rather than by whoever made
+            the change. The oldest entry is the state this review was published in — so removing it
+            from public view never destroys what it said.
+          </p>
+
+          <ol className="mt-3 flex flex-col gap-px overflow-hidden rounded-lg border border-border bg-border">
+            {snapshots.map((snapshot) => (
+              <li key={snapshot.id} className="bg-surface p-4">
+                <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                  <Badge tone={snapshot.reason === 'moderation' ? 'caution' : 'neutral'}>
+                    {snapshot.reason}
+                  </Badge>
+                  {snapshot.status && (
+                    <span className="text-label text-ink-muted">was {snapshot.status}</span>
+                  )}
+                  {snapshot.overallRating !== null && (
+                    <span className="tabular text-label text-ink-muted">
+                      {snapshot.overallRating}/5
+                    </span>
+                  )}
+                  <span className="ml-auto text-micro text-ink-subtle">
+                    {formatRelativeTime(snapshot.createdAt)}
+                    {snapshot.changedBy && ` · ${snapshot.changedBy.slice(0, 8)}`}
+                  </span>
+                </div>
+
+                {snapshot.body && (
+                  <p className="prose-measure mt-3 whitespace-pre-line rounded-md bg-surface-sunken/60 p-3.5 text-label text-ink">
+                    {snapshot.body}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       {/* ---- The account's history ------------------------------------- */}
 

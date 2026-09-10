@@ -1046,3 +1046,62 @@ export interface ReviewReportEntry {
   createdAt: string;
   resolvedAt: string | null;
 }
+
+
+/* -------------------------------------------------------------------------
+ * Evidence
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What a review said before it was changed.
+ *
+ * Written by a database trigger rather than by the moderation path, so
+ * preservation is not something an action can forget to do — it does not happen
+ * on that path at all. The oldest snapshot a review has is the state it was
+ * published in.
+ *
+ * Holds the content and not its author. A snapshot identifies nobody.
+ */
+export interface ReviewSnapshot {
+  id: string;
+  reason: 'moderation' | 'correction' | 'verification' | 'other';
+  body: string | null;
+  overallRating: number | null;
+  wouldRecommend: boolean | null;
+  verificationLevel: VerificationLevel | null;
+  status: ReviewStatus | null;
+  safetyFlags: string[];
+  categoryRatings: CategoryRating[];
+  positiveTags: string[];
+  problemTags: string[];
+  /** Null when the change came from the service role rather than a session. */
+  changedBy: string | null;
+  createdAt: string;
+}
+
+/**
+ * One item of evidence on a case.
+ *
+ * Note what is absent: the storage key. A row says a file exists, what type it
+ * is and how big; opening it is a separate operation. A key in a payload is a
+ * key in a browser's memory, a screenshot and a support ticket.
+ */
+export interface CaseEvidenceItem {
+  id: string;
+  kind: 'file' | 'link' | 'note' | 'review_snapshot';
+  title: string;
+  description: string | null;
+  mime: string | null;
+  bytes: number | null;
+  hasFile: boolean;
+  snapshotId: string | null;
+  version: number;
+  supersedes: string | null;
+  /** True when a later version replaced this one. Both remain readable. */
+  superseded: boolean;
+  addedBy: string | null;
+  withdrawnAt: string | null;
+  withdrawnBy: string | null;
+  withdrawnReason: string | null;
+  createdAt: string;
+}

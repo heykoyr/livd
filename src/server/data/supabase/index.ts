@@ -26,10 +26,13 @@ import type {
   CasePage,
   CasePriority,
   CaseStatus,
+  CaseEvidenceItem,
   CaseSummary,
+  CategoryRating,
   ClaimStatus,
   ReviewInvestigation,
   ReviewReportEntry,
+  ReviewSnapshot,
   ReviewVerificationEntry,
   ModerationAction,
   Property,
@@ -1960,6 +1963,131 @@ export class SupabaseRepository implements LivdRepository {
       .eq('property_id', propertyId);
 
     if (error) throw new Error(`setSavedPropertyNote: ${error.message}`);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Evidence
+   * ------------------------------------------------------------------ */
+
+  async listReviewSnapshots(reviewId: string): Promise<ReviewSnapshot[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_review_snapshots', {
+      target_review_id: reviewId,
+    });
+
+    if (error) throw new Error(`listReviewSnapshots: ${error.message}`);
+
+    return ((data ?? []) as Array<{
+      id: string;
+      reason: ReviewSnapshot['reason'];
+      body: string | null;
+      overall_rating: number | null;
+      would_recommend: boolean | null;
+      verification_level: ReviewSnapshot['verificationLevel'];
+      status: ReviewSnapshot['status'];
+      safety_flags: string[] | null;
+      category_ratings: unknown;
+      positive_tags: string[] | null;
+      problem_tags: string[] | null;
+      changed_by: string | null;
+      created_at: string;
+    }>).map((row) => ({
+      id: row.id,
+      reason: row.reason,
+      body: row.body,
+      overallRating: row.overall_rating,
+      wouldRecommend: row.would_recommend,
+      verificationLevel: row.verification_level,
+      status: row.status,
+      safetyFlags: row.safety_flags ?? [],
+      categoryRatings: (row.category_ratings ?? []) as CategoryRating[],
+      positiveTags: row.positive_tags ?? [],
+      problemTags: row.problem_tags ?? [],
+      changedBy: row.changed_by,
+      createdAt: row.created_at,
+    }));
+  }
+
+  async listCaseEvidence(caseId: string): Promise<CaseEvidenceItem[]> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_list_case_evidence', {
+      target_case_id: caseId,
+    });
+
+    if (error) throw new Error(`listCaseEvidence: ${error.message}`);
+
+    return ((data ?? []) as Array<{
+      id: string;
+      kind: CaseEvidenceItem['kind'];
+      title: string;
+      description: string | null;
+      mime: string | null;
+      bytes: number | string | null;
+      has_file: boolean;
+      snapshot_id: string | null;
+      version: number;
+      supersedes: string | null;
+      superseded: boolean;
+      added_by: string | null;
+      withdrawn_at: string | null;
+      withdrawn_by: string | null;
+      withdrawn_reason: string | null;
+      created_at: string;
+    }>).map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      title: row.title,
+      description: row.description,
+      mime: row.mime,
+      bytes: row.bytes === null ? null : Number(row.bytes),
+      // Whether a file exists, never the key that would reach it. The function
+      // does not return one, so there is nothing here to accidentally pass on.
+      hasFile: row.has_file,
+      snapshotId: row.snapshot_id,
+      version: row.version,
+      supersedes: row.supersedes,
+      superseded: row.superseded,
+      addedBy: row.added_by,
+      withdrawnAt: row.withdrawn_at,
+      withdrawnBy: row.withdrawn_by,
+      withdrawnReason: row.withdrawn_reason,
+      createdAt: row.created_at,
+    }));
+  }
+
+  async addCaseEvidence(input: {
+    caseId: string;
+    kind: CaseEvidenceItem['kind'];
+    title: string;
+    description: string | null;
+    supersedes: string | null;
+    actorId: string;
+  }): Promise<string> {
+    const supabase = await this.client();
+
+    const { data, error } = await supabase.rpc('livd_add_case_evidence', {
+      target_case_id: input.caseId,
+      evidence_kind: input.kind,
+      evidence_title: input.title,
+      evidence_description: input.description,
+      supersedes_id: input.supersedes,
+    });
+
+    if (error) throw new Error(`addCaseEvidence: ${error.message}`);
+    return data as string;
+  }
+
+  async withdrawCaseEvidence(evidenceId: string, reason: string): Promise<void> {
+    const supabase = await this.client();
+
+    const { error } = await supabase.rpc('livd_withdraw_case_evidence', {
+      evidence_id: evidenceId,
+      why: reason,
+    });
+
+    if (error) throw new Error(`withdrawCaseEvidence: ${error.message}`);
   }
 
   /* ---------------------------------------------------------------------

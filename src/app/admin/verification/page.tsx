@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { Badge, Card, EmptyState } from '@/components/ui/primitives';
 import { formatRelativeTime, propertyContextLine, propertyDisplayName } from '@/lib/format';
 import { getRepository } from '@/server/data';
+import { hasRole } from '@/server/auth/guards';
+import { getCurrentUser } from '@/server/auth/session';
 import type { VerificationMethod } from '@/types/domain';
 import { VerificationControlsForRecord, EvidenceViewer } from '../moderation-controls';
 
@@ -35,8 +37,13 @@ function readableSize(bytes: number | null): string | null {
 }
 
 export default async function VerificationPage() {
-  const repository = await getRepository();
+  const [repository, viewer] = await Promise.all([getRepository(), getCurrentUser()]);
   const pending = await repository.listPendingVerifications();
+
+  // A moderator triages this queue — the automated checks, the claimed tenancy,
+  // whether a document exists. Opening the document and deciding the request
+  // both require reading it, so both sit behind Trust & Safety.
+  const canOpenEvidence = hasRole(viewer, 'trust_admin');
 
   if (pending.length === 0) {
     return (
@@ -138,11 +145,22 @@ export default async function VerificationPage() {
               )}
 
               <div className="mt-5 border-t border-border pt-5">
-                <EvidenceViewer recordId={record.id} mime={record.evidenceMime} />
+                <EvidenceViewer
+                  recordId={record.id}
+                  mime={record.evidenceMime}
+                  canOpen={canOpenEvidence}
+                />
               </div>
 
               <div className="mt-5 border-t border-border pt-5">
-                <VerificationControlsForRecord recordId={record.id} />
+                {canOpenEvidence ? (
+                  <VerificationControlsForRecord recordId={record.id} />
+                ) : (
+                  <p className="text-label text-ink-muted">
+                    Deciding this request requires Trust &amp; Safety authorisation, because it
+                    means reading the document.
+                  </p>
+                )}
               </div>
             </Card>
           </li>

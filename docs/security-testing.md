@@ -362,3 +362,46 @@ test exists to keep it that way.
 The same test asserts no email address appears anywhere in the payload — the
 author's or the reporter's — and that a claimed property changes nothing about
 the review or about what is knowable about its author.
+
+## 2026-09-10 · Phase 7 · evidence preservation
+
+Migration under test: `0030_evidence_preservation`.
+
+| Behaviour | Result |
+|---|---|
+| Snapshots before any change | 0 |
+| Snapshots after removing a review | 1 — `reason=moderation`, `status=published`, body 382 chars, 10 category ratings |
+| Snapshots after a moderator rewrites the body | 2 |
+| Oldest snapshot still holds the original text | true |
+| Service role deletes snapshots | BLOCKED — grant revoked |
+| **Table owner** rewrites a snapshot | BLOCKED — `review_snapshots is append-only` |
+| Evidence after a correction | 2 items, v1 marked superseded, v2 at version 2 |
+| Listing leaks a storage key | 0 |
+| Withdrawn item still listed | 1 |
+| Case timeline | `created > evidence_added > evidence_added > evidence_withdrawn` |
+| Resident reads `review_snapshots` | 0 rows |
+| Resident reads `case_evidence` | 0 rows |
+
+The snapshot is taken by a `BEFORE UPDATE` trigger on `reviews`, capturing
+`OLD`. That matters more than where it is stored: preservation is not something
+a moderation path can forget, because it does not happen on that path at all.
+The first snapshot any review gets is the state it was published in.
+
+The audit's finding was that "the original content is preserved" was simply not
+true. `setReviewStatus` changed a status and recorded that it had, but kept no
+copy — and `livd_guard_review_update` returns `new` unconditionally for a
+moderator, so a moderator could rewrite any review body and nothing recorded
+what it had said. Both are covered now.
+
+### The unaudited tenancy agreement
+
+`createVerificationEvidenceLink` minted a signed URL to a document carrying a
+name, an address and a signature — handed over by somebody whose entire reason
+for handing it over was to stay anonymous — and wrote nothing anywhere.
+
+It now runs through the administrative layer: Trust & Safety authorisation, a
+written reason, and the audit entry written *before* the link is minted. The
+capability moved above moderator deliberately, and so did deciding a residency
+verification, because that decision means reading the document. Moderators keep
+the queue — the automated checks, the claimed tenancy, whether a document
+exists — which is the part that does not require seeing it.

@@ -11,6 +11,7 @@ import type {
   CasePage,
   CasePriority,
   CaseStatus,
+  CaseEvidenceItem,
   CaseSummary,
   ClaimStatus,
   UserRole,
@@ -26,6 +27,7 @@ import type {
   ReviewReport,
   ReviewInvestigation,
   ReviewReportEntry,
+  ReviewSnapshot,
   ReviewStatus,
   ReviewVerificationEntry,
   SavedProperty,
@@ -459,6 +461,34 @@ export interface LivdRepository {
 
   recordModerationAction(input: Omit<ModerationAction, 'id' | 'createdAt'>): Promise<ModerationAction>;
   listModerationActions(subjectId?: string, limit?: number): Promise<ModerationAction[]>;
+
+  /* ---- Evidence ---- */
+
+  /**
+   * What a review said before each change.
+   *
+   * Written by a trigger in Postgres, so a moderation path cannot skip it. The
+   * audit found the previous state of affairs: `setReviewStatus` changed a
+   * status and recorded that it had, but kept no copy of what the review said —
+   * and the update guard exempts moderators, so a moderator could rewrite any
+   * review body with nothing recording what it had been.
+   */
+  listReviewSnapshots(reviewId: string): Promise<ReviewSnapshot[]>;
+
+  /** Evidence attached to a case. Rows, never storage keys. */
+  listCaseEvidence(caseId: string): Promise<CaseEvidenceItem[]>;
+
+  addCaseEvidence(input: {
+    caseId: string;
+    kind: CaseEvidenceItem['kind'];
+    title: string;
+    description: string | null;
+    supersedes: string | null;
+    actorId: string;
+  }): Promise<string>;
+
+  /** Marks evidence withdrawn. Never removes it. */
+  withdrawCaseEvidence(evidenceId: string, reason: string, actorId: string): Promise<void>;
 
   /* ---- Review investigation ---- */
 

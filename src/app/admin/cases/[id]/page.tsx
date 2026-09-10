@@ -5,9 +5,10 @@ import { notFound } from 'next/navigation';
 import { Badge, Card, EmptyState } from '@/components/ui/primitives';
 import { copy } from '@/content/copy';
 import { formatRelativeTime, propertyContextLine, propertyDisplayName } from '@/lib/format';
-import { caseCategories, readCase, readUserDirectory } from '@/server/admin';
+import { caseCategories, caseEvidence, readCase, readUserDirectory } from '@/server/admin';
 import { hasRole } from '@/server/auth/guards';
 import { getCurrentUser } from '@/server/auth/session';
+import { AddEvidenceControls, WithdrawEvidenceControls } from '../evidence-controls';
 import {
   AssignControls,
   NoteControls,
@@ -48,10 +49,11 @@ export const metadata: Metadata = {
 export default async function CasePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [viewer, result, categories] = await Promise.all([
+  const [viewer, result, categories, evidence] = await Promise.all([
     getCurrentUser(),
     readCase(id),
     caseCategories(),
+    caseEvidence(id),
   ]);
 
   if (!result) notFound();
@@ -264,6 +266,64 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
               <h4 className="mb-2.5 text-label font-semibold text-ink">Preservation</h4>
               <PreservationControls caseId={detail.id} held={detail.preservationHold} />
             </div>
+          )}
+        </Card>
+      </section>
+
+      {/* ---- Evidence ---------------------------------------------------- */}
+
+      <section aria-labelledby="evidence-heading">
+        <h3
+          id="evidence-heading"
+          className="text-micro font-semibold uppercase tracking-micro text-ink-subtle"
+        >
+          Evidence
+        </h3>
+        <p className="mt-1.5 max-w-prose text-label text-ink-muted">
+          Versioned rather than edited, and withdrawn rather than deleted. Evidence somebody can
+          quietly improve once the outcome is known is not evidence.
+        </p>
+
+        <Card className="mt-3 p-5">
+          <AddEvidenceControls caseId={detail.id} />
+
+          {evidence.length > 0 && (
+            <ul className="mt-5 flex flex-col gap-4 border-t border-border pt-5">
+              {evidence.map((item) => (
+                <li key={item.id}>
+                  <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                    <span className="text-body font-medium text-ink">{item.title}</span>
+                    <Badge>{item.kind.replace(/_/g, ' ')}</Badge>
+                    {item.version > 1 && <Badge tone="info">v{item.version}</Badge>}
+                    {item.superseded && <Badge tone="neutral">superseded</Badge>}
+                    {item.withdrawnAt && <Badge tone="caution">withdrawn</Badge>}
+                    {item.hasFile && <Badge tone="brand">file attached</Badge>}
+                    <span className="ml-auto text-micro text-ink-subtle">
+                      {formatRelativeTime(item.createdAt)}
+                    </span>
+                  </div>
+
+                  {item.description && (
+                    <p className="mt-1.5 whitespace-pre-line text-label text-ink-muted">
+                      {item.description}
+                    </p>
+                  )}
+
+                  <p className="mt-1.5 font-mono text-micro text-ink-subtle">
+                    added by {item.addedBy ? item.addedBy.slice(0, 8) : 'account deleted'}
+                  </p>
+
+                  {item.withdrawnAt ? (
+                    <p className="mt-2 rounded-md border-l-2 border-caution bg-caution-soft/40 p-2.5 text-label text-ink">
+                      Withdrawn {formatRelativeTime(item.withdrawnAt)} —{' '}
+                      {item.withdrawnReason ?? 'no reason recorded'}. The record remains.
+                    </p>
+                  ) : (
+                    <WithdrawEvidenceControls caseId={detail.id} evidenceId={item.id} />
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </Card>
       </section>

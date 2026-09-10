@@ -393,25 +393,58 @@ export function VerificationControlsForRecord({ recordId }: { recordId: string }
 }
 
 /**
- * Fetches the evidence only when a moderator asks for it.
+ * Opens a residency document.
  *
- * The link lasts minutes and is never rendered into the page's HTML, so a
- * cached page, a screenshot or a tab left open overnight does not carry a
- * tenancy agreement with it.
+ * Three things changed here after the audit. It requires Trust & Safety rather
+ * than moderator, because a tenancy agreement carries a name, an address and a
+ * signature and reading one identifies the reviewer as surely as reading their
+ * email does. It requires a written reason. And the access is recorded before
+ * the link is minted, so there is no path that produces a URL without a record
+ * naming who asked for it.
+ *
+ * The link still lasts minutes and is still never rendered into the page's
+ * HTML — a cached page, a screenshot or a tab left open overnight does not
+ * carry a tenancy agreement with it.
  */
-export function EvidenceViewer({ recordId, mime }: { recordId: string; mime: string | null }) {
+export function EvidenceViewer({
+  recordId,
+  mime,
+  canOpen,
+}: {
+  recordId: string;
+  mime: string | null;
+  canOpen: boolean;
+}) {
   const [link, setLink] = useState<string | null>(null);
-  const [state, setState] = useState<'idle' | 'loading' | 'missing'>('idle');
+  const [reason, setReason] = useState('');
+  const [state, setState] = useState<'idle' | 'loading'>('idle');
+  const [error, setError] = useState<string | null>(null);
 
-  async function reveal(): Promise<void> {
+  async function reveal(event: React.FormEvent): Promise<void> {
+    event.preventDefault();
     setState('loading');
-    const url = await getVerificationEvidenceLink(recordId);
-    if (!url) {
-      setState('missing');
+    setError(null);
+
+    const result = await getVerificationEvidenceLink(recordId, reason);
+
+    setState('idle');
+    if ('error' in result) {
+      setError(result.error);
       return;
     }
-    setLink(url);
-    setState('idle');
+    setLink(result.url);
+  }
+
+  if (!canOpen) {
+    return (
+      <div className="rounded-md border border-border bg-surface-sunken/50 p-3.5">
+        <p className="text-label text-ink-muted">
+          The document is not opened from here. A tenancy agreement carries a name, an address and
+          a signature — reading one needs Trust &amp; Safety authorisation, a written reason, and
+          is recorded.
+        </p>
+      </div>
+    );
   }
 
   if (link) {
@@ -434,28 +467,40 @@ export function EvidenceViewer({ recordId, mime }: { recordId: string; mime: str
           />
         )}
         <figcaption className="text-micro text-ink-subtle">
-          This link expires in a few minutes. Reload the page to see it again.
+          This link expires in a few minutes, and this access has been recorded. Reload the page to
+          request it again.
         </figcaption>
       </figure>
     );
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        onClick={reveal}
-        loading={state === 'loading'}
-      >
-        Show the document
-      </Button>
-      <p className="text-micro text-ink-subtle">
-        {state === 'missing'
-          ? 'The file could not be retrieved.'
-          : 'Opened on request, and only for as long as it takes to read.'}
-      </p>
-    </div>
+    <form onSubmit={reveal} className="flex flex-col gap-2.5">
+      <label className="flex flex-col gap-1.5">
+        <span className="text-label font-medium text-ink">Why are you opening this?</span>
+        <Input
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          required
+          minLength={3}
+          maxLength={500}
+          placeholder="Deciding the residency verification for this review."
+        />
+        <span className="text-micro text-ink-subtle">
+          Recorded in the audit log with your name before the document is opened.
+        </span>
+      </label>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" variant="secondary" size="sm" loading={state === 'loading'}>
+          Show the document
+        </Button>
+        <p className="text-micro text-ink-subtle">
+          Opened on request, and only for as long as it takes to read.
+        </p>
+      </div>
+
+      {error && <FormError message={error} />}
+    </form>
   );
 }

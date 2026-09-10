@@ -14,6 +14,7 @@ import {
 } from '@/lib/safety/verification-checks';
 import { AuthorisationError, requireRole, requireUser } from '@/server/auth/guards';
 import { getRepository } from '@/server/data';
+import { openVerificationEvidence } from '@/server/admin';
 import { invalidateProperty } from '@/server/data/cache';
 import type { ModerationActionState, VerificationSubmitState } from './action-state';
 import { originIdentifier } from './reports';
@@ -170,10 +171,17 @@ export async function decideVerification(
 ): Promise<ModerationActionState> {
   let actor;
   try {
-    actor = await requireRole('moderator');
+    // Deciding a residency verification means reading the document, so it sits
+    // behind the same boundary as opening one. A moderator can still triage the
+    // queue — the automated checks, the claimed tenancy, whether a document
+    // exists — which is the part that does not require seeing it.
+    actor = await requireRole('trust_admin');
   } catch (error) {
     return {
-      error: error instanceof AuthorisationError ? error.message : copy.errors.genericBody,
+      error:
+        error instanceof AuthorisationError
+          ? 'Deciding a residency verification requires Trust & Safety authorisation.'
+          : copy.errors.genericBody,
       message: null,
     };
   }
@@ -220,19 +228,25 @@ export async function decideVerification(
 }
 
 /**
- * A short-lived link to one piece of evidence, for a moderator who is deciding.
+ * A short-lived link to one residency document.
  *
- * Minted per view and never stored. Guarded here as well as by the bucket
- * having no policy for any client role — the guard is the first layer, and the
- * absence of a policy is the one that actually holds.
+ * This used to be a `requireRole('moderator')` and a repository call, and it
+ * wrote nothing anywhere. The audit found it: a signed URL to a document
+ * carrying a name, an address and a signature — handed over by somebody whose
+ * entire reason for handing it over was to stay anonymous — minted on a click,
+ * with no record of who clicked or why.
+ *
+ * It now goes through the administrative layer, which refuses it without Trust
+ * & Safety authorisation and a written reason, and writes the audit entry
+ * before the link exists.
+ *
+ * Returning a shape rather than a bare string is deliberate: the caller has to
+ * handle a refusal, so "no link" cannot be mistaken for "no document".
  */
-export async function getVerificationEvidenceLink(recordId: string): Promise<string | null> {
-  try {
-    await requireRole('moderator');
-  } catch {
-    return null;
-  }
-
-  const repository = await getRepository();
-  return repository.createVerificationEvidenceLink(recordId);
+export async function getVerificationEvidenceLink(
+  recordId: string,
+  reason: string,
+): Promise<{ url: string } | { error: string }> {
+  const result = await openVerificationEvidence({ recordId, reason });
+  return result.ok ? { url: result.data.url } : { error: result.error };
 }

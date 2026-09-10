@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import type {
   CasePriority,
   CaseStatus,
+  CategoryRating,
   ModerationAction,
   OwnerResponse,
   Property,
@@ -16,6 +17,8 @@ import type {
   VerificationRecord,
   Review,
   ReviewReport,
+  ReviewStatus,
+  VerificationLevel,
   SavedProperty,
   UserProfile,
 } from '@/types/domain';
@@ -143,6 +146,50 @@ export interface LocalDatabase {
     body: string;
     createdAt: string;
   }>;
+  /**
+   * What reviews said before they were changed.
+   *
+   * Postgres writes these from a BEFORE UPDATE trigger on `reviews`, so
+   * preservation happens whatever path changed the row. Here they are appended
+   * by the methods that change a review, which is weaker — and is one more
+   * reason this store refuses to run in production.
+   */
+  reviewSnapshots: Array<{
+    id: string;
+    reviewId: string;
+    reason: 'moderation' | 'correction' | 'verification' | 'other';
+    body: string | null;
+    overallRating: number | null;
+    wouldRecommend: boolean | null;
+    verificationLevel: VerificationLevel | null;
+    status: ReviewStatus | null;
+    safetyFlags: string[];
+    categoryRatings: CategoryRating[];
+    positiveTags: string[];
+    problemTags: string[];
+    changedBy: string | null;
+    createdAt: string;
+  }>;
+  /** Evidence attached to cases. Versioned, withdrawn, never removed. */
+  caseEvidence: Array<{
+    id: string;
+    caseId: string;
+    kind: 'file' | 'link' | 'note' | 'review_snapshot';
+    title: string;
+    description: string | null;
+    storageRef: string | null;
+    mime: string | null;
+    bytes: number | null;
+    sha256: string | null;
+    snapshotId: string | null;
+    version: number;
+    supersedes: string | null;
+    addedBy: string | null;
+    withdrawnAt: string | null;
+    withdrawnBy: string | null;
+    withdrawnReason: string | null;
+    createdAt: string;
+  }>;
   /** Next case reference. Mirrors `case_reference_seq`, which starts at 1000. */
   nextCaseReference: number;
   /**
@@ -192,6 +239,8 @@ function emptyDatabase(): LocalDatabase {
     cases: [],
     caseEvents: [],
     caseNotes: [],
+    reviewSnapshots: [],
+    caseEvidence: [],
     nextCaseReference: 1000,
     nextCaseEventSeq: 1,
     saved: [],

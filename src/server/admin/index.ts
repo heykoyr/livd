@@ -41,6 +41,13 @@ export {
 } from './audit';
 export { readReviewInvestigation } from './reviews';
 export {
+  openVerificationEvidence,
+  addCaseEvidence,
+  withdrawCaseEvidence,
+  reviewSnapshots,
+  caseEvidence,
+} from './evidence';
+export {
   openCase,
   assignCase,
   setCaseStatus,
