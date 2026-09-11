@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from 'react';
 
-import { CheckboxChipGroup, RadioCardGroup, RatingScale } from '@/components/ui/choice';
+import {
+  CheckboxChipGroup,
+  RadioCardGroup,
+  RatingLegend,
+  RatingScale,
+} from '@/components/ui/choice';
 import { Field, CharacterCount, Input, Select, Textarea } from '@/components/ui/field';
 import { Badge, Card } from '@/components/ui/primitives';
 import {
@@ -276,6 +281,16 @@ export function CategoriesStep({ draft, update, error }: StepProps) {
           {error}
         </p>
       )}
+
+      {/*
+        The compact scale has no room for a word under each number, so this is
+        where the meaning of 1 and 5 lives. Sticky, because the list is longer
+        than a phone screen and guidance that scrolls away is guidance that is
+        missing at the moment it is needed. The step before this one carries
+        the same information under its buttons, so nothing is repeated on one
+        screen — it simply never stops being available.
+      */}
+      <RatingLegend />
 
       <ul className="flex flex-col gap-6">
         {visible.map((category) => {

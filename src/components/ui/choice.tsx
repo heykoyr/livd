@@ -247,6 +247,47 @@ export function CheckboxChipGroup({
 const RATING_WORDS = ['Poor', 'Weak', 'Mixed', 'Good', 'Excellent'] as const;
 
 /**
+ * What the numbers mean, kept on screen for as long as somebody is choosing
+ * between them.
+ *
+ * The wizard explained the scale on the first rating screen, where the words
+ * sit under each button, and then dropped it: the category screen uses the
+ * compact scale, whose buttons are too small to carry a word, so twelve
+ * ratings were entered against bare digits. "Is 1 good or bad?" is not a
+ * question a person should have to answer by navigating backwards, and a
+ * reviewer who guesses wrong has inverted a rating that feeds a public score.
+ *
+ * Sticky under the site header rather than printed once at the top, because
+ * the category list is longer than a phone screen and a legend that scrolls
+ * away is a legend that is absent exactly when it is needed. One line, the
+ * smallest type in the system, no border weight of its own beyond a hairline.
+ *
+ * Screen-reader users already have this: every option carries its word in an
+ * `sr-only` span. The line is left in the accessibility tree anyway — it is
+ * eight words, and reading the scale once before the group is easier than
+ * inferring its direction from the first option.
+ */
+export function RatingLegend({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        'sticky top-16 z-30 rounded-md border border-border bg-canvas/92 px-3 py-2 backdrop-blur-sm',
+        className,
+      )}
+    >
+      <p className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-micro text-ink-muted">
+        <span className="font-semibold uppercase tracking-micro text-ink-subtle">Scale</span>
+        {RATING_WORDS.map((word, index) => (
+          <span key={word} className="whitespace-nowrap">
+            <span className="tabular font-semibold text-ink">{index + 1}</span> {word}
+          </span>
+        ))}
+      </p>
+    </div>
+  );
+}
+
+/**
  * A 1–5 rating as a radio group.
  *
  * Numbers with words underneath rather than stars: a star average is exactly
