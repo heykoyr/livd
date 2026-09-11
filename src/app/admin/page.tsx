@@ -132,7 +132,7 @@ export default async function AdminDashboard() {
             description="Every queue is empty and no case is open. This is what a quiet day looks like — the counts come back on their own when there is something to do."
           />
         ) : (
-          <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {queues.map((entry) => {
               const tone = urgency(entry.queue);
               const waiting = waitingLabel(entry.queue);
@@ -233,7 +233,7 @@ export default async function AdminDashboard() {
             Trust &amp; Safety
           </h2>
 
-          <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <TrustFigure
               href="/admin/authority-requests"
               label="Authority requests"

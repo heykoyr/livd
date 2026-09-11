@@ -74,7 +74,7 @@ function ValueSection() {
         </h2>
       </div>
 
-      <div className="mt-12 grid gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-3">
+      <div className="mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-3">
         {copy.home.values.map((value, index) => (
           <article key={value.title} className="bg-surface p-7">
             <span
@@ -147,7 +147,7 @@ function HowItWorksSection() {
         {copy.home.howTitle}
       </h2>
 
-      <ol className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+      <ol className="mt-12 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
         {copy.home.howSteps.map((step, index) => (
           <li key={step.title} className="relative">
             <div className="flex items-center gap-3">
@@ -207,7 +207,7 @@ function ContributeSection() {
   return (
     <section className="container-shell pb-20 md:pb-24">
       <Card className="overflow-hidden">
-        <div className="grid gap-8 p-8 md:grid-cols-[1.3fr_1fr] md:items-center md:p-12">
+        <div className="grid grid-cols-1 gap-8 p-8 md:grid-cols-[1.3fr_1fr] md:items-center md:p-12">
           <div>
             <Eyebrow>Contribute</Eyebrow>
             <h2 className="mt-4 font-display text-display-md tracking-display text-ink">

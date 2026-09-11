@@ -1,8 +1,10 @@
 import Link from 'next/link';
 
 import { Badge, EmptyState } from '@/components/ui/primitives';
+import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Pagination } from '@/components/ui/pagination';
 import { formatRelativeTime } from '@/lib/format';
+import type { AdminUserSummary } from '@/types/domain';
 import { readUserDirectory } from '@/server/admin';
 import { hasRole } from '@/server/auth/guards';
 import { getCurrentUser } from '@/server/auth/session';
@@ -120,68 +122,12 @@ export default async function UsersPage({
           description="No account fits those filters. Clearing them shows everyone."
         />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[46rem] border-collapse text-label">
-            <caption className="sr-only">
-              Accounts, most recently joined first. Email addresses are masked.
-            </caption>
-            <thead>
-              <tr className="border-b border-border bg-surface-sunken/60 text-left">
-                <Th>Account</Th>
-                <Th>Role</Th>
-                <Th>Standing</Th>
-                <Th numeric>Reviews</Th>
-                <Th numeric>Verified</Th>
-                <Th numeric>Reports</Th>
-                <Th>Joined</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {directory.items.map((user) => (
-                <tr key={user.id} className="border-b border-border last:border-0 hover:bg-surface-sunken/40">
-                  <td className="px-3 py-2.5">
-                    <Link
-                      href={`/admin/users/${user.id}`}
-                      className="font-mono text-label text-ink underline-offset-4 hover:underline"
-                    >
-                      {user.maskedEmail}
-                    </Link>
-                    <span className="mt-0.5 block font-mono text-micro text-ink-subtle">
-                      {user.id.slice(0, 8)}
-                      {viewer?.id === user.id && ' · you'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <Badge tone={user.role === 'resident' ? 'neutral' : 'brand'}>
-                      {ROLE_LABELS[user.role]}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    {user.status === 'active' ? (
-                      <span className="text-ink-muted">Active</span>
-                    ) : (
-                      <Badge tone={STATUS_TONES[user.status]}>{user.status}</Badge>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink">{user.reviewCount}</td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-muted">
-                    {user.verifiedReviewCount}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular">
-                    {/* A count, not an accusation. Colour only where there is
-                        something to look at, and never the only signal. */}
-                    <span className={user.reportsAgainst > 0 ? 'font-medium text-caution' : 'text-ink-muted'}>
-                      {user.reportsAgainst}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
-                    {formatRelativeTime(user.createdAt)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Accounts, most recently joined first. Email addresses are masked."
+          columns={directoryColumns(viewer?.id ?? null)}
+          rows={directory.items}
+          rowKey={(user) => user.id}
+        />
       )}
 
       <Pagination
@@ -194,15 +140,78 @@ export default async function UsersPage({
   );
 }
 
-function Th({ children, numeric = false }: { children: React.ReactNode; numeric?: boolean }) {
-  return (
-    <th
-      scope="col"
-      className={`px-3 py-2 text-micro font-semibold uppercase tracking-micro text-ink-subtle ${
-        numeric ? 'text-right' : ''
-      }`}
-    >
-      {children}
-    </th>
-  );
+/**
+ * The directory's columns, declared once for both representations.
+ *
+ * `viewerId` is threaded in only to mark the reader's own row. Recognising
+ * yourself in a list of masked addresses is otherwise guesswork, and the
+ * moment that matters is the one where somebody is about to act on an account.
+ */
+function directoryColumns(viewerId: string | null): Array<DataColumn<AdminUserSummary>> {
+  return [
+    {
+      key: 'account',
+      header: 'Account',
+      primary: true,
+      cell: (user) => (
+        <>
+          <Link
+            href={`/admin/users/${user.id}`}
+            className="font-mono text-label text-ink underline-offset-4 hover:underline"
+          >
+            {user.maskedEmail}
+          </Link>
+          <span className="mt-0.5 block font-mono text-micro text-ink-subtle">
+            {user.id.slice(0, 8)}
+            {viewerId === user.id && ' · you'}
+          </span>
+        </>
+      ),
+    },
+    {
+      key: 'role',
+      header: 'Role',
+      cell: (user) => (
+        <Badge tone={user.role === 'resident' ? 'neutral' : 'brand'}>{ROLE_LABELS[user.role]}</Badge>
+      ),
+    },
+    {
+      key: 'standing',
+      header: 'Standing',
+      cell: (user) =>
+        user.status === 'active' ? (
+          <span className="text-ink-muted">Active</span>
+        ) : (
+          <Badge tone={STATUS_TONES[user.status]}>{user.status}</Badge>
+        ),
+    },
+    { key: 'reviews', header: 'Reviews', numeric: true, cell: (user) => user.reviewCount },
+    {
+      key: 'verified',
+      header: 'Verified',
+      numeric: true,
+      cell: (user) => <span className="text-ink-muted">{user.verifiedReviewCount}</span>,
+    },
+    {
+      key: 'reports',
+      header: 'Reports',
+      numeric: true,
+      // A count, not an accusation. Colour only where there is something to
+      // look at, and never the only signal.
+      cell: (user) => (
+        <span className={user.reportsAgainst > 0 ? 'font-medium text-caution' : 'text-ink-muted'}>
+          {user.reportsAgainst}
+        </span>
+      ),
+    },
+    {
+      key: 'joined',
+      header: 'Joined',
+      cell: (user) => (
+        <span className="whitespace-nowrap text-ink-muted">
+          {formatRelativeTime(user.createdAt)}
+        </span>
+      ),
+    },
+  ];
 }

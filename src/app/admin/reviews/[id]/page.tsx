@@ -96,7 +96,7 @@ export default async function ReviewInvestigationPage({
       {/* ---- The privacy levels, stated ------------------------------- */}
 
       <Card className="p-5">
-        <dl className="grid gap-4 sm:grid-cols-3">
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <dt className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
               Public identity

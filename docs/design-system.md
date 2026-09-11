@@ -161,9 +161,18 @@ needs it; until then the surface owns its own markup.
 loading and disabled states) · ButtonLink · IconButton · Spinner ·
 **Field** (label, hint, error, `aria-describedby` wiring) · Input · Textarea ·
 Select · CharacterCount · FormError · **RadioCardGroup** · CheckboxChipGroup ·
-RatingScale · SegmentedControl · **Dialog** (focus trap and restoration) ·
-Toast · Pagination · Card · Section · Badge · Chip · Eyebrow · Meter ·
-Stat · Divider · EmptyState · Skeleton · VisuallyHidden.
+RatingScale · RatingLegend · SegmentedControl · **Dialog** (focus trap and
+restoration) · Toast · Pagination · Card · Section · Badge · Chip · Eyebrow ·
+Meter · Stat · Divider · EmptyState · Skeleton · VisuallyHidden ·
+**DataTable**.
+
+**DataTable** is the one primitive that renders twice. Columns are declared
+once; from `lg` it is a real `<table>`, below it a stack of cards with each
+value under its own label. Both representations are always in the DOM and
+`display: none` keeps exactly one of them in the accessibility tree. It exists
+because the two administrative tables — accounts and sanctions — were a
+46rem table in a scroll container, which made the page survivable on a phone
+without making the data readable.
 
 `property/` — **ScoreDial** · ConfidenceChip · ScoreBadge · TrendPill ·
 **ResidentVerdictPanel** · CategoryScores · **DepartureBreakdownPanel** ·
@@ -215,7 +224,21 @@ Deliberate mobile divergences: search becomes a full-screen overlay with the
 keyboard-safe result list · filters become a bottom sheet · the review wizard is
 one full-height step with a fixed footer action · the comparison table becomes
 horizontally scrolled with a pinned first column · the property page's category
-bars stack and the score dial moves inline with the header.
+bars stack and the score dial moves inline with the header · the admin console's
+grouped sidebar becomes one disclosure labelled with the page you are on · its
+tables become card stacks.
+
+**No page scrolls sideways.** Intentional horizontal scrolling exists in exactly
+two places — the shortlist comparison and the review filter chips — and both
+are the right pattern for what they hold. Everywhere else a sideways scrollbar
+is a bug, and it is almost always the same bug: a `grid` whose column
+definition only exists above a breakpoint. Below it the single implicit track
+is `auto`, which sizes to content rather than to the container, and a scroll
+container inside it does not help — it still contributes its intrinsic width
+upward. Every responsive grid therefore carries a base `grid-cols-…`, and
+`tests/design/responsive.test.ts` fails the build if one does not.
+`overflow-x: hidden` on the root is not a remedy and the same test refuses it:
+it hides the symptom and takes the content that overflowed with it.
 
 ---
 

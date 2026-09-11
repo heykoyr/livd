@@ -71,7 +71,7 @@ export function NewPropertyForm() {
         {(props) => <Input {...props} name="neighbourhood" maxLength={120} />}
       </Field>
 
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         <Field label={market.localityLabel} error={state.fieldErrors.locality}>
           {(props) => <Input {...props} name="locality" maxLength={120} required />}
         </Field>

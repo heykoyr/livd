@@ -484,7 +484,7 @@ export function WordsStep({ draft, update, error }: StepProps) {
         </legend>
         <p className="mt-1 text-label text-ink-muted">{copy.review.steps.words.rentHint}</p>
 
-        <div className="mt-3 grid gap-3 sm:max-w-lg sm:grid-cols-[1fr_auto_auto]">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:max-w-lg sm:grid-cols-[1fr_auto_auto]">
           <label className="flex flex-col gap-1.5">
             <span className="sr-only">Rent amount</span>
             <Input

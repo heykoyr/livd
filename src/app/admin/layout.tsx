@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 
 import { copy } from '@/content/copy';
 import { requireRolePage } from '@/server/auth/guards';
+import { AdminNav, type AdminNavGroup } from './admin-nav';
 
 export const metadata: Metadata = {
   title: copy.admin.title,
@@ -23,7 +23,7 @@ export const dynamic = 'force-dynamic';
  * organised around — a report is an input to one, not a thing to be dealt with
  * on its own.
  */
-const SECTION_GROUPS: Array<{ label: string; items: Array<{ href: string; label: string }> }> = [
+const SECTION_GROUPS: AdminNavGroup[] = [
   {
     label: 'Overview',
     items: [{ href: '/admin', label: copy.admin.dashboard }],
@@ -74,40 +74,25 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="container-shell py-10 md:py-14">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border pb-5">
         <h1 className="font-display text-display-md tracking-display text-ink">
           {copy.admin.title}
         </h1>
         <p className="text-label text-ink-subtle">Moderator tools</p>
       </div>
 
-      <div className="mt-8 grid gap-10 lg:grid-cols-[13rem_minmax(0,1fr)]">
-        <nav aria-label="Admin sections">
-          {/* Horizontal and scrollable below lg, grouped and vertical above.
-              An admin console is desktop work, but a moderator checking a case
-              from a phone should not meet a broken layout. */}
-          <div className="flex gap-5 overflow-x-auto pb-2 lg:flex-col lg:gap-6 lg:overflow-visible lg:pb-0">
-            {SECTION_GROUPS.map((group) => (
-              <div key={group.label} className="shrink-0">
-                <h2 className="mb-1.5 px-3 text-micro font-semibold uppercase tracking-micro text-ink-subtle">
-                  {group.label}
-                </h2>
-                <ul className="flex gap-1 lg:flex-col">
-                  {group.items.map((section) => (
-                    <li key={section.href}>
-                      <Link
-                        href={section.href}
-                        className="block shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-label font-medium text-ink-muted transition-colors duration-fast hover:bg-surface-sunken hover:text-ink"
-                      >
-                        {section.label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </nav>
+      {/*
+        `grid-cols-1` below lg is load-bearing, not tidiness.
+
+        Without it the single implicit track is `auto`, which sizes to the
+        widest content in it rather than to the container — and one wide child
+        then stretches the track past the viewport and scrolls the whole
+        document sideways. `grid-cols-1` is `repeat(1, minmax(0, 1fr))`, a
+        definite track, so a child that cannot fit scrolls inside its own box
+        instead of taking the page with it.
+      */}
+      <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-10">
+        <AdminNav groups={SECTION_GROUPS} />
 
         <div className="min-w-0">{children}</div>
       </div>

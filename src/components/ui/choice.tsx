@@ -64,7 +64,7 @@ export function RadioCardGroup({
       <div
         className={cn(
           'mt-3 grid gap-2',
-          columns === 2 ? 'sm:grid-cols-2' : 'grid-cols-1',
+          columns === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1',
         )}
       >
         {options.map((option) => {

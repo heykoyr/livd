@@ -47,7 +47,7 @@ export function ResidentVerdictPanel({
       </p>
 
       {(verdict.strengths.length > 0 || verdict.concerns.length > 0) && (
-        <div className="mt-7 grid gap-6 border-t border-border pt-6 sm:grid-cols-2">
+        <div className="mt-7 grid grid-cols-1 gap-6 border-t border-border pt-6 sm:grid-cols-2">
           {verdict.strengths.length > 0 && (
             <div>
               <h3 className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">

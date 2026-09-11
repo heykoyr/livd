@@ -173,7 +173,7 @@ export default async function AuditPage({
             {since ? 'In this window' : 'All time'}
           </h3>
 
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Figure label="Entries" value={actions.reduce((t, e) => t + e.entries, 0)} />
             <Figure label="People" value={actors.length} />
             <Figure

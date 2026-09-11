@@ -122,7 +122,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
         </h3>
 
         <Card className="mt-3 p-5">
-          <dl className="grid gap-5 sm:grid-cols-3">
+          <dl className="grid grid-cols-1 gap-5 sm:grid-cols-3">
             <div>
               <dt className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
                 Property

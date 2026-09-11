@@ -40,7 +40,7 @@ export default async function ClaimsPage() {
               {propertyContextLine(property.address)}
             </p>
 
-            <dl className="mt-4 grid gap-3 sm:grid-cols-3">
+            <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
                 <dt className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
                   Claimed role

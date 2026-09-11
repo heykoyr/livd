@@ -2,8 +2,10 @@ import Link from 'next/link';
 
 import { ButtonLink } from '@/components/ui/button';
 import { Badge, EmptyState } from '@/components/ui/primitives';
+import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { copy } from '@/content/copy';
 import { formatRelativeTime } from '@/lib/format';
+import type { Sanction } from '@/types/domain';
 import { listSanctions } from '@/server/admin';
 import { STATUS_LABELS, STATUS_TONES } from '../users/labels';
 
@@ -67,91 +69,99 @@ export default async function SanctionsPage({
           description="Sanctions are applied from an account page, always with a category and a written reason."
         />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[48rem] border-collapse text-label">
-            <caption className="sr-only">
-              Account sanctions, most recent first.
-            </caption>
-            <thead>
-              <tr className="border-b border-border bg-surface-sunken/60 text-left">
-                <Th>Account</Th>
-                <Th>Sanction</Th>
-                <Th>Reason</Th>
-                <Th>Case</Th>
-                <Th>Applied</Th>
-                <Th>Ends</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {sanctions.map((sanction) => (
-                <tr key={sanction.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2.5">
-                    <Link
-                      href={`/admin/users/${sanction.userId}`}
-                      className="font-mono text-label text-ink underline-offset-4 hover:underline"
-                    >
-                      {sanction.userId.slice(0, 8)}
-                    </Link>
-                  </td>
-
-                  <td className="px-3 py-2.5">
-                    <Badge tone={sanction.isActive ? STATUS_TONES[sanction.action] : 'neutral'}>
-                      {STATUS_LABELS[sanction.action]}
-                    </Badge>
-                    {!sanction.isActive && (
-                      <span className="ml-2 text-micro text-ink-subtle">
-                        {sanction.liftedAt ? 'lifted' : 'expired'}
-                      </span>
-                    )}
-                  </td>
-
-                  <td className="max-w-md px-3 py-2.5">
-                    <span className="text-ink">{sanction.reason}</span>
-                    <span className="mt-0.5 block font-mono text-micro text-ink-subtle">
-                      {sanction.reasonKey}
-                    </span>
-                  </td>
-
-                  <td className="px-3 py-2.5">
-                    {sanction.caseId && sanction.caseReference ? (
-                      <Link
-                        href={`/admin/cases/${sanction.caseId}`}
-                        className="font-mono text-micro text-ink underline underline-offset-4"
-                      >
-                        {sanction.caseReference}
-                      </Link>
-                    ) : (
-                      <span className="text-ink-subtle">—</span>
-                    )}
-                  </td>
-
-                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
-                    {formatRelativeTime(sanction.startsAt)}
-                    <span className="mt-0.5 block font-mono text-micro text-ink-subtle">
-                      {sanction.appliedBy ? sanction.appliedBy.slice(0, 8) : 'deleted'}
-                    </span>
-                  </td>
-
-                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">
-                    {sanction.endsAt ? formatRelativeTime(sanction.endsAt) : 'No end date'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Account sanctions, most recent first."
+          columns={SANCTION_COLUMNS}
+          rows={sanctions}
+          rowKey={(sanction) => sanction.id}
+        />
       )}
     </div>
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th
-      scope="col"
-      className="px-3 py-2 text-micro font-semibold uppercase tracking-micro text-ink-subtle"
-    >
-      {children}
-    </th>
-  );
-}
+/**
+ * The columns, declared once and rendered as a table on a desktop and as
+ * cards on a phone. `reason` takes the full card width: a written reason is a
+ * sentence, and half a card is not a place to read one.
+ */
+const SANCTION_COLUMNS: Array<DataColumn<Sanction>> = [
+  {
+    key: 'account',
+    header: 'Account',
+    primary: true,
+    cell: (sanction) => (
+      <Link
+        href={`/admin/users/${sanction.userId}`}
+        className="font-mono text-label text-ink underline-offset-4 hover:underline"
+      >
+        {sanction.userId.slice(0, 8)}
+      </Link>
+    ),
+  },
+  {
+    key: 'sanction',
+    header: 'Sanction',
+    cell: (sanction) => (
+      <>
+        <Badge tone={sanction.isActive ? STATUS_TONES[sanction.action] : 'neutral'}>
+          {STATUS_LABELS[sanction.action]}
+        </Badge>
+        {!sanction.isActive && (
+          <span className="ml-2 text-micro text-ink-subtle">
+            {sanction.liftedAt ? 'lifted' : 'expired'}
+          </span>
+        )}
+      </>
+    ),
+  },
+  {
+    key: 'reason',
+    header: 'Reason',
+    span: 'full',
+    cell: (sanction) => (
+      <>
+        <span className="text-ink">{sanction.reason}</span>
+        <span className="mt-0.5 block font-mono text-micro text-ink-subtle">
+          {sanction.reasonKey}
+        </span>
+      </>
+    ),
+  },
+  {
+    key: 'case',
+    header: 'Case',
+    cell: (sanction) =>
+      sanction.caseId && sanction.caseReference ? (
+        <Link
+          href={`/admin/cases/${sanction.caseId}`}
+          className="font-mono text-micro text-ink underline underline-offset-4"
+        >
+          {sanction.caseReference}
+        </Link>
+      ) : (
+        <span className="text-ink-subtle">&mdash;</span>
+      ),
+  },
+  {
+    key: 'applied',
+    header: 'Applied',
+    cell: (sanction) => (
+      <span className="whitespace-nowrap text-ink-muted">
+        {formatRelativeTime(sanction.startsAt)}
+        <span className="mt-0.5 block font-mono text-micro text-ink-subtle">
+          {sanction.appliedBy ? sanction.appliedBy.slice(0, 8) : 'deleted'}
+        </span>
+      </span>
+    ),
+  },
+  {
+    key: 'ends',
+    header: 'Ends',
+    cell: (sanction) => (
+      <span className="whitespace-nowrap text-ink-muted">
+        {sanction.endsAt ? formatRelativeTime(sanction.endsAt) : 'No end date'}
+      </span>
+    ),
+  },
+];

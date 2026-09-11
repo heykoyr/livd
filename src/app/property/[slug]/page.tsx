@@ -150,7 +150,7 @@ export default async function PropertyPage({
       )}
 
       <div className="container-shell py-12 md:py-16">
-        <div className="grid gap-14 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-16">
+        <div className="grid grid-cols-1 gap-14 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-16">
           <div className="min-w-0">
             {intelligence.reviewCount === 0 ? (
               <EmptyState
@@ -214,7 +214,7 @@ export default async function PropertyPage({
                 {(intelligence.topPositiveTags.length > 0 ||
                   intelligence.topProblemTags.length > 0) && (
                   <Section id="themes" title="What comes up most often">
-                    <div className="grid gap-8 rounded-lg border border-border bg-surface p-6 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-8 rounded-lg border border-border bg-surface p-6 sm:grid-cols-2">
                       {intelligence.topPositiveTags.length > 0 && (
                         <div>
                           <h3 className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">

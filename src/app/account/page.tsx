@@ -48,7 +48,7 @@ export default async function AccountPage() {
         </dl>
       </Card>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Link href="/account/reviews" className="block">
           <Card interactive className="h-full p-5">
             <h2 className="font-display text-title-md tracking-tightish text-ink">
