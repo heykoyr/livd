@@ -1136,3 +1136,191 @@ link or Google, so there is nothing for the check to check.
 `next.config.ts` applies Content-Security-Policy, Referrer-Policy,
 `X-Frame-Options: DENY`, Permissions-Policy and Strict-Transport-Security to
 every response. Unchanged by any of this work.
+
+## 2026-09-11 · Phase 13, part 8 · the HTTP layer
+
+The Phase 13 write-up closed with an admission: *"This could not be tested over
+HTTP."* The environment had no outbound network, so every authorisation test ran
+inside the database with `role` and `request.jwt.claims` set the way PostgREST
+sets them — the path a request takes *after* routing, but never the request
+itself.
+
+That turned out to be wrong about the environment rather than about the risk:
+`curl` is blocked here, but Node's HTTP stack is not. So the whole of part 8 was
+re-run over the wire, against the deployed Supabase project and the deployed
+application, as an anonymous visitor holding nothing but the publishable key
+that ships in every browser bundle.
+
+**95 checks, 95 passed.**
+
+### 1 · Anonymous table reads, over the wire
+
+25 tables requested. Two return rows — `reviews` (222) and `properties` (16) —
+and both are public by design. The other 23 return `200` with **zero rows**,
+which is the correct PostgREST shape: RLS filters rows rather than refusing the
+request, so an attacker cannot even distinguish "empty" from "forbidden".
+
+`profiles`, `admin_audit_log`, `moderation_actions`, `verification_records`,
+`case_evidence`, `disclosure_records`, `authority_requests`, `user_sanctions`,
+`account_signals`, `review_snapshots`, `rate_limit_events` — nothing.
+
+### 2 · The author pseudonym, over the wire
+
+This is the Phase 13 finding, re-attacked at the layer it was actually exposed
+on. Two of these are attacks the in-database testing never thought to try.
+
+| Attack | Result |
+|---|---|
+| `GET /reviews?select=author_id` | `401 permission denied for table reviews` |
+| `GET /reviews?select=*` | `401 permission denied for table reviews` |
+| `GET /reviews?order=author_id.asc` | `401 permission denied for table reviews` |
+| `GET /reviews?author_id=eq.<uuid>` | `401 permission denied for table reviews` |
+| `GET /reviews?select=id,body,overall_rating,…` | `200`, 3 rows |
+| `GET /reviews?select=id,review_category_ratings(…),review_tags(…)` | `200`, embedded |
+
+The third and fourth rows matter most, because a withheld column is rarely read
+head-on. **Sorting** by it leaks order, and a **filter** on it recovers the value
+one comparison at a time — `author_id=eq.<guess>` is a binary search over the
+UUID space, and a few hundred requests would confirm which account wrote a given
+review. Both are refused, because a column privilege in Postgres covers every
+reference to the column and not merely its appearance in a select list. That was
+the reasoning written into migration 0040; this is the evidence for it.
+
+The last two rows are the other half of the same question: the fix did not break
+the API for the page that needs it.
+
+### 3 · Privileged RPCs, called anonymously
+
+Twenty-three, chosen to cover every dangerous verb in the schema — role changes,
+identity reveal, the user directory, email lookup, the audit feed, case
+creation, sanctions, review status, the detectors, the mask helper.
+
+**All twenty-three refused.** Twenty-two with `401 permission denied for
+function …`; `livd_guard_self_report` with `404 Could not find the function`,
+because 0043 took it off the API surface entirely.
+
+### 4 · Anonymous writes
+
+| Attack | Result |
+|---|---|
+| `POST /profiles {role: admin}` | `401` |
+| `PATCH /profiles?id=neq.… {role: admin}` — **the P0 attack, over HTTP** | `401` |
+| `POST /reviews` | `401` |
+| `POST /admin_audit_log` | `401` |
+| `POST /moderation_actions` | `401` |
+| `POST /account_signals` | `401` |
+| `DELETE /admin_audit_log?id=gt.0` | `401` |
+
+The second row is the original vulnerability, executed the way it would actually
+have been executed, against the live production database. It is refused by the
+column grant before RLS or the trigger is consulted.
+
+### 5 · What the API exposes at all
+
+The question the Phase 13 write-up named as unanswerable without HTTP. PostgREST
+answers it in its own words:
+
+```
+Accept-Profile: auth
+406 {"code":"PGRST106","hint":"Only the following schemas are exposed:
+     public, graphql_public","message":"Invalid schema: auth"}
+```
+
+`auth`, `storage`, `pg_catalog`, `information_schema` and `extensions` are all
+refused with the same message. `auth.users` is unreachable by every route tried:
+as a table (`404 Could not find the table 'public.users'`), and by schema switch.
+
+`graphql_public` *is* exposed, which is a second door onto the same tables and
+therefore a second place the column grant has to hold. It does not need to:
+every GraphQL query returns `pg_graphql extension is not enabled`. There is no
+endpoint behind the schema.
+
+The OpenAPI spec at `/rest/v1/` — which would enumerate every table and function
+in one request — is refused: *"Only the `service_role` API key can be used for
+this endpoint."* An attacker cannot read the shape of the API from the API.
+
+Without any key at all: `401 No API key found in request`.
+
+### 6 · CORS
+
+`Access-Control-Allow-Origin: *`, with `Access-Control-Allow-Credentials` unset.
+
+This is correct rather than lax, and worth saying why: the anon key is designed
+to be public, every row it can reach is RLS-filtered, and the absence of
+credentials means a browser will never attach a visitor's cookies to a
+cross-origin call. A restrictive origin list would protect nothing that RLS does
+not already protect, and would break the API for the browser it exists to serve.
+
+### 7 · The deployed application
+
+29 checks against `livd-psi.vercel.app`.
+
+**Security headers**, all present on every response:
+
+```
+content-security-policy      default-src 'self'; script-src 'self' 'unsafe-inline'; …
+                             frame-ancestors 'none'      (no 'unsafe-eval')
+strict-transport-security    max-age=63072000; includeSubDomains; preload
+x-frame-options              DENY
+referrer-policy              strict-origin-when-cross-origin
+permissions-policy           camera=(), microphone=(), geolocation=(self), interest-cohort=()
+x-content-type-options       nosniff
+```
+
+**Gated routes.** `/admin`, `/admin/audit`, `/admin/users`, `/admin/cases`,
+`/admin/authority-requests`, `/account`, `/review` and `/shortlist` all answer
+`307 → /sign-in?next=…` with no content in the body. Nothing about the Trust &
+Safety area appears in a response to somebody who is not signed in.
+
+**The property page**, which is the heaviest public read and the one migration
+0040 changed underneath: `200`, 212 KB, reviews rendered, no `permission denied`
+anywhere in the HTML, and no occurrence of `author_id` in any form. Of the nine
+UUIDs on the page, **eight are review ids and one is the property id — zero are
+account ids**, confirmed by joining them back against the database.
+
+**Other:** `/api/suggest` returns properties and carries no account identifier;
+a hostile search term (`') or 1=1--`) is handled without a 500; a POST carrying
+a forged `Next-Action` id is refused with `404`; `/.env` is not served; path
+traversal is normalised.
+
+### The deploy was necessary, not tidy
+
+Production had been running code from five days earlier — before any of this
+work — while all 25 migrations were already applied to the live database. That
+is the wrong order, and it had a consequence.
+
+The old build's public review query selected `author_id`. Run over HTTP with the
+anon key, that exact select list now returns:
+
+```
+401 {"code":"42501","hint":"Grant the required privileges to the current role…"}
+```
+
+while the new one returns `200`. So the old deployment's review query was
+already broken against the live database — it was still rendering only because
+Vercel's data cache is shared across deployments and outlives them. Production
+was on borrowed time, and the cache had not yet expired.
+
+Two lessons, recorded rather than smoothed over:
+
+- **A migration that tightens a grant must ship with the code that stops needing
+  it.** These were applied phase by phase and the deploy was left to the end,
+  which opened a five-day window in which the database was ahead of the
+  application.
+- **A cache can hide a broken query for days.** Both deployments returned
+  `x-vercel-cache: MISS` and byte-identical HTML, which looked like proof the old
+  build was fine. It was proof of nothing; the query itself had to be run
+  directly before the truth showed.
+
+### What is still not verified
+
+Volumetric protection. Forty consecutive reads of the REST API and forty of
+`/api/suggest` all returned `200` — no edge rate limit fired at that volume, and
+testing at a volume that would fire one is not something to do against
+production. The application's own limiter (`checkDualRateLimit`) covers the
+write paths — review submission, verification submission, reports — and those
+were verified at the data layer.
+
+So the honest statement is narrower than before but not empty: **no edge rate
+limit was observed at forty requests**, and whether one exists above that is
+unknown.
