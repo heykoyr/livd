@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import type { PublicReview } from '@/types/domain';
 import { VerificationBadge } from './verify-location';
 import { ReportReviewButton } from './report-review';
+import { RespondToReviewButton } from './respond-to-review';
 
 /**
  * A single resident review.
@@ -28,11 +29,20 @@ export function ReviewCard({
   review,
   countryCode,
   canReport,
+  canRespond = false,
+  propertyName,
   className,
 }: {
   review: PublicReview;
   countryCode: string;
   canReport: boolean;
+  /**
+   * Whether the reader is the approved claimant of this property. Decided on
+   * the server; the control it shows is a convenience, and the policy behind
+   * the action is the rule.
+   */
+  canRespond?: boolean;
+  propertyName?: string;
   className?: string;
 }) {
   const band = scoreBand(ratingToScore(review.overallRating));
@@ -117,7 +127,15 @@ export function ReviewCard({
           </span>
         </div>
 
-        {canReport && <ReportReviewButton reviewId={review.id} />}
+        <div className="flex flex-wrap items-center gap-4">
+          {canRespond && !review.ownerResponse && (
+            <RespondToReviewButton
+              reviewId={review.id}
+              propertyName={propertyName ?? 'this property'}
+            />
+          )}
+          {canReport && <ReportReviewButton reviewId={review.id} />}
+        </div>
       </footer>
 
       {review.ownerResponse && (
@@ -130,7 +148,16 @@ export function ReviewCard({
               <Badge tone="positive">{copy.property.resolutionNotice}</Badge>
             )}
           </div>
-          <p className="prose-measure mt-2 whitespace-pre-line text-body text-ink">
+          {/* Who is speaking, in the reader's terms. A reply that looks like
+              another resident's review is the one outcome this feature must
+              not produce, and a heading alone was carrying that distinction
+              on colour and position. The role is derived by the database from
+              the approved claim — see migration 0045 — so it cannot be
+              asserted by whoever is typing. */}
+          <p className="mt-0.5 text-micro text-ink-muted">
+            {RESPONDENT_LABELS[review.ownerResponse.respondentRole]}
+          </p>
+          <p className="prose-measure mt-2.5 whitespace-pre-line text-body text-ink">
             {review.ownerResponse.body}
           </p>
           <p className="mt-2 text-micro text-ink-subtle">
@@ -141,6 +168,13 @@ export function ReviewCard({
     </Card>
   );
 }
+
+/** Never "the owner" unless they said so: an agent is not a landlord. */
+const RESPONDENT_LABELS: Record<'owner' | 'manager' | 'agent', string> = {
+  owner: 'Verified property representative · Owner',
+  manager: 'Verified property representative · Managing agent',
+  agent: 'Verified property representative · Letting agent',
+};
 
 function RatingPill({ rating, band }: { rating: number; band: string }) {
   const tone = {

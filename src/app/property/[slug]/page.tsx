@@ -106,7 +106,7 @@ export default async function PropertyPage({
     repository.isPropertyClaimed(property.id),
   ]);
 
-  const [reviews, isSaved] = await Promise.all([
+  const [reviews, isSaved, claimedByViewer] = await Promise.all([
     repository.listPublicReviews(property.id, {
       residency: options.residency,
       verifiedOnly: options.verifiedOnly,
@@ -115,7 +115,12 @@ export default async function PropertyPage({
       pageSize: LIMITS.reviewsPerPage,
     }),
     user ? repository.isPropertySaved(user.id, property.id) : Promise.resolve(false),
+    // Whether *this reader* may speak for this property. Their own claims,
+    // read as themselves — no widening of who can see who claimed what.
+    user ? repository.listClaimedPropertyIds(user.id) : Promise.resolve([]),
   ]);
+
+  const canRespond = claimedByViewer.includes(property.id);
 
   const verdict = generateVerdict(intelligence);
   const checks = buildPreVisitChecks(intelligence);
@@ -278,6 +283,8 @@ export default async function PropertyPage({
                             review={review}
                             countryCode={countryCode}
                             canReport={user !== null}
+                            canRespond={canRespond}
+                            propertyName={propertyDisplayName(property.address)}
                           />
                         </li>
                       ))}
@@ -296,7 +303,12 @@ export default async function PropertyPage({
             )}
           </div>
 
-          <PropertySidebar property={property} intelligence={intelligence} isClaimed={isClaimed} />
+          <PropertySidebar
+            property={property}
+            intelligence={intelligence}
+            isClaimed={isClaimed}
+            viewerIsClaimant={canRespond}
+          />
         </div>
       </div>
     </>
@@ -311,10 +323,12 @@ function PropertySidebar({
   property,
   intelligence,
   isClaimed,
+  viewerIsClaimant,
 }: {
   property: Property;
   intelligence: PropertyIntelligence;
   isClaimed: boolean;
+  viewerIsClaimant: boolean;
 }) {
   const sections: Array<{ href: string; label: string }> = [
     ...(intelligence.reviewCount > 0
@@ -373,22 +387,41 @@ function PropertySidebar({
         </ButtonLink>
       </Card>
 
+      {/* Three states, not two. A claimant arriving at their own property
+          page used to see the same "this property has been claimed" note a
+          stranger sees, with no indication that the thing they were approved
+          for was available anywhere on the page. */}
       <Card className="p-5">
         <h2 className="font-display text-title-md tracking-tightish text-ink">
-          {isClaimed ? copy.property.claimed : 'Own or manage this property?'}
+          {viewerIsClaimant
+            ? 'You represent this property'
+            : isClaimed
+              ? copy.property.claimed
+              : 'Own or manage this property?'}
         </h2>
         <p className="mt-2 text-label text-ink-muted">
-          {isClaimed
-            ? copy.property.claimedNote
-            : 'Claim it to correct the details and respond publicly to reviews. Claiming never lets anyone edit or remove what a resident wrote.'}
+          {viewerIsClaimant
+            ? 'You can reply once to each review, below. You cannot edit, hide or remove a resident review, and you will never be shown who wrote one.'
+            : isClaimed
+              ? copy.property.claimedNote
+              : 'Claim it to correct the details and respond publicly to reviews. Claiming never lets anyone edit or remove what a resident wrote.'}
         </p>
-        {!isClaimed && (
-          <Link
-            href={`/property/${property.slug}/claim`}
+        {viewerIsClaimant ? (
+          <a
+            href="#reviews"
             className="mt-3 inline-block rounded-sm text-label font-medium text-brand underline underline-offset-4 hover:text-brand-hover"
           >
-            {copy.property.claim}
-          </Link>
+            Go to the reviews
+          </a>
+        ) : (
+          !isClaimed && (
+            <Link
+              href={`/property/${property.slug}/claim`}
+              className="mt-3 inline-block rounded-sm text-label font-medium text-brand underline underline-offset-4 hover:text-brand-hover"
+            >
+              {copy.property.claim}
+            </Link>
+          )
         )}
       </Card>
 
