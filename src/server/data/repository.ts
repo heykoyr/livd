@@ -478,11 +478,31 @@ export interface LivdRepository {
   getReviewById(id: string): Promise<Review | null>;
   listReviewsByAuthor(authorId: string): Promise<Review[]>;
   createReview(input: CreateReviewInput, authorId: string): Promise<Review>;
+  /**
+   * An author correcting their own published review, inside the edit window.
+   *
+   * Three rules, all of which the store enforces rather than trusts: the
+   * caller wrote it, it is still published, and it is younger than
+   * `LIMITS.reviewEditWindowHours`. Postgres does this in
+   * `livd_correct_review` against its own clock; the local adapter does the
+   * same arithmetic. Neither consults anything the caller sent about time.
+   *
+   * `safety` carries what the content linter made of the *new* body. Flags are
+   * added and never removed, and `hold` may take a review off the property page
+   * for a moderator to read — the same treatment a fresh submission gets when
+   * it alleges something serious, so that editing an approved review is not a
+   * way around the pipeline. Neither direction can be reversed here.
+   *
+   * Returns the review as it now stands and the moment the window closes, so
+   * the page that called it states a deadline derived from the row that was
+   * actually written.
+   */
   updateReview(
     id: string,
     authorId: string,
     patch: Partial<Pick<CreateReviewInput, 'body' | 'wouldRecommend'>>,
-  ): Promise<Review>;
+    safety?: { addFlags?: string[]; hold?: boolean },
+  ): Promise<{ review: Review; closesAt: string }>;
   /**
    * True when this author already has a review covering the same tenancy —
    * the duplicate-prevention rule. Enforced in the database by a unique index

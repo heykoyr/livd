@@ -3,9 +3,9 @@ import Link from 'next/link';
 
 import { ButtonLink } from '@/components/ui/button';
 import { Badge, Card, EmptyState } from '@/components/ui/primitives';
-import { LIMITS } from '@/config/site';
 import { copy } from '@/content/copy';
 import { formatRelativeTime, formatTenure, propertyDisplayName } from '@/lib/format';
+import { describeRemaining, editWindowFor } from '@/lib/reviews/edit-window';
 import { requireUserPage } from '@/server/auth/guards';
 import { VerifyResidency } from '@/components/property/verify-residency';
 import { VerificationBadge } from '@/components/property/verify-location';
@@ -32,6 +32,12 @@ const STATUS_LABEL: Record<ReviewStatus, string> = {
  * Shows the edit window explicitly rather than letting it expire silently. A
  * review becomes part of a property's permanent record after 24 hours, and
  * someone is entitled to know that while they can still act on it.
+ *
+ * For most of this product's life the page said exactly that and stopped there.
+ * It printed "you can correct this review for the next 21 hours" and offered no
+ * way to — the database had permitted the edit since migration 0004, and
+ * nothing above it ever called. A promise with no control under it is worse
+ * than no promise, so the sentence now comes with the action it describes.
  */
 export default async function MyReviewsPage() {
   const user = await requireUserPage('/account/reviews');
@@ -64,6 +70,11 @@ export default async function MyReviewsPage() {
     Promise.all(reviews.map((review) => repository.listVerificationsForReview(review.id))),
   ]);
 
+  // One clock for the whole list, read once. Two reviews written a second apart
+  // must not be measured against two different "nows".
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
+
   return (
     <div className="container-shell py-12 md:py-16">
       <h1 className="font-display text-display-lg tracking-display text-ink">
@@ -73,13 +84,7 @@ export default async function MyReviewsPage() {
       <ul className="mt-10 flex flex-col gap-4">
         {reviews.map((review, index) => {
           const property = properties[index];
-          // A server component, rendered once per request: "how old is this
-          // review right now" is exactly the question the edit window asks,
-          // and there is no client render for it to be inconsistent with.
-          // eslint-disable-next-line react-hooks/purity
-          const ageHours = (Date.now() - new Date(review.createdAt).getTime()) / 3_600_000;
-          const editable =
-            review.status === 'published' && ageHours <= LIMITS.reviewEditWindowHours;
+          const window = editWindowFor(review, now);
 
           return (
             <li key={review.id}>
@@ -140,15 +145,37 @@ export default async function MyReviewsPage() {
                   />
                 )}
 
-                <p className="mt-4 border-t border-border pt-3 text-micro text-ink-subtle">
-                  {editable
-                    ? copy.review.editWindow(
-                        Math.max(1, Math.round(LIMITS.reviewEditWindowHours - ageHours)),
-                      )
-                    : review.status === 'removed'
-                      ? 'A moderator removed this review.'
-                      : 'This review is now part of the property’s permanent record and can no longer be edited.'}
-                </p>
+                {/*
+                  The action and the sentence that explains it, on one line. A
+                  secondary button rather than the page's loudest control:
+                  correcting a review is a thing a few people need and nobody
+                  came here to be sold, and the card already carries a link to
+                  the property and a verification prompt.
+
+                  Wraps to two rows under about 380px, with the button first, so
+                  the tappable thing is never the part that falls off the
+                  bottom.
+                */}
+                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3">
+                  {window.editable && (
+                    <ButtonLink
+                      href={`/account/reviews/${review.id}/edit`}
+                      variant="secondary"
+                      size="sm"
+                    >
+                      {copy.review.edit.action}
+                    </ButtonLink>
+                  )}
+                  <p className="text-micro text-ink-subtle">
+                    {window.editable
+                      ? copy.review.edit.remaining(describeRemaining(window.msRemaining))
+                      : review.status === 'removed'
+                        ? copy.account.reviewRemoved
+                        : review.status === 'published'
+                          ? copy.account.reviewPermanent
+                          : copy.account.reviewWithModerator}
+                  </p>
+                </div>
               </Card>
             </li>
           );

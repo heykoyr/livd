@@ -359,6 +359,57 @@ export const copy = {
       'Your location check had expired by the time you published, so this review does not carry a verification badge. You can verify it from your account.',
     editWindow: (hours: number) =>
       `You can correct this review for the next ${hours} hours. After that it becomes part of the property’s permanent record.`,
+
+    /* --- Correcting one, afterwards ---------------------------------- */
+
+    edit: {
+      action: 'Edit review',
+      title: 'Correct your review',
+      lead: 'Fix a typo, say something more clearly, or change your mind about whether you would live there again.',
+      bodyLabel: 'Your review',
+      save: 'Save changes',
+      saving: 'Saving',
+      cancel: 'Back to my reviews',
+      saved: 'Review updated',
+      savedBody: 'Your corrected review is on the property page now.',
+
+      /**
+       * Said once, calmly, on the card and again on the form. A live countdown
+       * on somebody's own writing is pressure, and the rule is simple enough
+       * to state in a sentence.
+       */
+      remaining: (left: string) => `You can edit this review for another ${left}.`,
+      closed: 'This review can no longer be edited.',
+      closedBody:
+        'The editing period has ended, so this review is now part of the property’s permanent record. If something in it is wrong, report it and a moderator will look.',
+
+      /**
+       * What an edit cannot touch, and why — said on the form rather than
+       * discovered by finding a control missing. A rating rewritten after the
+       * fact keeps the review's date and its verification badge while changing
+       * what it means, which is the one edit that would make corrections worth
+       * gaming.
+       */
+      lockedTitle: 'What stays as it was',
+      lockedBody:
+        'Your ratings, your dates and your verification stay as you published them. A correction is for the words — a review whose score could be rewritten later would not be a record of anything.',
+      lockedRatings: 'Ratings',
+      lockedTenancy: 'Tenancy',
+
+      heldTitle: 'Your correction is being checked',
+      heldBody:
+        'Reviews that describe something serious are read by a person before they go up, and your edit triggered that standing rule. Your review is off the property page until a moderator has read it — usually a couple of days — and nothing is required from you.',
+
+      /* --- Refusals ---------------------------------------------------- */
+      notFound: 'We could not find that review.',
+      forbidden: 'You do not have permission to edit this review.',
+      expired:
+        'This review can no longer be edited because the editing period has ended. Nothing you typed has been saved.',
+      notPublished:
+        'This review is not published at the moment, so it cannot be edited. A moderator is looking at it.',
+      saveFailed: 'We could not save your changes. Please try again.',
+      unchanged: 'Nothing has changed yet.',
+    },
   },
 
   verification: {
@@ -567,6 +618,10 @@ export const copy = {
     title: 'Account',
     myReviews: 'My reviews',
     myReviewsEmpty: 'You have not published any reviews yet.',
+    reviewPermanent:
+      'This review is now part of the property’s permanent record and can no longer be edited.',
+    reviewRemoved: 'A moderator removed this review.',
+    reviewWithModerator: 'A moderator is reading this review. It is not on the property page.',
     settings: 'Settings',
     country: 'Country',
     countryHint: 'Sets how addresses and currency are shown to you.',

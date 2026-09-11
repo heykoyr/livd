@@ -1126,28 +1126,52 @@ export class SupabaseRepository implements LivdRepository {
     return created;
   }
 
+  /**
+   * A correction, through `livd_correct_review`.
+   *
+   * It used to be a PATCH, and the PATCH had a quiet failure in it. RLS filters
+   * rows rather than refusing statements, so an update that matched nothing —
+   * somebody else's review, or one whose window had closed while the page sat
+   * open — returned no error at all. The adapter then read the row back through
+   * the service role, found the *unchanged* review, and reported a successful
+   * save. The one moment a person most needs the truth about whether their
+   * words were kept was the moment this was least able to tell them.
+   *
+   * An RPC has no such shape. It raises, the error surfaces, and the caller can
+   * say which rule stopped it. It also puts the deadline, the flag union and
+   * the hold in one transaction — see migration 0046 for why those three cannot
+   * be separate statements.
+   *
+   * `authorId` is unused here and kept for the local adapter, which has no
+   * session. Postgres reads the actor from `auth.uid()`, so a caller cannot
+   * name somebody else as the author. Same asymmetry as `setReviewStatus`.
+   */
   async updateReview(
     id: string,
-    authorId: string,
+    _authorId: string,
     patch: Partial<Pick<CreateReviewInput, 'body' | 'wouldRecommend'>>,
-  ): Promise<Review> {
+    safety: { addFlags?: string[]; hold?: boolean } = {},
+  ): Promise<{ review: Review; closesAt: string }> {
     const supabase = await this.client();
 
-    // RLS enforces both authorship and the edit window; this is the friendly
-    // error rather than the control.
-    const { error } = await supabase
-      .from('reviews')
-      .update({
-        ...(patch.body !== undefined ? { body: patch.body } : {}),
-        ...(patch.wouldRecommend !== undefined ? { would_recommend: patch.wouldRecommend } : {}),
-      })
-      .eq('id', id);
+    const current = await this.getReviewById(id);
+    if (!current) throw new Error('You do not have permission to edit this review');
+
+    const { data, error } = await supabase.rpc('livd_correct_review', {
+      target_review: id,
+      new_body: patch.body !== undefined ? patch.body : current.body,
+      new_recommend:
+        patch.wouldRecommend !== undefined ? patch.wouldRecommend : current.wouldRecommend,
+      add_flags: safety.addFlags ?? [],
+      hold: safety.hold === true,
+    });
 
     if (error) throw new Error(`updateReview: ${error.message}`);
 
     const updated = await this.getReviewById(id);
     if (!updated) throw new Error('updateReview: review not found');
-    return updated;
+
+    return { review: updated, closesAt: new Date(data as string).toISOString() };
   }
 
   async hasExistingReview(

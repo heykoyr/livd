@@ -69,6 +69,42 @@ export const initialReviewSubmitState: ReviewSubmitState = {
 export type ReviewSafetyCode = SafetyCode;
 
 /* -------------------------------------------------------------------------
+ * Correcting a published review
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The result of an edit inside the correction window.
+ *
+ * `held` is its own terminal state rather than an error. An edit that raises a
+ * serious allegation is saved and taken off the property page for a moderator,
+ * exactly as the same words would have been on submission — so the person is
+ * told what happened to their review, not that something went wrong.
+ *
+ * `closesAt` comes back from the write itself. A page that has just saved
+ * needs to say how long is left, and a deadline derived from the row that was
+ * actually written is the only one that cannot disagree with the row.
+ */
+export interface ReviewEditState {
+  status: 'idle' | 'error' | 'saved' | 'held';
+  error: string | null;
+  fieldErrors: Record<string, string>;
+  safetyMessages: string[];
+  /** ISO, server-derived. Null on anything but a successful save. */
+  closesAt: string | null;
+  /** True when the window is what refused the edit, so the form can retire. */
+  windowClosed: boolean;
+}
+
+export const initialReviewEditState: ReviewEditState = {
+  status: 'idle',
+  error: null,
+  fieldErrors: {},
+  safetyMessages: [],
+  closesAt: null,
+  windowClosed: false,
+};
+
+/* -------------------------------------------------------------------------
  * Adding a property
  * ---------------------------------------------------------------------- */
 

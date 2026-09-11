@@ -186,6 +186,35 @@ export const reviewDraftSchema = z
 
 export type ReviewDraft = z.infer<typeof reviewDraftSchema>;
 
+/**
+ * A correction to a published review.
+ *
+ * Deliberately three fields. Everything else a review carries — the ratings,
+ * the tenancy, the property, the verification — is immutable after
+ * publication, enforced by `livd_guard_review_update` rather than by this
+ * schema, so a field added here by mistake would be refused by the database
+ * rather than quietly accepted.
+ *
+ * The body rules are the submission rules: blank, or long enough to tell
+ * somebody something.
+ */
+export const reviewCorrectionSchema = z.object({
+  reviewId: z.string().min(1).max(80),
+  body: z
+    .string()
+    .trim()
+    .max(LIMITS.reviewBodyMax, `Please keep this under ${LIMITS.reviewBodyMax} characters.`)
+    .nullable()
+    .transform((value) => (value && value.length > 0 ? value : null))
+    .refine(
+      (value) => value === null || value.length >= LIMITS.reviewBodyMin,
+      `Please write at least ${LIMITS.reviewBodyMin} characters, or leave this blank.`,
+    ),
+  wouldRecommend: z.boolean(),
+});
+
+export type ReviewCorrection = z.infer<typeof reviewCorrectionSchema>;
+
 /* -------------------------------------------------------------------------
  * Property creation
  * ---------------------------------------------------------------------- */

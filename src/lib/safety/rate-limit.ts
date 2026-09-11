@@ -53,6 +53,13 @@ export interface RateLimitStore {
 export const RATE_LIMITS = {
   /** Reviews are slow to write; anyone submitting five an hour is not writing them. */
   reviewSubmit: { limit: 5, windowSeconds: 3600 },
+  /**
+   * Corrections. Looser than submission because re-reading your own writing and
+   * fixing it again is normal, and the window closes after a day regardless —
+   * but not unbounded, because every save runs the content linter and writes a
+   * snapshot row.
+   */
+  reviewEdit: { limit: 20, windowSeconds: 3600 },
   /** Reporting is free to abuse, so it is the tightest limit in the product. */
   reportSubmit: { limit: 10, windowSeconds: 3600 },
   propertyCreate: { limit: 5, windowSeconds: 3600 },

@@ -6,13 +6,20 @@ import { after } from 'next/server';
 import { copy } from '@/content/copy';
 import { lintContent, type SafetyCode } from '@/lib/safety/content-linter';
 import {
+  initialReviewEditState,
   initialReviewSubmitState,
   type NewPropertyState,
+  type ReviewEditState,
   type ReviewSubmitState,
 } from './action-state';
 import { checkDualRateLimit } from '@/lib/safety/rate-limit';
 import { captchaMessage, verifyCaptcha } from '@/server/safety/captcha';
-import { newPropertySchema, reviewDraftSchema } from '@/lib/validation/review';
+import {
+  newPropertySchema,
+  reviewCorrectionSchema,
+  reviewDraftSchema,
+} from '@/lib/validation/review';
+import { editWindowFor } from '@/lib/reviews/edit-window';
 import { propertyDisplayName } from '@/lib/format';
 import { AuthorisationError, requireUser } from '@/server/auth/guards';
 import { getRepository } from '@/server/data';
@@ -300,6 +307,198 @@ export async function submitReview(
     // the confirmation screen instead of quietly not getting the badge they
     // were expecting.
     verificationLevel: review.verificationLevel,
+  };
+}
+
+/* -------------------------------------------------------------------------
+ * Correcting a published review
+ * ---------------------------------------------------------------------- */
+
+/**
+ * An author fixing what they wrote, inside the correction window.
+ *
+ * The product has promised this on the confirmation screen since the review
+ * wizard was built — "you can correct this review for the next 21 hours" — and
+ * the database has been ready for it since migration 0004. What was missing was
+ * everything in between: no action, no route, no button. This is the action.
+ *
+ * IT IS NOT THE CONTROL, AND IT IS WRITTEN AS THOUGH IT WERE
+ *
+ * Every check below is also made in Postgres, by `livd_correct_review` against
+ * its own clock and its own copy of the row. That is the one that decides. This
+ * layer exists to produce a sentence a person can act on, and to run the
+ * content linter — which lives in TypeScript and which the database cannot
+ * re-run.
+ *
+ * The order is the submission order, and for the same reasons:
+ *
+ *   1. Who is asking.
+ *   2. Rate limit, before any read.
+ *   3. Shape.
+ *   4. The review exists, is theirs, is published, and is inside the window.
+ *   5. Content safety — on the *new* body, with the same verdicts a fresh
+ *      submission would get. A blocked correction is refused; one that alleges
+ *      something serious is saved and held for a moderator, because otherwise
+ *      publishing an innocuous review and rewriting it afterwards would be a
+ *      way past the pipeline.
+ *
+ * Nothing here trusts a timestamp, an author id or a status that arrived with
+ * the request. The form sends a review id and two fields; everything else is
+ * read from the store.
+ *
+ * No CAPTCHA, unlike submission. A correction needs an account that already
+ * holds a published review and a window that is still open, which is not a
+ * surface a bot farm can work — and a token that expires mid-edit would cost a
+ * person their words for nothing.
+ */
+export async function correctReview(
+  _previous: ReviewEditState,
+  formData: FormData,
+): Promise<ReviewEditState> {
+  /* --- 1. Who is asking --------------------------------------------- */
+
+  let user;
+  try {
+    user = await requireUser();
+  } catch (error) {
+    return {
+      ...initialReviewEditState,
+      status: 'error',
+      error: error instanceof AuthorisationError ? error.message : copy.errors.genericBody,
+    };
+  }
+
+  /* --- 2. Rate limit ------------------------------------------------ */
+
+  const limit = await checkDualRateLimit('reviewEdit', user.id, await originIdentifier());
+  if (!limit.allowed) {
+    return { ...initialReviewEditState, status: 'error', error: copy.errors.rateLimitedBody };
+  }
+
+  /* --- 3. Shape ------------------------------------------------------ */
+
+  const rawBody = formData.get('body');
+
+  const parsed = reviewCorrectionSchema.safeParse({
+    reviewId: formData.get('reviewId'),
+    body: typeof rawBody === 'string' ? rawBody : null,
+    wouldRecommend: formData.get('wouldRecommend') === 'yes',
+  });
+
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const path = issue.path.join('.');
+      if (!fieldErrors[path]) fieldErrors[path] = issue.message;
+    }
+    return {
+      ...initialReviewEditState,
+      status: 'error',
+      fieldErrors,
+      error: copy.errors.validationTitle,
+    };
+  }
+
+  const correction = parsed.data;
+  const repository = await getRepository();
+
+  /* --- 4. Theirs, published, and still inside the window -------------- */
+
+  const review = await repository.getReviewById(correction.reviewId);
+
+  // One message for "no such review" and for "not yours", deliberately. Two
+  // would make this action a way to find out which review ids are real.
+  if (!review || review.authorId !== user.id) {
+    return { ...initialReviewEditState, status: 'error', error: copy.review.edit.forbidden };
+  }
+
+  const window = editWindowFor(review);
+  if (!window.editable) {
+    return {
+      ...initialReviewEditState,
+      status: 'error',
+      windowClosed: true,
+      error: window.reason === 'expired' ? copy.review.edit.expired : copy.review.edit.notPublished,
+    };
+  }
+
+  /* --- 5. Content safety --------------------------------------------- */
+
+  const safety = correction.body ? lintContent(correction.body) : null;
+
+  if (safety && !safety.ok) {
+    const messages = [...new Set(safety.blocks.map((issue) => SAFETY_MESSAGES[issue.code]))];
+    return {
+      ...initialReviewEditState,
+      status: 'error',
+      error: copy.safety.blockedTitle,
+      safetyMessages: messages,
+    };
+  }
+
+  // The same rule the submission takes: a serious allegation is read by a
+  // person before it is public. An edit that introduces one takes the review
+  // off the property page until then, rather than leaving it up on the strength
+  // of a moderation decision made about different words.
+  const hold = safety?.flags.some((issue) => issue.code === 'unverified_allegation') ?? false;
+
+  /* --- Persist -------------------------------------------------------- */
+
+  let result;
+  try {
+    result = await repository.updateReview(
+      review.id,
+      user.id,
+      { body: correction.body, wouldRecommend: correction.wouldRecommend },
+      { addFlags: safety?.flagCodes ?? [], hold },
+    );
+  } catch (error) {
+    // The store refuses for reasons this layer has already checked, which is
+    // the point of checking in both places. Reaching here means the row moved
+    // between the read and the write — most often a window that closed, or a
+    // moderator acting at the same moment. The database's own words never
+    // reach the person.
+    console.error('[livd] review correction failed', error);
+    return { ...initialReviewEditState, status: 'error', error: copy.review.edit.saveFailed };
+  }
+
+  // Read-your-own-writes: the author is about to be shown the corrected review,
+  // and the property page has to agree with what they just saved.
+  await invalidateProperty(review.propertyId);
+
+  /* --- Tell the people it concerns ------------------------------------ */
+
+  // Only where the state changed. A typo fix is not news, and an inbox filling
+  // up with "your review was edited" teaches people to ignore the mail that
+  // matters. A hold is a different matter: their review has left the property
+  // page, and they are entitled to hear that from us rather than notice it.
+  //
+  // Nothing goes to the property owner either way. They were told once, when
+  // the review was published; a correction to its wording is not a second
+  // event, and a message saying that one specific review had just changed
+  // would hand them a timing signal about one resident.
+  if (hold) {
+    const property = await repository.getPropertyById(review.propertyId);
+    const propertyName = property ? propertyDisplayName(property.address) : 'a property';
+    const reviewId = review.id;
+    const authorId = user.id;
+
+    after(async () => {
+      await notify({
+        to: authorId,
+        // Keyed on the review and the event, the way every other review
+        // notification is — so a moderator publishing it again later computes
+        // `review_published:<id>` and still sends.
+        dedupe: `review_held:${reviewId}`,
+        message: { kind: 'review_held', propertyName },
+      });
+    });
+  }
+
+  return {
+    ...initialReviewEditState,
+    status: hold ? 'held' : 'saved',
+    closesAt: result.closesAt,
   };
 }
 

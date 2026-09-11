@@ -8,6 +8,7 @@ import { buildPropertyIntelligence, emptyIntelligence } from '@/lib/intelligence
 import { matchScore, normaliseForSearch } from '@/lib/search/matching';
 import { formatAddressInline, propertyContextLine, propertyDisplayName } from '@/lib/format';
 import { propertySlug, shortId } from '@/lib/utils';
+import { editWindowFor, isCorrectableStatus } from '@/lib/reviews/edit-window';
 import type {
   AccountSignal,
   AdminUserDetail,
@@ -942,34 +943,89 @@ export class LocalRepository implements LivdRepository {
     });
   }
 
+  /**
+   * `livd_correct_review`, in TypeScript.
+   *
+   * Held to the same rules by `tests/safety/review-editing.test.ts`, which
+   * runs the whole authorisation matrix against this adapter — the Postgres
+   * copy is `scripts/security/review-edit-matrix.sql`, because one suite
+   * cannot cover both: this store has no privilege system and PostgREST is not
+   * reachable from a unit test.
+   *
+   * The refusals are deliberately worded the same whether the review does not
+   * exist or belongs to somebody else. A distinguishable "no such review"
+   * turns this into a way to find out which ids are real.
+   */
   async updateReview(
     id: string,
     authorId: string,
     patch: Partial<Pick<CreateReviewInput, 'body' | 'wouldRecommend'>>,
-  ): Promise<Review> {
+    safety: { addFlags?: string[]; hold?: boolean } = {},
+  ): Promise<{ review: Review; closesAt: string }> {
     return mutate((database) => {
       const review = database.reviews.find((r) => r.id === id);
-      if (!review) throw new Error('Review not found');
-      if (review.authorId !== authorId) throw new Error('Not the author of this review');
+      if (!review || review.authorId !== authorId) {
+        throw new Error('You do not have permission to edit this review');
+      }
 
-      const ageHours = (Date.now() - new Date(review.createdAt).getTime()) / 3_600_000;
-      if (ageHours > LIMITS.reviewEditWindowHours) {
+      if (!isCorrectableStatus(review.status)) {
+        throw new Error('Only a published review can be corrected');
+      }
+
+      // Against this process's clock and the stored row, never against
+      // anything the caller passed. Same comparison as the RLS policy.
+      const window = editWindowFor(review);
+      if (!window.editable) {
         throw new Error('The edit window for this review has closed');
       }
 
+      if (
+        patch.body != null &&
+        (patch.body.length < LIMITS.reviewBodyMin || patch.body.length > LIMITS.reviewBodyMax)
+      ) {
+        throw new Error(
+          `A review needs to be between ${LIMITS.reviewBodyMin} and ${LIMITS.reviewBodyMax} characters, or blank`,
+        );
+      }
+
+      const hold = safety.hold === true;
+      const flags = [...new Set([...review.safetyFlags, ...(safety.addFlags ?? [])])];
+
       const changed =
         (patch.body !== undefined && patch.body !== review.body) ||
-        (patch.wouldRecommend !== undefined && patch.wouldRecommend !== review.wouldRecommend);
+        (patch.wouldRecommend !== undefined && patch.wouldRecommend !== review.wouldRecommend) ||
+        flags.length !== review.safetyFlags.length ||
+        hold;
 
       // Before the change, so the first snapshot a review gets is the state it
       // was published in.
-      if (changed) snapshotReview(database, review, 'correction', authorId);
+      if (changed) snapshotReview(database, review, hold ? 'moderation' : 'correction', authorId);
 
       if (patch.body !== undefined) review.body = patch.body;
       if (patch.wouldRecommend !== undefined) review.wouldRecommend = patch.wouldRecommend;
+      // Added, never replaced: a correction may raise a flag and may not clear
+      // one. Holding is one-way for the same reason — see 0046.
+      review.safetyFlags = flags;
+      if (hold) review.status = 'pending_moderation';
       review.updatedAt = nowIso();
 
-      return review;
+      if (hold) {
+        database.moderationActions.push({
+          id: trailId(database),
+          actorId: authorId,
+          actorRole: database.users.find((u) => u.id === authorId)?.role ?? null,
+          subjectType: 'review',
+          subjectId: review.id,
+          action: 'set_status:pending_moderation',
+          reason:
+            'An author correction raised a flag that is read by a person before it goes back up.',
+          previousStatus: 'published',
+          newStatus: 'pending_moderation',
+          createdAt: nowIso(),
+        });
+      }
+
+      return { review, closesAt: window.closesAt };
     });
   }
 
