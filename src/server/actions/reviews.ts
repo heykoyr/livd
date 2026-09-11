@@ -489,7 +489,14 @@ export async function correctReview(
         // Keyed on the review and the event, the way every other review
         // notification is — so a moderator publishing it again later computes
         // `review_published:<id>` and still sends.
-        dedupe: `review_held:${reviewId}`,
+        // Not `review_held:<id>`, which is the key the *submission* claims.
+        // These are two different real-world events — "we are reading this
+        // before it goes up" and "your correction took it back down" — and a
+        // review that was held on submission, published by a moderator, then
+        // corrected into a hold would compute the submission's key and send
+        // nothing at all. The person would find their review gone from the
+        // property page with no email saying so.
+        dedupe: `review_held_correction:${reviewId}`,
         message: { kind: 'review_held', propertyName },
       });
     });
