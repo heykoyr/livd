@@ -342,6 +342,14 @@ export async function submitReview(
  *      publishing an innocuous review and rewriting it afterwards would be a
  *      way past the pipeline.
  *
+ * The ratings are correctable as of 0047, and a changed score moves the
+ * property's own. Nothing extra is needed for that here: `reviews_refresh_stats`
+ * and `review_category_ratings_refresh_stats` both fire on UPDATE, so the
+ * rollup is recomputed in the same transaction as the write. The local adapter
+ * derives its aggregates on read and has nothing to invalidate. What this
+ * action does do is drop the property's render cache, so the page a reviewer
+ * lands on afterwards is not the one that was cached a minute ago.
+ *
  * Nothing here trusts a timestamp, an author id or a status that arrived with
  * the request. The form sends a review id and two fields; everything else is
  * read from the store.
@@ -378,11 +386,28 @@ export async function correctReview(
   /* --- 3. Shape ------------------------------------------------------ */
 
   const rawBody = formData.get('body');
+  const rawOverall = formData.get('overallRating');
+  const rawCategories = formData.get('categoryRatings');
+
+  // The ratings arrive as one JSON field rather than as a form control per
+  // category, the same way the wizard submits its draft: the set is a single
+  // value, and scattering it across `category-noise=3` keys would make "which
+  // categories were cleared" something the server has to infer.
+  let categoryRatings: unknown = [];
+  if (typeof rawCategories === 'string') {
+    try {
+      categoryRatings = JSON.parse(rawCategories);
+    } catch {
+      return { ...initialReviewEditState, status: 'error', error: copy.errors.genericBody };
+    }
+  }
 
   const parsed = reviewCorrectionSchema.safeParse({
     reviewId: formData.get('reviewId'),
     body: typeof rawBody === 'string' ? rawBody : null,
     wouldRecommend: formData.get('wouldRecommend') === 'yes',
+    overallRating: typeof rawOverall === 'string' ? Number(rawOverall) : Number.NaN,
+    categoryRatings,
   });
 
   if (!parsed.success) {
@@ -449,7 +474,12 @@ export async function correctReview(
     result = await repository.updateReview(
       review.id,
       user.id,
-      { body: correction.body, wouldRecommend: correction.wouldRecommend },
+      {
+        body: correction.body,
+        wouldRecommend: correction.wouldRecommend,
+        overallRating: correction.overallRating,
+        categoryRatings: correction.categoryRatings,
+      },
       { addFlags: safety?.flagCodes ?? [], hold },
     );
   } catch (error) {

@@ -487,6 +487,13 @@ export interface LivdRepository {
    * `livd_correct_review` against its own clock; the local adapter does the
    * same arithmetic. Neither consults anything the caller sent about time.
    *
+   * The ratings are correctable as of 0047, and `categoryRatings` replaces the
+   * set rather than merging into it: a category the reviewer cleared is one
+   * they no longer wish to rate, and a merge cannot express that. Omitting the
+   * field leaves the existing set alone. What stays frozen is everything that
+   * is a claim rather than an opinion — the tenancy, the property, the rent and
+   * the verification.
+   *
    * `safety` carries what the content linter made of the *new* body. Flags are
    * added and never removed, and `hold` may take a review off the property page
    * for a moderator to read — the same treatment a fresh submission gets when
@@ -500,7 +507,9 @@ export interface LivdRepository {
   updateReview(
     id: string,
     authorId: string,
-    patch: Partial<Pick<CreateReviewInput, 'body' | 'wouldRecommend'>>,
+    patch: Partial<
+      Pick<CreateReviewInput, 'body' | 'wouldRecommend' | 'overallRating' | 'categoryRatings'>
+    >,
     safety?: { addFlags?: string[]; hold?: boolean },
   ): Promise<{ review: Review; closesAt: string }>;
   /**

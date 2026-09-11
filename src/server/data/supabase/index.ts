@@ -1149,7 +1149,9 @@ export class SupabaseRepository implements LivdRepository {
   async updateReview(
     id: string,
     _authorId: string,
-    patch: Partial<Pick<CreateReviewInput, 'body' | 'wouldRecommend'>>,
+    patch: Partial<
+      Pick<CreateReviewInput, 'body' | 'wouldRecommend' | 'overallRating' | 'categoryRatings'>
+    >,
     safety: { addFlags?: string[]; hold?: boolean } = {},
   ): Promise<{ review: Review; closesAt: string }> {
     const supabase = await this.client();
@@ -1164,6 +1166,11 @@ export class SupabaseRepository implements LivdRepository {
         patch.wouldRecommend !== undefined ? patch.wouldRecommend : current.wouldRecommend,
       add_flags: safety.addFlags ?? [],
       hold: safety.hold === true,
+      new_overall: patch.overallRating ?? null,
+      // Null leaves the existing set alone; an array replaces it. Passing the
+      // current set back would be a needless delete-and-reinsert, and every one
+      // of those fires the stats trigger.
+      new_categories: patch.categoryRatings ?? null,
     });
 
     if (error) throw new Error(`updateReview: ${error.message}`);

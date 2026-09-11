@@ -365,7 +365,7 @@ export const copy = {
     edit: {
       action: 'Edit review',
       title: 'Correct your review',
-      lead: 'Fix a typo, say something more clearly, or change your mind about whether you would live there again.',
+      lead: 'Fix a typo, say something more clearly, or change a rating you have thought better of.',
       bodyLabel: 'Your review',
       save: 'Save changes',
       saving: 'Saving',
@@ -385,15 +385,18 @@ export const copy = {
 
       /**
        * What an edit cannot touch, and why — said on the form rather than
-       * discovered by finding a control missing. A rating rewritten after the
-       * fact keeps the review's date and its verification badge while changing
-       * what it means, which is the one edit that would make corrections worth
-       * gaming.
+       * discovered by finding a control missing. The list shrank in 0047, when
+       * the ratings became correctable: what is left is the tenancy and the
+       * verification, which are claims about what happened rather than opinions
+       * about it.
        */
+      ratingsTitle: 'Your ratings',
+      ratingsLead:
+        'Change any of these if you got one wrong. Clearing a category leaves it unrated rather than scoring it zero.',
+
       lockedTitle: 'What stays as it was',
       lockedBody:
-        'Your ratings, your dates and your verification stay as you published them. A correction is for the words — a review whose score could be rewritten later would not be a record of anything.',
-      lockedRatings: 'Ratings',
+        'When you lived there, and what Livd verified, stay as they were published. Those are a record of what happened rather than of what you thought of it, so they are not yours or ours to revise afterwards.',
       lockedTenancy: 'Tenancy',
 
       heldTitle: 'Your correction is being checked',

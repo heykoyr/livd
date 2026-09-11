@@ -99,6 +99,10 @@ export default async function EditReviewPage({
           residencyStatus={review.residencyStatus}
           tenureMonths={review.tenureMonths}
           verificationLevel={review.verificationLevel}
+          // Which extended categories this market suggests. Nobody in London is
+          // offered generator reliability by default, and nobody in Lagos has to
+          // go looking for it.
+          countryCode={property?.address.countryCode ?? null}
           propertySlug={property?.slug ?? null}
           closesAt={window.closesAt}
           remainingLabel={describeRemaining(window.msRemaining)}

@@ -189,14 +189,17 @@ export type ReviewDraft = z.infer<typeof reviewDraftSchema>;
 /**
  * A correction to a published review.
  *
- * Deliberately three fields. Everything else a review carries — the ratings,
- * the tenancy, the property, the verification — is immutable after
- * publication, enforced by `livd_guard_review_update` rather than by this
- * schema, so a field added here by mistake would be refused by the database
- * rather than quietly accepted.
+ * What a person said: the words, the ratings, and whether they would live there
+ * again. What they claimed — the tenancy, the property, the rent, the
+ * verification — is immutable after publication, enforced by
+ * `livd_guard_review_update` rather than by this schema, so a field added here
+ * by mistake would be refused by the database rather than quietly accepted.
  *
- * The body rules are the submission rules: blank, or long enough to tell
- * somebody something.
+ * The rules below are the submission rules, reused rather than restated: the
+ * body is blank or long enough to tell somebody something, a rating is a whole
+ * number from 1 to 5, category keys come from the configuration rather than
+ * from the request, and no category may be rated twice — a repeat would count
+ * twice in the property rollup.
  */
 export const reviewCorrectionSchema = z.object({
   reviewId: z.string().min(1).max(80),
@@ -211,6 +214,20 @@ export const reviewCorrectionSchema = z.object({
       `Please write at least ${LIMITS.reviewBodyMin} characters, or leave this blank.`,
     ),
   wouldRecommend: z.boolean(),
+  overallRating: z.number().int().min(1).max(5),
+  categoryRatings: z
+    .array(
+      z.object({
+        categoryKey: z.enum(categoryKeys),
+        rating: z.number().int().min(1).max(5),
+      }),
+    )
+    .min(1, 'Rate at least one category, or skip the ones that did not apply.')
+    .max(CATEGORY_DEFINITIONS.length)
+    .refine(
+      (ratings) => new Set(ratings.map((r) => r.categoryKey)).size === ratings.length,
+      'Each category can only be rated once.',
+    ),
 });
 
 export type ReviewCorrection = z.infer<typeof reviewCorrectionSchema>;

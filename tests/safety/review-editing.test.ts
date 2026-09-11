@@ -312,17 +312,38 @@ describe('who may correct a review, and when', () => {
  * What a correction may touch
  * ---------------------------------------------------------------------- */
 
-describe('a correction is the words and the recommendation', () => {
-  it('leaves the ratings, the tenancy, the rent and the verification alone', async () => {
+describe('a correction is what the person said, not what they claimed', () => {
+  it('changes the ratings when asked to', async () => {
     const s = await scene();
 
     const { review } = await s.repository.updateReview(s.review.id, s.author.id, {
       body: CORRECTED_BODY,
       wouldRecommend: true,
+      overallRating: 4,
+      categoryRatings: [
+        { categoryKey: 'building_maintenance', rating: 4 },
+        { categoryKey: 'noise', rating: 3 },
+      ],
     });
 
-    expect(review.overallRating).toBe(s.review.overallRating);
-    expect(review.categoryRatings).toEqual(s.review.categoryRatings);
+    expect(review.overallRating).toBe(4);
+    expect(review.categoryRatings).toEqual([
+      { categoryKey: 'building_maintenance', rating: 4 },
+      { categoryKey: 'noise', rating: 3 },
+    ]);
+  });
+
+  it('leaves the tenancy, the rent and the verification alone', async () => {
+    const s = await scene();
+
+    const { review } = await s.repository.updateReview(s.review.id, s.author.id, {
+      body: CORRECTED_BODY,
+      wouldRecommend: true,
+      overallRating: 5,
+    });
+
+    // The line between the two halves of a review: what somebody thought of a
+    // place is theirs to revise, and what happened is not.
     expect(review.residencyStatus).toBe(s.review.residencyStatus);
     expect(review.movedInMonth).toBe(s.review.movedInMonth);
     expect(review.movedOutMonth).toBe(s.review.movedOutMonth);
@@ -331,6 +352,127 @@ describe('a correction is the words and the recommendation', () => {
     expect(review.verificationLevel).toBe(s.review.verificationLevel);
     expect(review.propertyId).toBe(s.review.propertyId);
     expect(review.authorId).toBe(s.author.id);
+  });
+
+  it('replaces the category set rather than merging into it', async () => {
+    const s = await scene();
+
+    // The review was created rating `building_maintenance` only. Sending a set
+    // that does not contain it means the reviewer cleared it, and a merge would
+    // have no way to say so.
+    const { review } = await s.repository.updateReview(s.review.id, s.author.id, {
+      categoryRatings: [{ categoryKey: 'noise', rating: 5 }],
+    });
+
+    expect(review.categoryRatings).toEqual([{ categoryKey: 'noise', rating: 5 }]);
+  });
+
+  it('leaves the ratings alone when the correction does not mention them', async () => {
+    const s = await scene();
+
+    const { review } = await s.repository.updateReview(s.review.id, s.author.id, {
+      body: CORRECTED_BODY,
+    });
+
+    expect(review.overallRating).toBe(s.review.overallRating);
+    expect(review.categoryRatings).toEqual(s.review.categoryRatings);
+  });
+
+  it('moves the property score with the rating', async () => {
+    const s = await scene();
+
+    // A property needs enough weight behind it to carry a score at all — below
+    // that the rollup reports `insufficient` and no number, which is the right
+    // answer and a useless thing to assert against. Three more residents put it
+    // over the line.
+    for (let i = 0; i < 3; i += 1) {
+      const other = await s.repository.upsertUser({ email: `other-${i}-${Date.now()}@example.test` });
+      await s.repository.createReview(
+        {
+          propertyId: s.property.id,
+          residencyStatus: 'current',
+          movedInMonth: '2023-01-01',
+          movedOutMonth: null,
+          overallRating: 3,
+          categoryRatings: [{ categoryKey: 'noise', rating: 3 }],
+          positiveTags: [],
+          problemTags: [],
+          primaryDepartureReason: null,
+          secondaryDepartureReasons: [],
+          noticedManagementChange: null,
+          body: null,
+          wouldRecommend: true,
+          rentAmountMinor: null,
+          rentCurrency: null,
+          rentPeriod: null,
+          status: 'published',
+          safetyFlags: [],
+          verificationId: null,
+        },
+        other.id,
+      );
+    }
+
+    const before = await s.repository.getPropertyIntelligence(s.property.id);
+    expect(before.overallScore).not.toBeNull();
+
+    await s.repository.updateReview(s.review.id, s.author.id, {
+      overallRating: 5,
+      categoryRatings: [
+        { categoryKey: 'building_maintenance', rating: 5 },
+        { categoryKey: 'noise', rating: 5 },
+      ],
+    });
+
+    const after = await s.repository.getPropertyIntelligence(s.property.id);
+
+    // A corrected rating that left the property's score behind would be the
+    // actual laundering risk: a page showing 2/5 under a review that now says
+    // 5/5. Postgres recomputes through `reviews_refresh_stats`; the local
+    // adapter derives on read. Either way the number has to move.
+    expect(after.overallScore).not.toBe(before.overallScore);
+    expect(after.overallScore ?? 0).toBeGreaterThan(before.overallScore ?? 0);
+  });
+
+  it('refuses a rating outside 1 to 5', async () => {
+    const s = await scene();
+
+    for (const rating of [0, 6, -1, 3.5]) {
+      await expect(
+        s.repository.updateReview(s.review.id, s.author.id, { overallRating: rating }),
+      ).rejects.toThrow(/whole number from 1 to 5/i);
+    }
+  });
+
+  it('refuses a category that does not exist', async () => {
+    const s = await scene();
+
+    await expect(
+      s.repository.updateReview(s.review.id, s.author.id, {
+        categoryRatings: [{ categoryKey: 'rent_is_cheap_actually', rating: 5 }],
+      }),
+    ).rejects.toThrow(/unknown category/i);
+  });
+
+  it('refuses the same category twice, which would count twice in the rollup', async () => {
+    const s = await scene();
+
+    await expect(
+      s.repository.updateReview(s.review.id, s.author.id, {
+        categoryRatings: [
+          { categoryKey: 'noise', rating: 1 },
+          { categoryKey: 'noise', rating: 5 },
+        ],
+      }),
+    ).rejects.toThrow(/only be rated once/i);
+  });
+
+  it('refuses clearing every category, which would leave no comparable signal', async () => {
+    const s = await scene();
+
+    await expect(
+      s.repository.updateReview(s.review.id, s.author.id, { categoryRatings: [] }),
+    ).rejects.toThrow(/at least one category/i);
   });
 
   it('refuses a body too short to tell anybody anything', async () => {
@@ -346,6 +488,23 @@ describe('a correction is the words and the recommendation', () => {
 
     const { review } = await s.repository.updateReview(s.review.id, s.author.id, { body: null });
     expect(review.body).toBeNull();
+  });
+
+  it('writes nothing at all when a rating is refused', async () => {
+    const s = await scene();
+
+    await expect(
+      s.repository.updateReview(s.review.id, s.author.id, {
+        body: CORRECTED_BODY,
+        overallRating: 9,
+      }),
+    ).rejects.toThrow();
+
+    // The body travelled with the bad rating and must not have landed on its
+    // own — a half-applied correction is the one outcome nobody could explain.
+    const after = await reload(s.repository, s.review.id);
+    expect(after.body).toBe(ORIGINAL_BODY);
+    expect(after.overallRating).toBe(s.review.overallRating);
   });
 });
 
@@ -447,6 +606,25 @@ describe('what a correction preserves', () => {
     expect(first?.body).toBe(ORIGINAL_BODY);
     expect(first?.wouldRecommend).toBe(false);
     expect(first?.reason).toBe('correction');
+  });
+
+  it('keeps the score a review was published with, now that a score can change', async () => {
+    const s = await scene();
+
+    await s.repository.updateReview(s.review.id, s.author.id, {
+      overallRating: 5,
+      categoryRatings: [{ categoryKey: 'noise', rating: 5 }],
+    });
+
+    const snapshots = await s.repository.listReviewSnapshots(s.review.id);
+    const first = snapshots.at(-1) ?? snapshots[0];
+
+    // This is what makes an editable rating safe rather than a way to launder a
+    // review: the 2/5 it went up with is still on the record, with the author's
+    // id against the change.
+    expect(first?.overallRating).toBe(s.review.overallRating);
+    expect(first?.categoryRatings).toEqual(s.review.categoryRatings);
+    expect(first?.changedBy).toBe(s.author.id);
   });
 
   it('keeps a chain rather than only the most recent state', async () => {

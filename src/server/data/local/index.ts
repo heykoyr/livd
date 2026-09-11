@@ -9,6 +9,7 @@ import { matchScore, normaliseForSearch } from '@/lib/search/matching';
 import { formatAddressInline, propertyContextLine, propertyDisplayName } from '@/lib/format';
 import { propertySlug, shortId } from '@/lib/utils';
 import { editWindowFor, isCorrectableStatus } from '@/lib/reviews/edit-window';
+import { CATEGORY_DEFINITIONS } from '@/config/categories';
 import type {
   AccountSignal,
   AdminUserDetail,
@@ -388,6 +389,33 @@ function requireModerator(database: LocalDatabase, actorId: string, message: str
  * interleaved sequence of decisions and accesses reads in the order it
  * actually happened.
  */
+/**
+ * A detached copy of a stored review.
+ *
+ * `mutate` hands out the live database, so a write that returns the row it just
+ * touched is returning a reference into the store. Anything the caller still
+ * holds then changes underneath them on the next write — and the Supabase
+ * adapter, which maps a fresh object out of every response, does not behave
+ * that way. The two are meant to be interchangeable, so this one stops being
+ * the odd one out at the two points where it hands a row back.
+ *
+ * Found by a test that captured a review from `createReview`, corrected its
+ * rating, and then compared the two: the "before" value had become the "after"
+ * value, and the assertion failed for a reason that had nothing to do with what
+ * it was testing.
+ */
+function detach(review: Review): Review {
+  return {
+    ...review,
+    categoryRatings: review.categoryRatings.map((rating) => ({ ...rating })),
+    positiveTags: [...review.positiveTags],
+    problemTags: [...review.problemTags],
+    secondaryDepartureReasons: [...review.secondaryDepartureReasons],
+    safetyFlags: [...review.safetyFlags],
+    rent: review.rent ? { ...review.rent } : null,
+  };
+}
+
 function trailId(database: LocalDatabase): string {
   const sequence = String(database.nextTrailSeq).padStart(12, '0');
   database.nextTrailSeq += 1;
@@ -939,7 +967,7 @@ export class LocalRepository implements LivdRepository {
       };
 
       database.reviews.push(review);
-      return review;
+      return detach(review);
     });
   }
 
@@ -959,7 +987,9 @@ export class LocalRepository implements LivdRepository {
   async updateReview(
     id: string,
     authorId: string,
-    patch: Partial<Pick<CreateReviewInput, 'body' | 'wouldRecommend'>>,
+    patch: Partial<
+      Pick<CreateReviewInput, 'body' | 'wouldRecommend' | 'overallRating' | 'categoryRatings'>
+    >,
     safety: { addFlags?: string[]; hold?: boolean } = {},
   ): Promise<{ review: Review; closesAt: string }> {
     return mutate((database) => {
@@ -988,12 +1018,56 @@ export class LocalRepository implements LivdRepository {
         );
       }
 
+      if (patch.overallRating !== undefined) {
+        if (
+          !Number.isInteger(patch.overallRating) ||
+          patch.overallRating < 1 ||
+          patch.overallRating > 5
+        ) {
+          throw new Error('A rating is a whole number from 1 to 5');
+        }
+      }
+
+      if (patch.categoryRatings !== undefined) {
+        const ratings = patch.categoryRatings;
+
+        // The same three rules `livd_correct_review` applies, in the same
+        // order, so a refusal reads identically whichever store answered.
+        if (ratings.length === 0) throw new Error('Rate at least one category');
+
+        if (ratings.some((rating) => !CATEGORY_DEFINITIONS.some((c) => c.key === rating.categoryKey))) {
+          throw new Error('Unknown category');
+        }
+
+        if (
+          ratings.some(
+            (rating) =>
+              !Number.isInteger(rating.rating) || rating.rating < 1 || rating.rating > 5,
+          )
+        ) {
+          throw new Error('A rating is a whole number from 1 to 5');
+        }
+
+        if (new Set(ratings.map((rating) => rating.categoryKey)).size !== ratings.length) {
+          throw new Error('Each category can only be rated once');
+        }
+      }
+
       const hold = safety.hold === true;
       const flags = [...new Set([...review.safetyFlags, ...(safety.addFlags ?? [])])];
+
+      const ratingsChanged =
+        patch.categoryRatings !== undefined &&
+        JSON.stringify([...patch.categoryRatings].sort((a, b) => a.categoryKey.localeCompare(b.categoryKey))) !==
+          JSON.stringify(
+            [...review.categoryRatings].sort((a, b) => a.categoryKey.localeCompare(b.categoryKey)),
+          );
 
       const changed =
         (patch.body !== undefined && patch.body !== review.body) ||
         (patch.wouldRecommend !== undefined && patch.wouldRecommend !== review.wouldRecommend) ||
+        (patch.overallRating !== undefined && patch.overallRating !== review.overallRating) ||
+        ratingsChanged ||
         flags.length !== review.safetyFlags.length ||
         hold;
 
@@ -1003,6 +1077,12 @@ export class LocalRepository implements LivdRepository {
 
       if (patch.body !== undefined) review.body = patch.body;
       if (patch.wouldRecommend !== undefined) review.wouldRecommend = patch.wouldRecommend;
+      if (patch.overallRating !== undefined) review.overallRating = patch.overallRating;
+      // Replaced, not merged — see the contract. Copied rather than aliased so
+      // the caller cannot keep a handle on the stored array.
+      if (patch.categoryRatings !== undefined) {
+        review.categoryRatings = patch.categoryRatings.map((rating) => ({ ...rating }));
+      }
       // Added, never replaced: a correction may raise a flag and may not clear
       // one. Holding is one-way for the same reason — see 0046.
       review.safetyFlags = flags;
@@ -1025,7 +1105,7 @@ export class LocalRepository implements LivdRepository {
         });
       }
 
-      return { review, closesAt: window.closesAt };
+      return { review: detach(review), closesAt: window.closesAt };
     });
   }
 
