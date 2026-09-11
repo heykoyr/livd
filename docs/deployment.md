@@ -41,6 +41,33 @@ LIVD_SESSION_SECRET=...                # node -e "console.log(require('crypto').
 NEXT_PUBLIC_SITE_URL=https://...       # the origin this deployment is actually served from
 ```
 
+Two optional groups turn on features rather than enabling the application.
+Livd runs correctly with neither, and says so rather than pretending:
+
+```
+RESEND_API_KEY=...                     # resend.com > API Keys
+LIVD_EMAIL_FROM="Livd <notifications@your-domain>"   # must be a verified domain
+LIVD_EMAIL_REPLY_TO=...                # optional; an address a person reads
+
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=...     # dash.cloudflare.com > Turnstile
+TURNSTILE_SECRET_KEY=...
+```
+
+**Email.** Without `RESEND_API_KEY` the transport logs the subject and the
+recipient's domain to the server console and reports success, so every flow
+works end to end and nothing fails because a notification could not be sent.
+`LIVD_EMAIL_FROM` must be on a domain verified with the provider or every
+send is refused with a 403 naming the domain.
+
+**Bot protection.** Both halves or neither. The server decides whether a
+token is required from `TURNSTILE_SECRET_KEY` alone — never from anything the
+browser sends — so with the secret set, a submission arriving without a valid
+token is refused whether it came from the form or from a script calling the
+Server Action directly. `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is read at build
+time and also decides whether `challenges.cloudflare.com` appears in the
+Content-Security-Policy, so changing it needs a redeploy rather than an
+environment edit — the same trap as `NEXT_PUBLIC_GOOGLE_SIGN_IN`.
+
 **On the two keys.** The anon key is safe in a browser — Row Level Security is
 what protects the data, not the secrecy of that key. `SUPABASE_SERVICE_ROLE_KEY`
 bypasses every policy: it is the one real secret, is imported by exactly two
@@ -66,12 +93,13 @@ self-consistent without anyone configuring them.
 
 ## 3. The database
 
-Eighteen migrations in [`supabase/migrations/`](../supabase/migrations), applied
+Forty-five migrations in [`supabase/migrations/`](../supabase/migrations), applied
 in order. They are the canonical DDL; [`database-schema.md`](database-schema.md)
 explains the reasoning.
 
-27 tables, every one with Row Level Security enabled and denying by default ·
-51 policies · 33 database functions · triggers maintaining `property_stats` ·
+Counted against the live project rather than estimated: 41 tables, every one
+with Row Level Security enabled and denying by default · 63 policies · 98
+`livd_*` functions · triggers maintaining `property_stats` ·
 `pg_cron` running burst detection hourly.
 
 Apply them through the Supabase dashboard's SQL editor, the Supabase CLI, or any

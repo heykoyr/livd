@@ -1324,3 +1324,77 @@ were verified at the data layer.
 So the honest statement is narrower than before but not empty: **no edge rate
 limit was observed at forty requests**, and whether one exists above that is
 unknown.
+
+---
+
+## Phase 20 — the right of reply, and the notification layer
+
+Two new surfaces, both tested at the layer that refuses rather than at the one
+that hides a button.
+
+### Owner responses
+
+`scripts/security/owner-response-matrix.sql` runs seventeen cases against the
+live database as `authenticated` and as `anon`, inside a transaction that the
+final `raise` aborts — so it is safe to run against production and commits
+nothing. Set the four ids at the top first; the query that finds them is in
+the header.
+
+| Case | Result |
+| --- | --- |
+| Approved claimant, own property | allowed |
+| `respondent_role` derived by trigger, not accepted from the client | 1 row |
+| Approved claimant of a *different* property | refused |
+| Claimant whose claim is still pending | refused |
+| Ordinary resident | refused |
+| Anonymous | refused |
+| Claimant writing as somebody else | refused |
+| A second response on one review | refused |
+| Owner edits the review | 0 rows |
+| Owner removes the review | 0 rows |
+| Owner deletes the review | 0 rows |
+| Owner reads `reviews.author_id` | refused |
+| Owner reveals the reviewer's identity | refused |
+
+The last two are the ones that matter most. An owner who could read
+`author_id` could group every review one person has written across every
+building — the correlation key 0040 took away — and the whole point of a
+right of reply is that it is a right to *answer*, not a route to the person.
+
+### Notifications
+
+| Case | Result |
+| --- | --- |
+| A client role reads `notification_events` | refused |
+| A client role calls `livd_notification_recipient` | refused |
+| `anon` calls `livd_notification_staff` | refused |
+| Somebody writes their own notification switches | 1 row |
+| Somebody writes another account's switches | 0 rows |
+| Self role escalation, after 0044 widened the `profiles` column grant | refused |
+
+That last row is the one 0044 could have broken. 0020 revoked UPDATE on
+`profiles` wholesale and granted it back column by column precisely so a role
+write is refused by privilege before any policy is consulted; adding three
+preference columns meant widening that grant, and the guarantee had to be
+re-checked rather than assumed.
+
+`scripts/security/notification-contract.mjs` covers the other half — not a
+control but a contract. The adapter reaches 0044's functions by RPC, so
+argument and column names live in strings that nothing typechecks, and the
+suite runs against the local adapter, which has no Postgres. Eleven checks,
+all passing, including a re-run of the PostgREST embed that had been silently
+returning 400 on every property page in production.
+
+### Bot protection
+
+Verified in a browser rather than asserted. With the Turnstile test keys
+configured, clearing the hidden token field and submitting the same form body
+was refused with "The security check did not finish" and no review was
+created; the same submission with its token went through. The requirement is
+read from `TURNSTILE_SECRET_KEY` on the server, so a caller that never
+rendered the widget meets the same wall as one that tried the form.
+
+`tests/safety/captcha.test.ts` covers the rest: a missing token, a fabricated
+one, a replayed one, an unreachable Cloudflare, and a mistyped secret — the
+last two deliberately failing open, for the reason the rate limiter already
+documents.
