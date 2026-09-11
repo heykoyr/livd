@@ -133,6 +133,47 @@ Constraints: `moved_out_month >= moved_in_month` · a former resident must suppl
 into a public view · unique index on `(property_id, author_id, tenancy_key)`
 prevents duplicate reviews for the same tenancy.
 
+### What an author may change, and for how long
+
+One rule, stated in four places that are not allowed to disagree: a review may
+be corrected by the person who wrote it, while it is `published`, for
+**24 hours from `created_at`**.
+
+| Where | What enforces it |
+| --- | --- |
+| `reviews_update_own` | `author_id = auth.uid() and status = 'published' and created_at > now() - interval '24 hours'` |
+| `livd_correct_review` | the same three, re-checked against `now()` inside the function |
+| the local adapter | the same arithmetic against `Date.now()` |
+| `src/lib/reviews/edit-window.ts` | what the pages render — never a control |
+
+`livd_guard_review_update` decides *what* may change, and since 0046 it is an
+allow-list: `body`, `would_recommend`, `updated_at`, and nothing else. It was a
+blocklist of twelve columns until then, and the three it had never been told
+about — `created_at`, `safety_flags`, and the rent and tenure figures — were
+writable by the author through PostgREST. `created_at` is the one that mattered:
+it is what the window is measured from, so an author could push their own
+deadline forward indefinitely, and it is the date a property page prints.
+
+A column added to `reviews` later is immutable until this function says
+otherwise, which is the safe failure direction — the same argument 0040 makes
+for column grants.
+
+Two narrow system transitions are exempt, each permitted only when every other
+column is untouched:
+
+- a foreign key nulling `author_id` when an account is deleted (0018);
+- `livd_correct_review` moving a corrected review from `published` to
+  `pending_moderation`, when the content linter raised a serious allegation in
+  the new text. One-way: the function can hold a review and cannot unhold one,
+  and it unions `safety_flags` rather than assigning them, so a correction can
+  raise a flag and can never clear one.
+
+`livd_snapshot_review` fires before any of this, so the first snapshot of a
+review is the state it was published in. A correction writes `reason =
+'correction'` with `changed_by = auth.uid()`; a correction that triggers a hold
+writes `reason = 'moderation'` and a `moderation_actions` row saying why it left
+the property page.
+
 **`review_category_ratings`** — `(review_id, category_key)` PK, `rating` 1–5.
 
 **`review_departure_reasons`** — `(review_id, reason_key)` PK, `is_primary`.

@@ -230,8 +230,8 @@ library, no analytics SDK, no AI at runtime. The Content-Security-Policy permits
 `'self'` and the Supabase origin and nothing else; fonts are self-hosted, so
 rendering a page contacts no third party.
 
-`27` tables · `51` RLS policies · `33` database functions · `18` migrations ·
-`26` routes · `137` source files.
+`41` tables · `63` RLS policies · `99` database functions · `46` migrations ·
+`37` routes · `193` source files · `42` test files.
 
 Full detail in [`docs/architecture.md`](docs/architecture.md) and
 [`docs/database-schema.md`](docs/database-schema.md).
