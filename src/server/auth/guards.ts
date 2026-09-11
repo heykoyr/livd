@@ -1,7 +1,10 @@
 import 'server-only';
 
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
+import { safeNextPath } from '@/lib/auth/safe-redirect';
+import { PATHNAME_HEADER } from '@/lib/auth/request-path';
 import type { AdminRole, UserProfile, UserRole } from '@/types/domain';
 import { getCurrentUser } from './session';
 
@@ -78,12 +81,45 @@ export async function requireRole(required: AdminRole): Promise<UserProfile> {
 }
 
 /**
+ * Where to send somebody back to after they sign in.
+ *
+ * The caller passes a fallback, and the real request path wins where the
+ * middleware has published one. A layout cannot see which page beneath it is
+ * rendering, so the admin shell passed `/admin` for every page under it — and
+ * a moderator following an emailed link to a case signed in and landed on the
+ * dashboard instead, with no way back to the thing they had been sent.
+ *
+ * The header is a convenience, never an input to a decision. It goes through
+ * `safeNextPath`, which is the same rule the sign-in page and the callback
+ * apply, so a destination cannot be smuggled in at one end of the round trip
+ * and honoured at the other. `headers()` can be unavailable in some rendering
+ * contexts, and the fallback covers that rather than throwing.
+ */
+async function returnDestination(fallback: string): Promise<string> {
+  try {
+    const requestHeaders = await headers();
+    const path = requestHeaders.get(PATHNAME_HEADER);
+    if (path) {
+      const safe = safeNextPath(path);
+      if (safe !== '/') return safe;
+    }
+  } catch {
+    // No request context. The fallback is correct, just less specific.
+  }
+
+  return fallback;
+}
+
+/**
  * For pages: redirects to sign-in, preserving where the user was going so they
  * land back on it afterwards.
  */
 export async function requireUserPage(returnTo: string): Promise<UserProfile> {
   const user = await getCurrentUser();
-  if (!user) redirect(`/sign-in?next=${encodeURIComponent(returnTo)}`);
+  if (!user) {
+    const destination = await returnDestination(returnTo);
+    redirect(`/sign-in?next=${encodeURIComponent(destination)}`);
+  }
   return user;
 }
 

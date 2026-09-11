@@ -1,6 +1,8 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { PATHNAME_HEADER } from '@/lib/auth/request-path';
+
 /**
  * Keeps a Supabase session alive across requests.
  *
@@ -11,22 +13,40 @@ import { NextResponse, type NextRequest } from 'next/server';
  * ages out. `supabase-client.ts` has carried a comment saying refresh "happens
  * in the middleware" since Phase 1; this is that middleware.
  *
- * It does nothing else. No route protection lives here: the guards in
- * `src/server/auth/guards.ts` decide who may see what, and Row Level Security
- * decides it again in the database. A middleware that also authorised would be
- * a third opinion running before either of them.
+ * It does one other thing, and it is not authorisation: it copies the request's
+ * own path onto a header, because a layout cannot otherwise learn it.
+ *
+ * That matters for exactly one behaviour. `requireRolePage` is called in the
+ * admin layout, which does not know which admin page is being rendered, so it
+ * passed a hard-coded `/admin` as the destination to return to. A moderator
+ * following an emailed link to a case therefore signed in and landed on the
+ * dashboard, with the case they had been sent to nowhere in sight. Now the
+ * guard reads the real path and sends them where they were going.
+ *
+ * No route protection lives here. The guards in `src/server/auth/guards.ts`
+ * decide who may see what, and Row Level Security decides it again in the
+ * database. A middleware that also authorised would be a third opinion running
+ * before either of them — and a header is not a decision.
  */
+
+
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+  // Set before the early return, so the local adapter gets it too — otherwise
+  // the sign-in destination would be right in production and wrong in
+  // development, which is the worst way round.
+  const headers = new Headers(request.headers);
+  headers.set(PATHNAME_HEADER, request.nextUrl.pathname + request.nextUrl.search);
+
   // The local development adapter signs its own cookie and has no tokens to
   // refresh. Nothing to do, and nothing to fail.
   if (!url || !key || process.env.LIVD_DATA_BACKEND === 'local') {
-    return NextResponse.next({ request });
+    return NextResponse.next({ request: { headers } });
   }
 
-  let response = NextResponse.next({ request });
+  let response = NextResponse.next({ request: { headers } });
 
   const supabase = createServerClient(url, key, {
     cookies: {
@@ -39,7 +59,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
         for (const { name, value } of cookiesToSet) {
           request.cookies.set(name, value);
         }
-        response = NextResponse.next({ request });
+        response = NextResponse.next({ request: { headers } });
         for (const { name, value, options } of cookiesToSet) {
           response.cookies.set(name, value, options);
         }
