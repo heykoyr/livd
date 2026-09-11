@@ -733,3 +733,259 @@ The second is that the *test script* hit the parameter-shadowing trap twice
 (`case_id`, `author_id`) while probing this migration. The detector added in
 Phase 10 covers migrations, not ad-hoc harnesses, so it did not catch these —
 but it is a useful reminder of how ordinary the mistake is.
+
+## 2026-09-11 · Phase 13 · the security review
+
+A dedicated pass at the eight areas the brief names, run against the deployed
+database. Every attack ran inside a transaction terminated by `raise exception`,
+so nothing committed; production was re-counted afterwards and was unchanged.
+
+Migrations arising: `0040_author_pseudonym`, `0041_least_privilege`,
+`0042_review_policy_helpers`.
+
+### 1 · Privilege escalation
+
+| # | Attack | Result |
+|---|---|---|
+| 1.1 | Moderator promotes themselves via `livd_set_user_role` | BLOCKED — `Only an administrator may change a role` |
+| 1.2 | Moderator promotes somebody else | BLOCKED — same |
+| 1.3 | Moderator `update profiles set role='admin'` | BLOCKED — `permission denied for table profiles` |
+| 1.4 | Moderator `update profiles set status=…` | BLOCKED — same |
+| 1.5 | Setting `livd.privileged_write` by hand, then updating | BLOCKED — `permission denied` (the privilege layer refuses before the trigger is reached) |
+| 1.6 | Resident promotes themselves | BLOCKED — `Only an administrator may change a role` |
+| 1.7 | Resident updates their own `role` column | BLOCKED — `permission denied for table profiles` |
+| 1.8 | Administrator promotes themselves | BLOCKED — `You cannot change your own role` |
+| 1.9 | Administrator demotes themselves | BLOCKED — same |
+| 1.10 | **Service role** writes the column directly | BLOCKED — `role and status may only be changed through livd_set_user_role or livd_set_user_status` |
+| 1.11 | **Table owner** writes the column directly | BLOCKED — same |
+| 2.3 | Trust & Safety admin grants a role | BLOCKED — `Only an administrator may change a role` |
+
+Row 1.5 is the one worth keeping. The trigger added in 0020 reads a
+transaction-local flag, and the obvious attack is to set the flag yourself. It
+never gets that far: the column grant refuses the UPDATE before any trigger
+runs. Three layers, and the cheapest one answers first.
+
+**An honest note on the last-administrator rule.** `livd_set_user_role` refuses
+a demotion that would leave no active administrator. That branch is currently
+unreachable: only an administrator may demote an administrator, an
+administrator cannot change their own role, and a suspended one fails
+`livd_is_super_admin()` — so any actor able to demote the last admin is
+themselves an admin, which means they are not the last. The guard is correct
+and presently redundant. It becomes load-bearing the moment role changes gain a
+second entry point, which is exactly when nobody will remember to add it.
+
+### 2 · Identity access
+
+| # | Attack | Result |
+|---|---|---|
+| 2.1 | Moderator reveals an identity | BLOCKED — `Revealing an account identity requires Trust and Safety authorisation` |
+| 2.2 | Resident reveals an identity | BLOCKED — same |
+| 2.3 | An account reveals *itself* | BLOCKED — same |
+| 2.5 | Trust & Safety with an invented reason key | BLOCKED — `Select a reason for this access` |
+| 3.1 | A reason that requires detail, given none | BLOCKED — `This reason needs a written explanation` |
+| 3.2 | Trust & Safety, properly | address returned **and** the audit entry written in the same transaction (0 → 1) |
+| 3.3 | Does that entry contain an `@`? | 0 |
+| 3.4 | A moderator reading the access history | 1 record — they may see that it happened |
+| 3.5 | The **subject** reading the history about themselves | BLOCKED — `Not authorised` |
+| 2.8 | Any authenticated caller reading `auth.users` | BLOCKED — `permission denied for table users` |
+| 2.9 | Calling `livd_mask_email` directly | BLOCKED — `permission denied for function` |
+| 2.10 | Unmasked addresses anywhere in the directory | 0 of 50 rows |
+
+Row 3.4 against 3.5 is deliberate and worth stating plainly: a moderator can
+see *that* an identity was accessed without being able to access one, because
+an access log nobody reads deters nobody. The subject cannot, because telling
+somebody the moment an investigation looks at them is telling the wrong person
+first.
+
+### 3 · A property owner reaching a reviewer
+
+An account was made an `owner`, given an **approved claim** on a real property
+with 23 reviews, and then tried every route.
+
+| # | Attack | Result |
+|---|---|---|
+| 4.4 | `auth.users` | BLOCKED |
+| 4.5 | `livd_reveal_user_identity` | BLOCKED — Trust & Safety only |
+| 4.6 | The account directory | BLOCKED — `Not authorised to read the user directory` |
+| 4.7 | Who verified their location at my building | 0 rows |
+| 4.8 | Residency documents | 0 rows |
+| 4.9 | Who reported a review of my building | 0 rows |
+| 4.10 | Cases, signals and flags about my building | 0, 0, 0 |
+| 4.11 | The review investigation view | BLOCKED — `Not authorised to investigate a review` |
+| 4.12 | Review snapshots (which hold pre-edit text) | 0 rows |
+| 4.13 | Either audit trail | 0, 0 |
+| 4.3 | `profiles` | 1 row — their own |
+| **4.1** | **`reviews.author_id` for their own building** | **23 rows. PERMITTED.** |
+
+### The finding
+
+Every route to the identity was shut. The route to the *link between reviews*
+was wide open, and had been all along.
+
+`reviews.author_id` was readable by every client role — including `anon`. One
+unauthenticated query returned an account identifier for all 222 published
+reviews, resolving to 120 distinct authors.
+
+A UUID is not a name, and it is tempting to file that as pseudonymous rather
+than identifying. That is the wrong conclusion. Anonymity is not only "your
+name is not printed"; it is also that two reviews cannot be tied to the same
+person. A stable per-author key on a public row breaks the second half
+completely — group everything one person has written, cross it with tenure
+dates, rent, locality and departure reasons, and an owner who already suspects
+which of 23 reviews is their former tenant's learns which *other* buildings
+that person has reviewed. That is frequently the detail that turns a suspicion
+into a certainty.
+
+Fixed in `0040`. Re-run afterwards: anon and the owner both get
+`permission denied`, the service role still reads it, and anon still reads all
+222 reviews and every public column of them.
+
+### The fix that did nothing
+
+The first version was the obvious one:
+
+```sql
+revoke select (author_id) on table reviews from anon, authenticated;
+```
+
+It applied cleanly and changed nothing. **A table-level SELECT grant covers
+every column**, including ones later revoked at column level, so while the
+blanket grant stands a column revoke is silently inert. Anon still read all 222
+author ids.
+
+It was caught only because the attack was re-run rather than the migration
+being trusted. The working version revokes the table grant and lists the 22
+permitted columns back — which is more to maintain, and fails in the safe
+direction: forget a column and a page breaks loudly, rather than an identifier
+quietly staying readable.
+
+### The fix that nearly broke the product
+
+Removing the table grant immediately broke something else:
+
+```
+select count(*) from review_category_ratings;
+ERROR: permission denied for table reviews
+```
+
+Seven policies on the review side-tables are written as sub-selects against
+`reviews`, and a policy expression is evaluated with the **querying role's**
+privileges. Those sub-selects needed the grant that had just been removed —
+and three of them referenced `author_id` specifically.
+
+This is the same trap as `0021`, which revoked EXECUTE on the policy predicate
+functions and made `profiles` unreadable. The lesson was supposed to have been
+learnt. What caught it was running the public read path as `anon` immediately
+after the change, rather than concluding the pages were fine because the suite
+was green — **the suite uses the local adapter, which has no privilege system
+at all and could not have noticed**.
+
+`0042` moves those conditions into SECURITY DEFINER helpers, the same shape as
+`livd_is_moderator()`. Verified afterwards as `anon`: 222 reviews, 2,033
+category ratings, 1,313 tags, 212 departure reasons, 16 properties — and
+`author_id` still refused. Verified as an author: a new review writes to all
+three side tables and reads back. Verified as a stranger: writing to somebody
+else's review is refused by RLS, reading a published one is not.
+
+### 4 · Anonymous access
+
+Every sensitive table read as `anon`:
+
+```
+reviews=222  properties=16
+```
+
+and nothing else. `profiles`, `review_reports`, `property_claims`,
+`verification_records`, `property_verifications`, `moderation_actions`,
+`admin_audit_log`, `ts_cases`, `case_events`, `case_notes`, `case_evidence`,
+`review_snapshots`, `user_sanctions`, `authority_requests`,
+`disclosure_records`, `account_signals`, `property_flags`, `rate_limit_events`,
+`owner_responses`, `saved_properties` — all zero rows or denied.
+
+Eleven `livd_*` functions are executable by `anon`: two pure-maths helpers, the
+two public search functions, the five role predicates that RLS policies must be
+able to call (0021), the audit-action normaliser, and one trigger function.
+Each returns either public data or a boolean about the caller. None was found
+to leak.
+
+### 5 · Verification and evidence
+
+| # | Reader | Rows of `verification_records` |
+|---|---|---|
+| 10.1 | The person who submitted the document | 0 |
+| 10.2 | An unrelated resident | 0 |
+| 10.3 | A moderator | 0 |
+| 10.4 | Trust & Safety | 0 |
+| 10.5 | Anonymous | 0 |
+| 10.6 | The service role | 1 — the only reader of the storage reference |
+
+No client role reaches a residency document, not even the person who submitted
+it. The file is reachable only through server code that has passed a guard, and
+since Phase 3 that path is authorised and audited.
+
+### 6 · Audit modification
+
+| # | Attack | Result |
+|---|---|---|
+| 9.1 | The actor deletes the entry recording what they just did | BLOCKED — `permission denied` |
+| 9.2 | The actor edits its reason | BLOCKED — `permission denied` |
+| 9.3 | **Service role** edits it | BLOCKED — `permission denied` |
+| 9.4 | **Service role** deletes it | BLOCKED — `permission denied` |
+| 9.5 | **Table owner** edits it | BLOCKED — `admin_audit_log is append-only; rows cannot be changed or removed` |
+| 9.6 | **Table owner** deletes it | BLOCKED — same |
+| 9.7 | A moderator empties `moderation_actions` | BLOCKED — `permission denied` |
+
+Rows 9.5 and 9.6 are the ones that matter. Grants stop the roles the
+application uses; the trigger stops everybody, including the role that owns the
+table.
+
+### 7 · Self status and role modification
+
+Covered by rows 1.6–1.9 above, in both directions: an account cannot change its
+own role or standing through the functions, and cannot reach the columns
+directly.
+
+### 8 · Direct PostgREST access
+
+**This could not be tested over HTTP.** The environment this review ran in has
+no outbound network access, so no request was made to the deployed REST
+endpoint. What was tested is the authorisation layer PostgREST relies on —
+every query above ran with `role` set to `anon` or `authenticated` and
+`request.jwt.claims` set exactly as PostgREST sets them, which is the same
+path a request takes after routing.
+
+What that leaves unverified is the HTTP layer itself: which schemas are
+exposed, CORS, and whether any RPC is reachable that the grants above imply
+should not be. That belongs in the remaining limitations, not in this table.
+
+What the grants say is: `anon` reaches two tables, both of them public, and
+eleven functions, none of which returns anything private.
+
+### A second finding: reporting your own review
+
+`reports_insert` checked only that the reporter is the caller and is active.
+"You cannot report your own review" lived in a Server Action — and PostgREST
+does not run Server Actions, so from outside the application the check was
+decorative. Exactly the shape of the role-column hole before 0020.
+
+Closed in `0040` with a trigger rather than a policy, because it must read the
+review the report points at and because a trigger binds the service role too.
+Verified: `You cannot report your own review`.
+
+### A third finding: privileges nobody asked for
+
+`anon` and `authenticated` held TRUNCATE on 32 tables, TRIGGER on 40 and
+REFERENCES on 39 — Supabase's default `grant all` on the public schema.
+
+TRUNCATE is the one that matters, because **TRUNCATE is not filtered by Row
+Level Security**. Every other write a client role attempts is checked row by
+row against a policy; TRUNCATE removes every row without consulting one.
+
+It is not an emergency: PostgREST has no verb that reaches TRUNCATE, and the
+attack was blocked twice over by accident anyway — a foreign key on `reviews`,
+and `review_snapshots` lacking the same grant, which stopped the cascade. But
+"not reachable through the interface we currently expose" is the exact
+reasoning that left a moderator able to become an administrator until 0020.
+
+Revoked in `0041`, including from default privileges so the next `create table`
+does not quietly restore it.

@@ -94,6 +94,7 @@ import {
   PROPERTY_SELECT,
   PROPERTY_VERIFICATION_SELECT,
   REVIEW_SELECT,
+  REVIEW_SELECT_WITH_AUTHOR,
   toClaim,
   toModerationAction,
   toProperty,
@@ -981,11 +982,20 @@ export class SupabaseRepository implements LivdRepository {
     };
   }
 
+  /**
+   * One review, with its author.
+   *
+   * Through the service role since 0040, because `author_id` is no longer
+   * readable by a client key and three server-side callers need it: the
+   * self-report check, the claim flow and moderation. Every one of them runs
+   * after an authentication guard, and none of them returns the author to a
+   * page.
+   */
   async getReviewById(id: string): Promise<Review | null> {
-    const supabase = await this.client();
+    const supabase = this.admin();
     const { data, error } = await supabase
       .from('reviews')
-      .select(REVIEW_SELECT)
+      .select(REVIEW_SELECT_WITH_AUTHOR)
       .eq('id', id)
       .maybeSingle();
 
@@ -993,11 +1003,18 @@ export class SupabaseRepository implements LivdRepository {
     return data ? toReview(data as unknown as ReviewRow, TAG_POLARITY) : null;
   }
 
+  /**
+   * Somebody's own reviews.
+   *
+   * Through the service role since 0040. Every caller passes the id of the
+   * account that is already signed in — the account page, the account's review
+   * list, the claim flow — and none of them accepts an id from a request.
+   */
   async listReviewsByAuthor(authorId: string): Promise<Review[]> {
-    const supabase = await this.client();
+    const supabase = this.admin();
     const { data, error } = await supabase
       .from('reviews')
-      .select(REVIEW_SELECT)
+      .select(REVIEW_SELECT_WITH_AUTHOR)
       .eq('author_id', authorId)
       .neq('status', 'removed')
       .order('created_at', { ascending: false });
@@ -1102,8 +1119,7 @@ export class SupabaseRepository implements LivdRepository {
         ...(patch.body !== undefined ? { body: patch.body } : {}),
         ...(patch.wouldRecommend !== undefined ? { would_recommend: patch.wouldRecommend } : {}),
       })
-      .eq('id', id)
-      .eq('author_id', authorId);
+      .eq('id', id);
 
     if (error) throw new Error(`updateReview: ${error.message}`);
 
@@ -1117,7 +1133,8 @@ export class SupabaseRepository implements LivdRepository {
     authorId: string,
     movedInMonth: string,
   ): Promise<boolean> {
-    const supabase = await this.client();
+    // Service role since 0040: the duplicate check reads author_id.
+    const supabase = this.admin();
     const year = movedInMonth.slice(0, 4);
 
     const { data, error } = await supabase

@@ -73,7 +73,8 @@ export function toProperty(row: PropertyRow): Property {
 export interface ReviewRow {
   id: string;
   property_id: string;
-  author_id: string;
+  /** Absent on a client-role read since 0040. Present through the service role. */
+  author_id?: string | null;
   residency_status: Review['residencyStatus'];
   moved_in_month: string;
   moved_out_month: string | null;
@@ -111,7 +112,7 @@ export function toReview(row: ReviewRow, tagPolarity: Map<string, 'positive' | '
   return {
     id: row.id,
     propertyId: row.property_id,
-    authorId: row.author_id,
+    authorId: row.author_id ?? null,
     residencyStatus: row.residency_status,
     movedInMonth: row.moved_in_month,
     movedOutMonth: row.moved_out_month,
@@ -364,8 +365,21 @@ export const PROPERTY_VERIFICATION_SELECT =
   'id, user_id, property_id, method, status, failure_reason, expires_at, created_at';
 
 /** The nested select used everywhere a full review is needed. */
+/**
+ * The columns a client role may read.
+ *
+ * `author_id` is deliberately absent, and since 0040 it is absent from the
+ * grant as well — a client key selecting it gets `permission denied`, not a
+ * null. A published review is public; who wrote it never was, and a stable
+ * per-author key on a public row is the correlation handle that makes an
+ * anonymous review attributable.
+ *
+ * Use `REVIEW_SELECT_WITH_AUTHOR` on a service-role query when the server
+ * genuinely needs the author — checking a review is yours, listing your own
+ * reviews, an investigation.
+ */
 export const REVIEW_SELECT = `
-  id, property_id, author_id, residency_status, moved_in_month, moved_out_month,
+  id, property_id, residency_status, moved_in_month, moved_out_month,
   tenure_months, overall_rating, body, would_recommend, rent_amount_minor,
   rent_currency, rent_period, noticed_management_change, verification_level,
   verification_id, verified_at,
@@ -374,6 +388,9 @@ export const REVIEW_SELECT = `
   review_departure_reasons ( reason_key, is_primary ),
   review_tags ( tag_key )
 `;
+
+/** As `REVIEW_SELECT`, plus the author. Service role only. */
+export const REVIEW_SELECT_WITH_AUTHOR = `author_id, ${REVIEW_SELECT}`;
 
 export const PROPERTY_SELECT = `
   id, slug, building_name, street_address, neighbourhood, locality, admin_area,
