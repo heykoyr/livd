@@ -48,7 +48,7 @@ export default async function AccountPage() {
         </dl>
       </Card>
 
-      <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Link href="/account/reviews" className="block">
           <Card interactive className="h-full p-5">
             <h2 className="font-display text-title-md tracking-tightish text-ink">
@@ -67,6 +67,18 @@ export default async function AccountPage() {
             </h2>
             <p className="mt-2 text-label text-ink-muted">
               Properties you are considering, side by side. Visible only to you.
+            </p>
+          </Card>
+        </Link>
+
+        <Link href="/account/notifications" className="block">
+          <Card interactive className="h-full p-5">
+            <h2 className="font-display text-title-md tracking-tightish text-ink">
+              Email preferences
+            </h2>
+            <p className="mt-2 text-label text-ink-muted">
+              What Livd writes to you about. Your reviews, replies from a property, decisions on
+              your claims.
             </p>
           </Card>
         </Link>

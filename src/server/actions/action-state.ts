@@ -134,6 +134,17 @@ export interface OwnerResponseState {
 export const initialOwnerResponseState: OwnerResponseState = { status: 'idle', error: null };
 
 /* -------------------------------------------------------------------------
+ * Notification preferences
+ * ---------------------------------------------------------------------- */
+
+export interface PreferencesState {
+  status: 'idle' | 'saved' | 'error';
+  error: string | null;
+}
+
+export const initialPreferencesState: PreferencesState = { status: 'idle', error: null };
+
+/* -------------------------------------------------------------------------
  * Account deletion
  * ---------------------------------------------------------------------- */
 

@@ -14,6 +14,8 @@
 | Auth | **Supabase Auth** — magic link + OAuth | No passwords to store or leak. |
 | Validation | **Zod v4** | One schema per boundary, shared by client hints and server enforcement. |
 | Tests | **Vitest** + Testing Library + axe-core | |
+| Email | **Resend**, over `fetch` | Transactional only. An HTTPS POST with a JSON body — no dependency, no long-lived connections for a serverless platform to mishandle, and failures that arrive as a status code. |
+| Bot mitigation | **Cloudflare Turnstile** | Invisible for almost every real person, and not an advertising product. Verified server-side; the requirement is decided from the server's own environment, never from the request. |
 | Hosting | **Vercel** | Matches the framework; edge caching for property pages. |
 
 ### Deliberately not used
@@ -114,6 +116,8 @@ src/
 ├── server/
 │   ├── auth/               Session, adapters, guards
 │   ├── data/               Repository interface + adapters
+│   ├── notify/             Transport · email shell · message catalogue · dispatcher
+│   ├── safety/             Server-side bot verification
 │   └── actions/            Server Actions (the only write path)
 ├── config/                 markets · categories · departure reasons · site
 ├── content/                copy.ts — every user-facing string
@@ -198,10 +202,60 @@ list and search ordering.
 | Residency verification | Resident uploads at `/account/reviews`; `src/lib/safety/verification-checks.ts` settles what a machine can; a moderator decides at `/admin/verification`. Evidence lives in a private bucket with no policy for any client role, and reaches a moderator through a five-minute signed URL |
 | Property verification | A location check in the review wizard. The decision is made inside Postgres by `livd_verify_property_location` so a client can ask for a verdict but never assert one; `src/lib/geo/proximity.ts` is the same rule for the local adapter, held to it by `tests/verification/parity.test.ts`. No coordinate is stored anywhere |
 | Review level integrity | `livd_derive_review_verification`, a BEFORE INSERT trigger, derives `verification_level` from the verification a review points at and refuses one belonging to another person or another property |
+| Bot mitigation | `src/server/safety/captcha.ts`, called by the submit action before the schema is parsed. Whether a token is required is read from `TURNSTILE_SECRET_KEY` on the server, so a caller who never rendered the widget meets the same wall. A definite "no" fails the submission; an unreachable Cloudflare does not, for the same reason the rate limiter degrades rather than closing |
+| Right of reply | An approved claimant may post one public response per review of their property. `owner_responses_insert` is the control; the check in the Server Action exists only to produce a better message than a policy refusal can. `scripts/security/owner-response-matrix.sql` runs the whole matrix against the live database and rolls back |
 | Authorisation | `requireUser` / `requireRole` guards; RLS as the second, authoritative layer |
 
 **Defence in depth is the rule.** Every write is checked in the Server Action
 *and* constrained by RLS. Neither layer is trusted alone.
+
+---
+
+## 7a. Notifications
+
+Livd sends transactional email and nothing else — no newsletter, no digest,
+no marketing list. Three audiences, one dispatcher.
+
+| Event | Who is told |
+| --- | --- |
+| A review is published, held, removed or restored | Its author |
+| A property responds to a review | The reviewer |
+| A review is published on a claimed property | The approved claimant |
+| A claim is approved or refused | The claimant |
+| A review is reported · a claim is submitted | Moderators and above |
+| A high or critical case · an authority request | Trust & Safety and above |
+
+**Nobody is told they were reported.** A report is not a decision — reporting
+does nothing to a review on its own — so an email about one would tell an
+author that an unnamed person has complained, give them nothing to do about
+it, and invite exactly the retaliation the anonymity model exists to prevent.
+They are told when something happens to their review.
+
+**The address never reaches application memory by any other route.**
+`profiles` has no email column and the admin directory returns a mask computed
+in Postgres. Writing to somebody is a different act from looking them up, so it
+has its own door rather than widening that one:
+`livd_notification_recipient` and `livd_notification_staff` are
+SECURITY DEFINER with EXECUTE revoked from every client role, and neither
+writes an identity-access audit entry — filling the log that answers "which
+moderator looked up whose identity" with events no human performed would make
+it unreadable.
+
+**One event, one email.** `notification_events.dedupe_key` is unique and the
+claim is `insert … on conflict do nothing returning id`, so a retried action,
+two concurrent callers and five writes of one status all resolve to one send.
+The same table is the delivery log.
+
+**Nothing here can break the thing it reports on.** Every path is wrapped and
+returns void, and dispatch runs inside `after()` from `next/server` — after
+the response, while the invocation is still alive.
+
+**Logs carry the kind, the outcome and the recipient's domain.** Never the
+address, never the user id, never the message.
+
+Recipients choose what reaches them at `/account/notifications`. Two things
+are not optional: a sign-in link, and a decision that removes something they
+wrote or changes their account's standing.
 
 ---
 
@@ -247,6 +301,7 @@ No review author information — not even a pseudonym — appears in structured 
 | `tests/design/` | Every token pair the design puts together, read out of `globals.css` |
 | `tests/auth/` | Redirect safety on the sign-in path |
 | `tests/components/` | Month-and-year field behaviour |
+| `tests/notify/` | The message catalogue's anonymity rule, subject length, plain-text twin, HTML escaping · the dispatcher's four guarantees: send-once, preferences, never breaking the action, no identity in a log line |
 | `tests/verification/` | Proximity maths and its uncertainty budget · resident recency and freshness · TypeScript/SQL constant parity · what a public review does and does not carry · server-side enforcement against every spoofing path · the verification step's states |
 
 Highest-risk-first: scoring correctness, safety pipeline, authorisation.
