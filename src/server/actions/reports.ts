@@ -1,13 +1,16 @@
 'use server';
 
 import { headers } from 'next/headers';
+import { after } from 'next/server';
 
 import { copy } from '@/content/copy';
+import { propertyDisplayName } from '@/lib/format';
 import { checkDualRateLimit } from '@/lib/safety/rate-limit';
 import { reportSchema } from '@/lib/validation/review';
 import type { ReportActionState } from './action-state';
 import { AuthorisationError, requireUser } from '@/server/auth/guards';
 import { getRepository } from '@/server/data';
+import { notifyStaff } from '@/server/notify';
 
 /**
  * Reporting a review.
@@ -68,11 +71,39 @@ export async function submitReport(
     };
   }
 
-  await repository.createReport({
+  const report = await repository.createReport({
     reviewId: parsed.data.reviewId,
     reporterId: user.id,
     reason: parsed.data.reason,
     detail: parsed.data.detail,
+  });
+
+  /* --- Tell whoever is on duty --------------------------------------- */
+
+  // A report is the one signal on Livd that comes from outside and asks for
+  // a person. It is also the cheapest thing on the platform to abuse, so the
+  // email says what it is and links to the queue rather than quoting what the
+  // reporter wrote — and it names neither the reporter nor the author, both
+  // of whom are ids at this point and neither of whom a moderator needs
+  // before opening the case.
+  const propertyId = review.propertyId;
+  const reason = parsed.data.reason;
+  const reportId = report.id;
+
+  after(async () => {
+    const repo = await getRepository();
+    const property = await repo.getPropertyById(propertyId);
+    if (!property) return;
+
+    await notifyStaff({
+      minRole: 'moderator',
+      dedupe: `report_opened:${reportId}`,
+      message: {
+        kind: 'staff_report_opened',
+        propertyName: propertyDisplayName(property.address),
+        reason,
+      },
+    });
   });
 
   return { status: 'success', error: null };

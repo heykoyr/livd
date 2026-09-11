@@ -48,11 +48,46 @@ export interface StoredVerification extends VerificationRecord {
   evidenceSha256: string;
 }
 
+/**
+ * An account, plus the switches that are columns on `profiles` in Postgres.
+ *
+ * Optional so that a store written before 0044 loads unchanged and every
+ * absent switch reads as on, which is the column default there too.
+ */
+export interface StoredUser extends UserProfile {
+  notificationPreferences?: {
+    reviewUpdates: boolean;
+    propertyResponses: boolean;
+    trustSafety: boolean;
+  };
+}
+
+/**
+ * One row of the delivery ledger. The same shape as `notification_events`.
+ *
+ * `dedupeKey` is what makes a send happen once: a claim checks this list for
+ * the key before appending, inside `mutate`, which serialises every write —
+ * so two concurrent Server Actions cannot both decide they are first.
+ */
+export interface StoredNotification {
+  id: string;
+  dedupeKey: string;
+  kind: string;
+  recipientId: string | null;
+  recipientKind: 'user' | 'moderator' | 'trust_admin' | 'admin';
+  status: 'pending' | 'sent' | 'failed' | 'skipped';
+  detail: string | null;
+  attempts: number;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  sentAt: string | null;
+}
+
 export interface LocalDatabase {
   version: number;
   properties: Property[];
   reviews: Review[];
-  users: UserProfile[];
+  users: StoredUser[];
   reports: ReviewReport[];
   claims: PropertyClaim[];
   ownerResponses: OwnerResponse[];
@@ -306,6 +341,8 @@ export interface LocalDatabase {
   nextTrailSeq: number;
   saved: SavedProperty[];
   helpfulVotes: Array<{ reviewId: string; voterId: string }>;
+  /** The delivery ledger. See StoredNotification. */
+  notifications: StoredNotification[];
   searchEvents: Array<{
     queryHash: string;
     countryCode: string | null;
@@ -352,6 +389,7 @@ function emptyDatabase(): LocalDatabase {
     nextTrailSeq: 1,
     saved: [],
     helpfulVotes: [],
+    notifications: [],
     searchEvents: [],
   };
 }

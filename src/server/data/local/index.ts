@@ -71,6 +71,7 @@ import { decideProximity, isImplausibleMovement } from '@/lib/geo/proximity';
 
 /** Matches `p_cooldown_days` in `livd_detect_property_flags`. */
 const FLAG_DECISION_COOLDOWN_DAYS = 7;
+import type { AdminRole } from '@/types/domain';
 import type {
   AdminAttention,
   AdminAuditPage,
@@ -91,11 +92,19 @@ import type {
   AccountDeletionSummary,
   LocalitySummary,
   NearbyProperty,
+  NotificationPreferences,
+  NotificationRecipient,
   ReviewListOptions,
   ReviewListResult,
 } from '../repository';
 import { toPublicReview } from '../public-review';
-import { getDatabase, mutate, type LocalDatabase, type StoredVerification } from './store';
+import {
+  getDatabase,
+  mutate,
+  type LocalDatabase,
+  type StoredUser,
+  type StoredVerification,
+} from './store';
 
 /**
  * File-backed repository.
@@ -3490,6 +3499,14 @@ export class LocalRepository implements LivdRepository {
       .map((claim) => claim.propertyId);
   }
 
+  async findApprovedClaimantId(propertyId: string): Promise<string | null> {
+    const database = await getDatabase();
+    const claim = database.claims.find(
+      (candidate) => candidate.propertyId === propertyId && candidate.status === 'approved',
+    );
+    return claim?.claimantId ?? null;
+  }
+
   async createOwnerResponse(input: {
     reviewId: string;
     responderId: string;
@@ -3521,6 +3538,111 @@ export class LocalRepository implements LivdRepository {
         respondentRole: claim.roleClaimed,
         createdAt: nowIso(),
       });
+    });
+  }
+
+
+  /* ---------------------------------------------------------------------
+   * Notifications
+   *
+   * The ledger is the same shape as `notification_events` in Postgres, and
+   * the claim is the same rule: the first caller to present a dedupe key owns
+   * the send and every later one is told no. Here that is enforced by
+   * `mutate`, which serialises writes through a promise chain, so the
+   * read-modify-write cannot interleave. There it is a unique index.
+   *
+   * Addresses are on the user record in this store, so there is no
+   * service-role boundary to cross; the method exists to keep the two
+   * adapters interchangeable, and it applies the same two refusals — an
+   * unknown account, and a banned one.
+   * ------------------------------------------------------------------ */
+
+  async claimNotification(input: {
+    dedupeKey: string;
+    kind: string;
+    recipientId: string | null;
+    recipientKind: 'user' | 'moderator' | 'trust_admin' | 'admin';
+    payload: Record<string, unknown>;
+  }): Promise<boolean> {
+    return mutate((database) => {
+      if (database.notifications.some((entry) => entry.dedupeKey === input.dedupeKey)) {
+        return false;
+      }
+
+      database.notifications.push({
+        id: `notif-${shortId(12)}`,
+        dedupeKey: input.dedupeKey,
+        kind: input.kind,
+        recipientId: input.recipientId,
+        recipientKind: input.recipientKind,
+        status: 'pending',
+        detail: null,
+        attempts: 1,
+        payload: input.payload,
+        createdAt: nowIso(),
+        sentAt: null,
+      });
+
+      return true;
+    });
+  }
+
+  async settleNotification(
+    dedupeKey: string,
+    status: 'sent' | 'failed' | 'skipped',
+    detail: string | null,
+  ): Promise<void> {
+    await mutate((database) => {
+      const entry = database.notifications.find((row) => row.dedupeKey === dedupeKey);
+      if (!entry) return;
+      entry.status = status;
+      entry.detail = detail ? detail.slice(0, 500) : null;
+      if (status === 'sent') entry.sentAt = nowIso();
+    });
+  }
+
+  async notificationRecipient(userId: string): Promise<NotificationRecipient | null> {
+    const database = await getDatabase();
+    const user = database.users.find((candidate) => candidate.id === userId);
+    if (!user || user.status === 'banned') return null;
+
+    return {
+      userId: user.id,
+      email: user.email,
+      locale: user.preferredLocale,
+      preferences: preferencesOf(user),
+    };
+  }
+
+  async notificationStaff(minRole: AdminRole): Promise<NotificationRecipient[]> {
+    const database = await getDatabase();
+    const wanted = STAFF_RANK[minRole] ?? 1;
+
+    return database.users
+      .filter((user) => user.status === 'active' && (STAFF_RANK[user.role as AdminRole] ?? 0) >= wanted)
+      .slice(0, 50)
+      .map((user) => ({
+        userId: user.id,
+        email: user.email,
+        locale: user.preferredLocale,
+        preferences: preferencesOf(user),
+      }));
+  }
+
+  async getNotificationPreferences(userId: string): Promise<NotificationPreferences> {
+    const database = await getDatabase();
+    const user = database.users.find((candidate) => candidate.id === userId);
+    return preferencesOf(user);
+  }
+
+  async setNotificationPreferences(
+    userId: string,
+    preferences: NotificationPreferences,
+  ): Promise<void> {
+    await mutate((database) => {
+      const user = database.users.find((candidate) => candidate.id === userId);
+      if (!user) return;
+      user.notificationPreferences = { ...preferences };
     });
   }
 
@@ -4192,6 +4314,26 @@ function computeTenure(movedInMonth: string, movedOutMonth: string | null): numb
     (end.getUTCFullYear() - start.getUTCFullYear()) * 12 +
     (end.getUTCMonth() - start.getUTCMonth());
   return Math.max(1, months);
+}
+
+/* -------------------------------------------------------------------------
+ * Notification helpers
+ * ---------------------------------------------------------------------- */
+
+/** The ladder in src/server/auth/guards.ts, as a lookup. */
+const STAFF_RANK: Record<string, number> = {
+  moderator: 1,
+  trust_admin: 2,
+  admin: 3,
+};
+
+/** Defaults on, matching the column defaults in migration 0044. */
+function preferencesOf(user: StoredUser | undefined): NotificationPreferences {
+  return {
+    reviewUpdates: user?.notificationPreferences?.reviewUpdates ?? true,
+    propertyResponses: user?.notificationPreferences?.propertyResponses ?? true,
+    trustSafety: user?.notificationPreferences?.trustSafety ?? true,
+  };
 }
 
 /** Kept for the address formatter's use in tests and future exports. */

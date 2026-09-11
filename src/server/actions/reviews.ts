@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
 
 import { copy } from '@/content/copy';
 import { lintContent, type SafetyCode } from '@/lib/safety/content-linter';
@@ -11,8 +12,10 @@ import {
 } from './action-state';
 import { checkDualRateLimit } from '@/lib/safety/rate-limit';
 import { newPropertySchema, reviewDraftSchema } from '@/lib/validation/review';
+import { propertyDisplayName } from '@/lib/format';
 import { AuthorisationError, requireUser } from '@/server/auth/guards';
 import { getRepository } from '@/server/data';
+import { notify } from '@/server/notify';
 import { getGeocoder } from '@/server/geo/geocoder';
 import { invalidateProperty } from '@/server/data/cache';
 import type { ReviewStatus } from '@/types/domain';
@@ -226,6 +229,48 @@ export async function submitReview(
   // Read-your-own-writes: the author is about to land on the property page and
   // must see their own review there.
   await invalidateProperty(property.id);
+
+  /* --- Tell the people it concerns ----------------------------------- */
+
+  // `after` rather than a floating promise: it runs once the response has
+  // been sent but while the invocation is still alive, so the email is not
+  // racing the platform's decision to freeze this function. Nothing in here
+  // can fail the submission — `notify` swallows everything — and nothing in
+  // here is awaited by the reviewer.
+  const propertyName = propertyDisplayName(property.address);
+  const reviewId = review.id;
+
+  after(async () => {
+    await notify({
+      to: user.id,
+      // Keyed on the review, so a moderator publishing this same review later
+      // computes the same key and does not send a second "it is live".
+      dedupe:
+        status === 'published' ? `review_published:${reviewId}` : `review_held:${reviewId}`,
+      message:
+        status === 'published'
+          ? { kind: 'review_published', propertyName, propertySlug: property.slug }
+          : { kind: 'review_held', propertyName },
+    });
+
+    // And the property's owner, if it has one. Only for a review that is
+    // actually public — telling an owner about a review held for moderation
+    // would disclose the existence of content the platform has not published,
+    // and about a person it is still deciding on.
+    if (status !== 'published') return;
+
+    const repository = await getRepository();
+    const claimantId = await repository.findApprovedClaimantId(property.id);
+    if (!claimantId) return;
+
+    await notify({
+      to: claimantId,
+      dedupe: `owner_new_review:${reviewId}`,
+      // No reviewer, no rating, no excerpt. The message type has no field
+      // that could carry one — see src/server/notify/messages.ts.
+      message: { kind: 'owner_new_review', propertyName, propertySlug: property.slug },
+    });
+  });
 
   return {
     ...initialReviewSubmitState,

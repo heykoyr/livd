@@ -2,9 +2,55 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
 
 import * as admin from '@/server/admin';
+import { getRepository } from '@/server/data';
+import { notifyStaff } from '@/server/notify';
+import type { CasePriority } from '@/types/domain';
 import type { ModerationActionState } from './action-state';
+
+/**
+ * When a case is worth an email.
+ *
+ * Not on every case. A case is opened from a report several times a week and
+ * the console is where that work is picked up; mailing every moderator each
+ * time would train them to filter the address, and then the one that matters
+ * arrives in the same folder as the rest.
+ *
+ * High and critical are different. Those are the two that mean "this is not
+ * waiting for the next time somebody opens the queue", and they are set
+ * deliberately by a person who has decided exactly that.
+ */
+const URGENT: CasePriority[] = ['high', 'critical'];
+
+/**
+ * Reads the case back so the email can name it.
+ *
+ * Done before `after` rather than inside it, so the read happens while the
+ * request's own session is unambiguously available. A reference — LV-1048 —
+ * is the difference between an email somebody can act on from a phone and
+ * one that only says a case exists somewhere.
+ */
+async function notifyAboutUrgentCase(caseId: string): Promise<void> {
+  const repository = await getRepository();
+  const summary = await repository.getCase(caseId);
+  if (!summary || !URGENT.includes(summary.priority)) return;
+
+  const { reference, priority } = summary;
+  const text = summary.summary;
+
+  after(async () => {
+    await notifyStaff({
+      minRole: 'trust_admin',
+      // Keyed on the priority as well as the case, so raising one to
+      // critical after it was already high sends the second escalation and
+      // re-raising it to the same level does not.
+      dedupe: `case_${priority}:${caseId}`,
+      message: { kind: 'staff_case_opened', reference, caseId, priority, summary: text },
+    });
+  });
+}
 
 /**
  * Case actions.
@@ -44,6 +90,8 @@ export async function openCase(
 
   revalidatePath('/admin/reports');
   revalidatePath('/admin/cases');
+
+  await notifyAboutUrgentCase(result.data.caseId);
 
   // Throws a control-flow exception; nothing after it runs.
   redirect(`/admin/cases/${result.data.caseId}`);
@@ -102,6 +150,8 @@ export async function setCasePriority(
 
   revalidatePath(`/admin/cases/${caseId}`);
   revalidatePath('/admin/cases');
+
+  if (result.ok) await notifyAboutUrgentCase(caseId);
 
   return toState(result, 'Priority updated.');
 }

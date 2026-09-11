@@ -1,8 +1,10 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
 
 import * as admin from '@/server/admin';
+import { notifyStaff } from '@/server/notify';
 import type { ModerationActionState } from './action-state';
 
 /**
@@ -32,6 +34,25 @@ export async function openAuthorityRequest(
   revalidatePath('/admin/authority-requests');
 
   if (!result.ok) return { error: result.error, message: null };
+
+  /* --- Tell Trust & Safety ------------------------------------------- */
+
+  // These arrive with deadlines attached and are the one queue where not
+  // noticing has consequences outside the product. Neither the subject
+  // account nor what was asked for is in the email — the request itself is
+  // read in the console, where reading it is recorded.
+  const requestType = String(formData.get('requestType') ?? 'information');
+  const authority = String(formData.get('requestingAuthority') ?? 'an authority');
+  const reference = result.data?.requestId ?? `${Date.now()}`;
+
+  after(async () => {
+    await notifyStaff({
+      minRole: 'trust_admin',
+      dedupe: `authority_request:${reference}`,
+      message: { kind: 'staff_authority_request', requestType, authority },
+    });
+  });
+
   return { error: null, message: 'Request recorded. Nothing has been disclosed.' };
 }
 

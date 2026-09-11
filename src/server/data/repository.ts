@@ -1,5 +1,6 @@
 import type {
   AccountSignal,
+  AdminRole,
   AdminUserDetail,
   AdminUserFilters,
   AdminUserPage,
@@ -413,6 +414,32 @@ export interface AdminOverview {
   pendingClaimCount: number;
   userCount: number;
   reviewsLast30Days: number;
+}
+
+/* -------------------------------------------------------------------------
+ * Notifications
+ * ---------------------------------------------------------------------- */
+
+/** Which of the three switches a person has left on. */
+export interface NotificationPreferences {
+  reviewUpdates: boolean;
+  propertyResponses: boolean;
+  trustSafety: boolean;
+}
+
+/**
+ * Somebody Livd is about to write to.
+ *
+ * The only shape in the codebase besides `UserProfile` that carries a real
+ * email address, and it exists for exactly one consumer: the dispatcher, which
+ * hands it straight to the mail provider. It never reaches a page, a Server
+ * Action's return value or a log line — see `src/server/notify/index.ts`.
+ */
+export interface NotificationRecipient {
+  userId: string;
+  email: string;
+  locale: string;
+  preferences: NotificationPreferences;
 }
 
 /* -------------------------------------------------------------------------
@@ -1035,12 +1062,88 @@ export interface LivdRepository {
   /** The properties this user may respond on behalf of. */
   listClaimedPropertyIds(userId: string): Promise<string[]>;
 
+  /**
+   * The approved claimant's account id, for the notification path only.
+   *
+   * `getApprovedClaim` cannot answer this: it reads through the caller's own
+   * session, and `claims_read` shows a claim to its claimant and to
+   * moderators alone — so a resident publishing a review correctly sees no
+   * claim on the property they just reviewed, and the owner would never be
+   * told about it.
+   *
+   * An id and nothing else, deliberately. The caller passes it straight to
+   * the dispatcher as an address to write *to*; it is never returned to a
+   * page, put in a payload, or joined against anything. Server-side only, and
+   * against Postgres it runs as the service role rather than widening a
+   * policy — widening `claims_read` would make ownership of every property
+   * publicly readable, which 0007 exists to prevent.
+   */
+  findApprovedClaimantId(propertyId: string): Promise<string | null>;
+
   createOwnerResponse(input: {
     reviewId: string;
     responderId: string;
     body: string;
     isResolutionNotice: boolean;
   }): Promise<void>;
+
+  /* ---- Notifications ---- */
+
+  /**
+   * Takes ownership of one notification, or declines it.
+   *
+   * Returns true when this caller is the one that must send, and false when
+   * somebody already has. The decision is a unique index rather than a
+   * check-then-act, so two concurrent callers, a retry and a moderator
+   * clicking twice all resolve to one send.
+   *
+   * This is the whole of the duplicate-suppression design, and it is a
+   * repository method rather than a helper because it has to be atomic with
+   * the row it creates. "Read, decide, write" is correct almost always, and
+   * "almost always" produces the email somebody receives five times.
+   */
+  claimNotification(input: {
+    /** `<kind>:<subject id>`, computed the same way from every code path. */
+    dedupeKey: string;
+    kind: string;
+    /** Null for a role fan-out. */
+    recipientId: string | null;
+    recipientKind: 'user' | 'moderator' | 'trust_admin' | 'admin';
+    payload: Record<string, unknown>;
+  }): Promise<boolean>;
+
+  /** Records what happened to a claimed notification. Never throws. */
+  settleNotification(
+    dedupeKey: string,
+    status: 'sent' | 'failed' | 'skipped',
+    detail: string | null,
+  ): Promise<void>;
+
+  /**
+   * One person's address and preferences, for the purpose of writing to them.
+   *
+   * Behind the service role in Postgres — `livd_notification_recipient` is
+   * revoked from every client role. Returns null for an account that has been
+   * deleted or banned, so neither is written to.
+   */
+  notificationRecipient(userId: string): Promise<NotificationRecipient | null>;
+
+  /**
+   * Staff at or above a rank, for operational mail.
+   *
+   * By role rather than by a configured address: an address in an environment
+   * variable is one person's inbox, and it is wrong the week they are away.
+   */
+  notificationStaff(minRole: AdminRole): Promise<NotificationRecipient[]>;
+
+  /** A person's own switches, for the preferences page. No address. */
+  getNotificationPreferences(userId: string): Promise<NotificationPreferences>;
+
+  /** Written by the account holder, for the account holder. */
+  setNotificationPreferences(
+    userId: string,
+    preferences: NotificationPreferences,
+  ): Promise<void>;
 
   /* ---- Saved properties ---- */
 

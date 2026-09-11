@@ -15,6 +15,7 @@ import {
 } from '@/server/auth/supabase-client';
 import type {
   AccountSignal,
+  AdminRole,
   AdminUserDetail,
   AdminUserFilters,
   AdminUserPage,
@@ -43,6 +44,7 @@ import type {
   SanctionReason,
   ReviewVerificationEntry,
   ModerationAction,
+  OwnerResponse,
   Property,
   PropertyClaim,
   PropertyIntelligence,
@@ -85,6 +87,8 @@ import type {
   AccountDeletionSummary,
   LocalitySummary,
   NearbyProperty,
+  NotificationPreferences,
+  NotificationRecipient,
   ReviewListOptions,
   ReviewListResult,
 } from '../repository';
@@ -948,11 +952,28 @@ export class SupabaseRepository implements LivdRepository {
 
     const reviews = (data ?? []).map((row) => toReview(row as unknown as ReviewRow, TAG_POLARITY));
 
-    const { data: responses } = await supabase
-      .from('owner_responses')
-      .select('id, review_id, body, is_resolution_notice, created_at, property_claims!inner(role_claimed)')
-      .in('review_id', reviews.map((r) => r.id))
-      .eq('status', 'published');
+    // The role is a column on the response since 0045, not an embed.
+    //
+    // This query used to ask for `property_claims!inner(role_claimed)`, and
+    // there is no foreign key between the two tables — so PostgREST answered
+    // 400 PGRST200 every time, the error was destructured away, and no
+    // property page has ever shown a response. The error is checked now, and
+    // a failure degrades to "no responses" rather than taking the page down
+    // with it: a review is worth reading without the reply beneath it.
+    const responseIds = reviews.map((review) => review.id);
+
+    const { data: responses, error: responseError } =
+      responseIds.length === 0
+        ? { data: [], error: null }
+        : await supabase
+            .from('owner_responses')
+            .select('id, review_id, body, is_resolution_notice, respondent_role, created_at')
+            .in('review_id', responseIds)
+            .eq('status', 'published');
+
+    if (responseError) {
+      console.error('[livd] owner responses could not be read', responseError.message);
+    }
 
     const responsesByReview = new Map(
       ((responses ?? []) as Array<{
@@ -960,6 +981,7 @@ export class SupabaseRepository implements LivdRepository {
         review_id: string;
         body: string;
         is_resolution_notice: boolean;
+        respondent_role: OwnerResponse['respondentRole'] | null;
         created_at: string;
       }>).map((row) => [
         row.review_id,
@@ -968,7 +990,7 @@ export class SupabaseRepository implements LivdRepository {
           reviewId: row.review_id,
           body: row.body,
           isResolutionNotice: row.is_resolution_notice,
-          respondentRole: 'manager' as const,
+          respondentRole: row.respondent_role ?? ('manager' as const),
           createdAt: row.created_at,
         },
       ]),
@@ -2043,6 +2065,20 @@ export class SupabaseRepository implements LivdRepository {
     return (data ?? []).map((row) => (row as { property_id: string }).property_id);
   }
 
+  async findApprovedClaimantId(propertyId: string): Promise<string | null> {
+    // Service role, because the point is to answer a question the caller's
+    // own session is correctly not allowed to ask. See the interface note.
+    const { data, error } = await this.admin()
+      .from('property_claims')
+      .select('claimant_id')
+      .eq('property_id', propertyId)
+      .eq('status', 'approved')
+      .maybeSingle();
+
+    if (error) throw new Error(`findApprovedClaimantId: ${error.message}`);
+    return (data as { claimant_id: string } | null)?.claimant_id ?? null;
+  }
+
   async createOwnerResponse(input: {
     reviewId: string;
     responderId: string;
@@ -2064,6 +2100,125 @@ export class SupabaseRepository implements LivdRepository {
 
     // RLS is what actually restricts this to the approved claimant.
     if (error) throw new Error(`createOwnerResponse: ${error.message}`);
+  }
+
+
+  /* ---------------------------------------------------------------------
+   * Notifications
+   *
+   * Everything here runs as the service role, and that is the whole design
+   * rather than a convenience. `livd_notification_recipient` and
+   * `livd_notification_staff` have EXECUTE revoked from `anon` and
+   * `authenticated`, so an email address cannot be reached from a browser
+   * session by any route — not through PostgREST, not through a policy, not
+   * by a Server Action that forgot its guard. The address exists for the
+   * length of one dispatcher call and is handed to the mail provider.
+   *
+   * The two preference methods are the exception: they run as the person
+   * themselves, because they are the person editing their own settings.
+   * Migration 0044 grants UPDATE on those three columns to `authenticated`
+   * and `profiles_update_own` restricts it to their own row.
+   * ------------------------------------------------------------------ */
+
+  async claimNotification(input: {
+    dedupeKey: string;
+    kind: string;
+    recipientId: string | null;
+    recipientKind: 'user' | 'moderator' | 'trust_admin' | 'admin';
+    payload: Record<string, unknown>;
+  }): Promise<boolean> {
+    const { data, error } = await this.admin().rpc('livd_claim_notification', {
+      target_key: input.dedupeKey,
+      target_kind: input.kind,
+      target_user: input.recipientId,
+      target_channel: input.recipientKind,
+      target_payload: input.payload,
+    });
+
+    // A claim that cannot be recorded must not become a send. Returning false
+    // here loses a notification; returning true would risk sending it on
+    // every retry for ever, which is the failure this table exists to stop.
+    if (error) throw new Error(`claimNotification: ${error.message}`);
+
+    return typeof data === 'string' && data.length > 0;
+  }
+
+  async settleNotification(
+    dedupeKey: string,
+    status: 'sent' | 'failed' | 'skipped',
+    detail: string | null,
+  ): Promise<void> {
+    const { error } = await this.admin().rpc('livd_settle_notification', {
+      target_key: dedupeKey,
+      target_status: status,
+      target_detail: detail,
+    });
+
+    if (error) throw new Error(`settleNotification: ${error.message}`);
+  }
+
+  async notificationRecipient(userId: string): Promise<NotificationRecipient | null> {
+    const { data, error } = await this.admin().rpc('livd_notification_recipient', {
+      target_user: userId,
+    });
+
+    if (error) throw new Error(`notificationRecipient: ${error.message}`);
+
+    const row = (Array.isArray(data) ? data[0] : data) as NotificationRecipientRow | undefined;
+    return row ? toRecipient(row) : null;
+  }
+
+  async notificationStaff(minRole: AdminRole): Promise<NotificationRecipient[]> {
+    const { data, error } = await this.admin().rpc('livd_notification_staff', {
+      min_rank: STAFF_RANK[minRole],
+    });
+
+    if (error) throw new Error(`notificationStaff: ${error.message}`);
+
+    return ((data ?? []) as NotificationStaffRow[]).map((row) => ({
+      userId: row.user_id,
+      email: row.email,
+      locale: 'en',
+      // Staff mail follows the role, so the switches are not consulted. The
+      // shape is filled in rather than faked absent, so a caller that does
+      // check one is not surprised by undefined.
+      preferences: { reviewUpdates: true, propertyResponses: true, trustSafety: true },
+    }));
+  }
+
+  async getNotificationPreferences(userId: string): Promise<NotificationPreferences> {
+    const supabase = await this.client();
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('email_review_updates, email_property_responses, email_trust_safety')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) throw new Error(`getNotificationPreferences: ${error.message}`);
+
+    const row = data as PreferenceRow | null;
+    return {
+      reviewUpdates: row?.email_review_updates ?? true,
+      propertyResponses: row?.email_property_responses ?? true,
+      trustSafety: row?.email_trust_safety ?? true,
+    };
+  }
+
+  async setNotificationPreferences(
+    userId: string,
+    preferences: NotificationPreferences,
+  ): Promise<void> {
+    const supabase = await this.client();
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        email_review_updates: preferences.reviewUpdates,
+        email_property_responses: preferences.propertyResponses,
+        email_trust_safety: preferences.trustSafety,
+      })
+      .eq('id', userId);
+
+    if (error) throw new Error(`setNotificationPreferences: ${error.message}`);
   }
 
   /* ---------------------------------------------------------------------
@@ -3721,3 +3876,51 @@ function monthsBetween(movedInMonth: string, movedOutMonth: string | null): numb
 
 /** Kept so the module's search helpers stay colocated with their only consumer. */
 export { normaliseForSearch };
+
+/* -------------------------------------------------------------------------
+ * Notification rows
+ * ---------------------------------------------------------------------- */
+
+/** One row of `livd_notification_recipient`. */
+interface NotificationRecipientRow {
+  user_id: string;
+  email: string;
+  locale: string | null;
+  status: string;
+  email_review_updates: boolean;
+  email_property_responses: boolean;
+  email_trust_safety: boolean;
+}
+
+/** One row of `livd_notification_staff`. */
+interface NotificationStaffRow {
+  user_id: string;
+  email: string;
+  role: string;
+}
+
+interface PreferenceRow {
+  email_review_updates: boolean;
+  email_property_responses: boolean;
+  email_trust_safety: boolean;
+}
+
+/** The ladder in src/server/auth/guards.ts, as the rank the SQL expects. */
+const STAFF_RANK: Record<AdminRole, number> = {
+  moderator: 1,
+  trust_admin: 2,
+  admin: 3,
+};
+
+function toRecipient(row: NotificationRecipientRow): NotificationRecipient {
+  return {
+    userId: row.user_id,
+    email: row.email,
+    locale: row.locale ?? 'en',
+    preferences: {
+      reviewUpdates: row.email_review_updates,
+      propertyResponses: row.email_property_responses,
+      trustSafety: row.email_trust_safety,
+    },
+  };
+}

@@ -1,13 +1,16 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
 import { z } from 'zod';
 
 import { copy } from '@/content/copy';
+import { propertyDisplayName } from '@/lib/format';
 import { AuthorisationError, requireRole } from '@/server/auth/guards';
 import { changeUserRole } from '@/server/admin';
 import { getRepository } from '@/server/data';
 import { invalidateProperty } from '@/server/data/cache';
+import { notify } from '@/server/notify';
 import type { ModerationActionState } from './action-state';
 
 /**
@@ -61,6 +64,8 @@ export async function setReviewStatus(
   const review = await repository.getReviewById(parsed.data.reviewId);
   if (!review) return { error: 'That review no longer exists.', message: null };
 
+  const wasPublished = review.status === 'published';
+
   await repository.setReviewStatus(
     parsed.data.reviewId,
     parsed.data.status,
@@ -72,6 +77,66 @@ export async function setReviewStatus(
   await invalidateProperty(review.propertyId);
   revalidatePath('/admin/queue');
   revalidatePath('/admin/reports');
+
+  /* --- Tell the person whose review it is ---------------------------- */
+
+  // A decision about somebody's own writing is the clearest case for an
+  // email there is: the alternative is that they find out by going and
+  // looking, which for a removal means not finding out at all.
+  //
+  // The author may be null — an account that has been deleted leaves its
+  // reviews standing and severed, and there is nobody left to write to.
+  const authorId = review.authorId;
+  const nextStatus = parsed.data.status;
+  const reason = parsed.data.reason;
+  const propertyId = review.propertyId;
+  const reviewId = parsed.data.reviewId;
+
+  if (authorId && nextStatus !== review.status) {
+    after(async () => {
+      const repo = await getRepository();
+      const property = await repo.getPropertyById(propertyId);
+      if (!property) return;
+
+      const propertyName = propertyDisplayName(property.address);
+
+      if (nextStatus === 'removed') {
+        await notify({
+          to: authorId,
+          dedupe: `review_removed:${reviewId}:${reason.slice(0, 40)}`,
+          message: { kind: 'review_removed', propertyName, reason },
+        });
+        return;
+      }
+
+      if (nextStatus === 'published') {
+        // Restored, or published out of the moderation queue. Two different
+        // sentences, because "your review is back" said to somebody whose
+        // review was never taken down is confusing.
+        await notify({
+          to: authorId,
+          dedupe: wasPublished
+            ? `review_published:${reviewId}`
+            : `review_restored:${reviewId}`,
+          message: wasPublished
+            ? { kind: 'review_published', propertyName, propertySlug: property.slug }
+            : { kind: 'review_restored', propertyName, propertySlug: property.slug },
+        });
+        return;
+      }
+
+      // held / pending_moderation. Neutral wording, and only worth sending
+      // for a review that was public a moment ago — a submission that never
+      // published was already told at submit time.
+      if (wasPublished) {
+        await notify({
+          to: authorId,
+          dedupe: `review_held:${reviewId}:${nextStatus}`,
+          message: { kind: 'review_held', propertyName },
+        });
+      }
+    });
+  }
 
   return { error: null, message: `Review ${parsed.data.status.replace('_', ' ')}.` };
 }
@@ -219,6 +284,14 @@ export async function decideClaim(
 
   const repository = await getRepository();
 
+  // Read before deciding. Afterwards the claim has left the pending queue,
+  // and finding it again would mean scanning every claim ever approved —
+  // which grows without bound while the pending list is the moderator's own
+  // queue and stays short.
+  const pending = (await repository.listClaims('pending')).find(
+    (entry) => entry.claim.id === parsed.data.claimId,
+  );
+
   try {
     await repository.decideClaim(
       parsed.data.claimId,
@@ -243,6 +316,34 @@ export async function decideClaim(
   }
 
   revalidatePath('/admin/claims');
+
+  /* --- Tell the claimant --------------------------------------------- */
+
+  // Approving a claim grants a standing right of reply on a property page,
+  // and until now the person it was granted to was told nothing at all —
+  // they had to keep checking. A rejection carries its reason, because a
+  // claimant who does not know what was missing cannot supply it.
+  const claimId = parsed.data.claimId;
+  const decision = parsed.data.status;
+  const why = parsed.data.reason;
+
+  if (pending) {
+    const claimantId = pending.claim.claimantId;
+    const propertyName = propertyDisplayName(pending.property.address);
+    const propertySlug = pending.property.slug;
+
+    after(async () => {
+      await notify({
+        to: claimantId,
+        dedupe: `claim_${decision}:${claimId}`,
+        message:
+          decision === 'approved'
+            ? { kind: 'claim_approved', propertyName, propertySlug }
+            : { kind: 'claim_rejected', propertyName, reason: why },
+      });
+    });
+  }
+
   return { error: null, message: `Claim ${parsed.data.status}.` };
 }
 
