@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Field, FormError, Input, Select } from '@/components/ui/field';
+import { Turnstile } from '@/components/ui/turnstile';
 import { MARKET_LIST, PROPERTY_TYPE_KEYS, getMarket, propertyTypeLabel } from '@/config/markets';
 import { initialNewPropertyState } from '@/server/actions/action-state';
 import { createProperty } from '@/server/actions/reviews';
@@ -19,6 +20,7 @@ import { createProperty } from '@/server/actions/reviews';
  */
 export function NewPropertyForm() {
   const [countryCode, setCountryCode] = useState('');
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [state, formAction, pending] = useActionState(createProperty, initialNewPropertyState);
 
   const market = getMarket(countryCode || null);
@@ -103,6 +105,11 @@ export function NewPropertyForm() {
           </Select>
         )}
       </Field>
+
+      {/* Creating a property calls a paid geocoding API, so this endpoint
+          costs money as well as data quality if it is left open. */}
+      <input type="hidden" name="captchaToken" value={captchaToken ?? ''} />
+      <Turnstile action="property-create" onToken={setCaptchaToken} />
 
       <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-border pt-6">
         <Button type="submit" size="lg" loading={pending}>

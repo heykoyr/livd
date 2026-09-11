@@ -6,6 +6,7 @@ import { useActionState, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Button, ButtonLink } from '@/components/ui/button';
 import { FormError } from '@/components/ui/field';
 import { Card } from '@/components/ui/primitives';
+import { Turnstile } from '@/components/ui/turnstile';
 import { LIMITS } from '@/config/site';
 import { copy } from '@/content/copy';
 import { cn } from '@/lib/utils';
@@ -92,6 +93,10 @@ export function ReviewWizard({
   const [index, setIndex] = useState(0);
   const [stepError, setStepError] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
+  // Held in state rather than left in the DOM: a token is single-use and
+  // expires after about five minutes, and the widget clears it rather than
+  // letting the form submit something Cloudflare will refuse.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   const [state, formAction, submitting] = useActionState(submitReview, initialReviewSubmitState);
@@ -256,6 +261,15 @@ export function ReviewWizard({
         {isLast ? (
           <form action={formAction}>
             <input type="hidden" name="draft" value={payload} />
+            <input type="hidden" name="captchaToken" value={captchaToken ?? ''} />
+            {/* On the last step only. A token lives about five minutes, and
+                issuing one at the start of a four-minute wizard would expire
+                it somewhere around the departure-reasons screen. The submit
+                button is deliberately not gated on it: an extension that
+                blocks the script would otherwise strand somebody on a
+                disabled button with no explanation, where the server's
+                refusal at least says what to do. */}
+            <Turnstile action="review-submit" onToken={setCaptchaToken} />
             <Button
               type="submit"
               size="lg"

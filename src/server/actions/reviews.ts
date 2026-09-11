@@ -11,6 +11,7 @@ import {
   type ReviewSubmitState,
 } from './action-state';
 import { checkDualRateLimit } from '@/lib/safety/rate-limit';
+import { captchaMessage, verifyCaptcha } from '@/server/safety/captcha';
 import { newPropertySchema, reviewDraftSchema } from '@/lib/validation/review';
 import { propertyDisplayName } from '@/lib/format';
 import { AuthorisationError, requireUser } from '@/server/auth/guards';
@@ -29,12 +30,13 @@ import { originIdentifier } from './reports';
  *
  *   1. Authentication and account standing.
  *   2. Rate limit — before any expensive work.
- *   3. Schema validation.
- *   4. The property exists.
- *   5. The author does not own the property. Reviewing a property you manage is
+ *   3. Bot check — before the schema, because parsing a bot's JSON is work.
+ *   4. Schema validation.
+ *   5. The property exists.
+ *   6. The author does not own the property. Reviewing a property you manage is
  *      the most direct form of manipulation available.
- *   6. Not a duplicate review of the same tenancy.
- *   7. Content safety.
+ *   7. Not a duplicate review of the same tenancy.
+ *   8. Content safety.
  *
  * Every one of these is also enforced by a database constraint or an RLS policy.
  * This layer exists to produce a useful message; the database is what makes the
@@ -88,7 +90,24 @@ export async function submitReview(
     };
   }
 
-  /* --- 3. Shape ----------------------------------------------------- */
+  /* --- 3. Not a bot ------------------------------------------------- */
+
+  // Before the schema, and before any read. A bot is refused on the cheapest
+  // check that can refuse it, and whether a token is required at all is
+  // decided from the server's own environment rather than from anything this
+  // request carries — so a script calling this action directly, with no
+  // widget ever rendered, meets the same wall as one that tried the form.
+  const captchaToken = formData.get('captchaToken');
+  const captcha = await verifyCaptcha(
+    typeof captchaToken === 'string' ? captchaToken : null,
+    await originIdentifier(),
+  );
+
+  if (!captcha.ok) {
+    return { ...initialReviewSubmitState, status: 'error', error: captchaMessage(captcha.reason) };
+  }
+
+  /* --- 4. Shape ----------------------------------------------------- */
 
   const raw = formData.get('draft');
   if (typeof raw !== 'string') {
@@ -120,7 +139,7 @@ export async function submitReview(
   const draft = parsed.data;
   const repository = await getRepository();
 
-  /* --- 4. The property exists --------------------------------------- */
+  /* --- 5. The property exists --------------------------------------- */
 
   const property = await repository.getPropertyById(draft.propertyId);
   if (!property) {
@@ -131,7 +150,7 @@ export async function submitReview(
     };
   }
 
-  /* --- 5. Not the owner --------------------------------------------- */
+  /* --- 6. Not the owner --------------------------------------------- */
 
   const claimedPropertyIds = await repository.listClaimedPropertyIds(user.id);
   if (claimedPropertyIds.includes(property.id)) {
@@ -143,7 +162,7 @@ export async function submitReview(
     };
   }
 
-  /* --- 6. Not a duplicate ------------------------------------------- */
+  /* --- 7. Not a duplicate ------------------------------------------- */
 
   const alreadyReviewed = await repository.hasExistingReview(
     property.id,
@@ -159,7 +178,7 @@ export async function submitReview(
     };
   }
 
-  /* --- 7. Content safety -------------------------------------------- */
+  /* --- 8. Content safety -------------------------------------------- */
 
   const safety = lintContent(draft.body);
 
@@ -309,9 +328,23 @@ export async function createProperty(
     };
   }
 
-  const limit = await checkDualRateLimit('propertyCreate', user.id, await originIdentifier());
+  const origin = await originIdentifier();
+
+  const limit = await checkDualRateLimit('propertyCreate', user.id, origin);
   if (!limit.allowed) {
     return { fieldErrors: {}, error: copy.errors.rateLimitedBody };
+  }
+
+  // Protected for the same reason as a review, plus one of its own: creating
+  // a property calls a paid geocoding API, so an unprotected endpoint here
+  // costs money as well as data quality.
+  const captchaToken = formData.get('captchaToken');
+  const captcha = await verifyCaptcha(
+    typeof captchaToken === 'string' ? captchaToken : null,
+    origin,
+  );
+  if (!captcha.ok) {
+    return { fieldErrors: {}, error: captchaMessage(captcha.reason) };
   }
 
   const parsed = newPropertySchema.safeParse({

@@ -12,17 +12,38 @@ import type { NextConfig } from 'next';
  */
 const isDev = process.env.NODE_ENV === 'development';
 
+/**
+ * Cloudflare Turnstile, and only when it is configured.
+ *
+ * This is the first third-party script origin Livd has ever allowed, so it is
+ * gated on the site key rather than written in permanently: a deployment with
+ * no bot protection configured keeps the CSP it had before, with no external
+ * script, frame or connect origin at all.
+ *
+ * Three directives, because the widget needs all three — the api.js loader,
+ * the iframe the challenge renders in, and the calls it makes back to
+ * Cloudflare to solve it. Granting script-src alone produces a widget that
+ * silently never issues a token, which then reads as a bot-protection outage
+ * rather than as a CSP problem.
+ */
+const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com';
+const turnstile = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ? ` ${TURNSTILE_ORIGIN}` : '';
+
 const contentSecurityPolicy = [
   "default-src 'self'",
-  // Next injects inline bootstrap scripts; no third-party script origins are allowed.
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
+  // Next injects inline bootstrap scripts. The only third-party origin ever
+  // permitted here is Turnstile, and only when a site key is set.
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}${turnstile}`,
   // Tailwind emits a static stylesheet; inline styles are used only for CSS custom
   // properties on data-visualisation elements (bar widths etc.).
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   // Supabase is the only permitted network destination when configured.
-  `connect-src 'self'${process.env.NEXT_PUBLIC_SUPABASE_URL ? ` ${process.env.NEXT_PUBLIC_SUPABASE_URL}` : ''}${isDev ? ' ws: http://localhost:*' : ''}`,
+  `connect-src 'self'${process.env.NEXT_PUBLIC_SUPABASE_URL ? ` ${process.env.NEXT_PUBLIC_SUPABASE_URL}` : ''}${turnstile}${isDev ? ' ws: http://localhost:*' : ''}`,
+  // The challenge renders in an iframe from Cloudflare. Nothing else may be
+  // framed, and `frame-ancestors 'none'` still forbids framing Livd.
+  `frame-src 'self'${turnstile}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
