@@ -27,6 +27,7 @@ const draft = emptyDraft({
   name: 'Test Property',
   context: 'London, United Kingdom',
   countryCode: 'GB',
+  isDemo: false,
   canVerifyLocation: false,
 });
 
