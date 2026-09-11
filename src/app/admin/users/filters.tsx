@@ -62,7 +62,7 @@ export function DirectoryFilters({
             placeholder={
               canSearchByEmail ? 'Account id or email address' : 'Account id (first characters)'
             }
-            className="h-10"
+           
           />
           <span className="text-micro text-ink-subtle">
             {canSearchByEmail
@@ -117,7 +117,7 @@ export function DirectoryFilters({
             </Link>
           )}
 
-          <Button type="submit" variant="secondary" size="sm">
+          <Button type="submit" variant="secondary">
             Apply
           </Button>
         </div>
@@ -144,7 +144,7 @@ function FilterSelect({
       <span className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
         {label}
       </span>
-      <Select name={name} defaultValue={value} className="h-10">
+      <Select name={name} defaultValue={value}>
         {children}
       </Select>
     </label>

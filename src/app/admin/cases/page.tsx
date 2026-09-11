@@ -107,14 +107,14 @@ export default async function CasesPage({
             <span className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
               Reference
             </span>
-            <Input name="q" type="search" defaultValue={query.reference} placeholder="LV-1048" className="h-10" />
+            <Input name="q" type="search" defaultValue={query.reference} placeholder="LV-1048" />
           </label>
 
           <label className="flex flex-col gap-1.5 md:w-48">
             <span className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
               Status
             </span>
-            <Select name="status" defaultValue={query.status} className="h-10">
+            <Select name="status" defaultValue={query.status}>
               <option value="">Open cases</option>
               {(Object.keys(CASE_STATUS_LABELS) as CaseStatus[]).map((status) => (
                 <option key={status} value={status}>
@@ -128,7 +128,7 @@ export default async function CasesPage({
             <span className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
               Priority
             </span>
-            <Select name="priority" defaultValue={query.priority} className="h-10">
+            <Select name="priority" defaultValue={query.priority}>
               <option value="">Any</option>
               {(Object.keys(CASE_PRIORITY_LABELS) as CasePriority[]).map((priority) => (
                 <option key={priority} value={priority}>
@@ -142,7 +142,7 @@ export default async function CasesPage({
             <span className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
               Category
             </span>
-            <Select name="category" defaultValue={query.category} className="h-10">
+            <Select name="category" defaultValue={query.category}>
               <option value="">Any</option>
               {categories.map((category) => (
                 <option key={category.key} value={category.key}>
@@ -178,7 +178,7 @@ export default async function CasesPage({
               <span className="tabular font-medium text-ink">{cases.total}</span>{' '}
               {cases.total === 1 ? 'case' : 'cases'}
             </p>
-            <Button type="submit" variant="secondary" size="sm">
+            <Button type="submit" variant="secondary">
               Apply
             </Button>
           </div>

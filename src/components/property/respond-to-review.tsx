@@ -58,7 +58,7 @@ export function RespondToReviewButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-sm text-micro font-medium text-brand underline underline-offset-2 transition-colors duration-fast hover:text-brand-hover"
+        className="tap-target rounded-sm text-micro font-medium text-brand underline underline-offset-2 transition-colors duration-fast hover:text-brand-hover"
       >
         Respond as the property
       </button>

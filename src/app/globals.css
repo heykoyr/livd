@@ -266,6 +266,58 @@
     border-top: 1px solid var(--color-border);
   }
 
+}
+
+/*
+ * A 44×44 hit area on a control that is smaller than that to look at.
+ *
+ * The design system says every interactive primitive has a 44×44 minimum
+ * hit *area* — which is not the same as a 44px box, and the difference is
+ * the whole reason this exists. A compact icon button in a 64px header, or
+ * a "Report" link set in the smallest type in the system, are both correct
+ * as drawn; they were simply 36 and 15 pixels tall to the thumb.
+ *
+ * Measured in a real phone viewport, the admin console had 47 controls under
+ * 44px. This grows the target from the control's own centre without moving,
+ * resizing or restyling anything, so the layout is unchanged and the tap is
+ * not. It is a child of the control, so a press anywhere in the expanded box
+ * is a press on the control.
+ *
+ * Declared with `@utility` rather than as a plain class in `@layer
+ * utilities`, so it can be composed with a variant — `[&_a]:tap-target` on a
+ * container is how the administrative card list reaches a link inside a cell
+ * whose markup it does not own. A plain class compiles, applies when written
+ * directly, and silently does nothing under a variant, which is exactly the
+ * kind of failure nobody notices.
+ *
+ * Use it where a control is deliberately small, never as a substitute for
+ * one that should have been bigger, and never in a dense stack where the
+ * expanded boxes would overlap each other.
+ */
+@utility tap-target {
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+
+  /* A pointer has no thumb. Above `md` the box is the control again, so it
+     cannot overlap a neighbour on a dense desktop layout. */
+  @media (min-width: 768px) and (pointer: fine) {
+    &::after {
+      display: none;
+    }
+  }
+}
+
+@layer utilities {
+
   .animate-in-up {
     animation: livd-in-up var(--duration-slow) var(--ease-entrance) both;
   }

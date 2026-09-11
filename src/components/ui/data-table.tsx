@@ -67,7 +67,12 @@ export function DataTable<T>({
       <ul className="flex flex-col gap-px overflow-hidden rounded-lg border border-border bg-border lg:hidden">
         {rows.map((row) => (
           <li key={rowKey(row)} className="bg-surface p-4">
-            {primary && <div className="min-w-0">{primary.cell(row)}</div>}
+            {/* The record's own link is the one control on a card, and it
+                was a 15px line of monospace. `tap-target` on the cell gives
+                the thumb the whole 44px without changing the type. */}
+            {primary && (
+              <div className="[&_a]:tap-target min-w-0">{primary.cell(row)}</div>
+            )}
 
             <dl className={cn('grid grid-cols-2 gap-x-4 gap-y-3', primary && 'mt-3.5')}>
               {rest.map((column) => (

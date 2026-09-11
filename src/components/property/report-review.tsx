@@ -43,7 +43,7 @@ export function ReportReviewButton({ reviewId }: { reviewId: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-sm text-micro text-ink-subtle underline underline-offset-2 transition-colors duration-fast hover:text-ink"
+        className="tap-target rounded-sm text-micro text-ink-subtle underline underline-offset-2 transition-colors duration-fast hover:text-ink"
       >
         Report
       </button>

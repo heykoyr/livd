@@ -138,7 +138,8 @@ export function IconButton({
       className={cn(
         base,
         variants[variant],
-        size === 'sm' ? 'size-9' : 'size-11',
+        // `tap-target` keeps the 36px box and gives the thumb 44px.
+        size === 'sm' ? 'tap-target size-9' : 'size-11',
         'shrink-0 p-0',
         className,
       )}

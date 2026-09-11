@@ -57,9 +57,17 @@ export function SiteFooter() {
               <ul className="mt-3 flex flex-col gap-2.5">
                 {column.links.map((link) => (
                   <li key={link.href}>
+                    {/* `py-2 -my-2` doubles the tap target to 31px without
+                        moving anything: the padding grows the box, the
+                        negative margin gives the space back to the layout.
+                        Not the full 44 — these sit 34px apart, and expanding
+                        past that would make neighbouring links overlap,
+                        which is a worse outcome than a small one. They clear
+                        WCAG 2.2 AA either way through the undersized-target
+                        spacing exception. */}
                     <Link
                       href={link.href}
-                      className="text-label text-ink-muted transition-colors duration-fast hover:text-ink"
+                      className="-my-2 block py-2 text-label text-ink-muted transition-colors duration-fast hover:text-ink"
                     >
                       {link.label}
                     </Link>

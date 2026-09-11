@@ -53,7 +53,7 @@ export function Pagination({
                 aria-current={entry === page ? 'page' : undefined}
                 aria-label={copy.common.page(entry)}
                 className={cn(
-                  'grid h-10 min-w-10 place-items-center rounded-md px-2 text-label tabular transition-colors duration-fast',
+                  'grid h-11 min-w-11 place-items-center rounded-md px-2 text-label tabular transition-colors duration-fast',
                   entry === page
                     ? 'bg-brand text-canvas'
                     : 'text-ink-muted hover:bg-surface-sunken hover:text-ink',
@@ -101,7 +101,7 @@ function PageLink({
       <span
         aria-hidden="true"
         className={cn(
-          'flex h-10 items-center gap-1.5 rounded-md text-label text-ink-subtle opacity-45',
+          'flex h-11 items-center gap-1.5 rounded-md text-label text-ink-subtle opacity-45',
           className,
         )}
       >
@@ -115,7 +115,7 @@ function PageLink({
       href={href}
       aria-label={label}
       className={cn(
-        'flex h-10 items-center gap-1.5 rounded-md text-label text-ink-muted transition-colors duration-fast hover:bg-surface-sunken hover:text-ink',
+        'flex h-11 items-center gap-1.5 rounded-md text-label text-ink-muted transition-colors duration-fast hover:bg-surface-sunken hover:text-ink',
         className,
       )}
     >

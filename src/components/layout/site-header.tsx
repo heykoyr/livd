@@ -26,7 +26,7 @@ export function SiteHeader({ user }: { user: UserProfile | null }) {
       <div className="container-shell flex h-16 items-center gap-3">
         <Link
           href="/"
-          className="flex shrink-0 items-center rounded-sm py-1 pr-2"
+          className="flex h-11 shrink-0 items-center rounded-sm pr-2"
           aria-label={`${copy.brand.name} — home`}
         >
           <Logo />

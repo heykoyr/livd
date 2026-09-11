@@ -193,9 +193,25 @@ Not built: Tabs, Tooltip, Progress and Disclosure. Each was in the original
 inventory and none earned its place — the surfaces that would have used them
 were solved with a heading, a link, or a native `<details>`.
 
-Every interactive primitive: 44×44px minimum hit area, visible `:focus-visible`
-ring (2px `brand`, 2px offset), disabled states that still meet 3:1, and a
-non-colour indicator for every state.
+Every interactive primitive: 44×44px minimum hit *area*, visible
+`:focus-visible` ring (2px `brand`, 2px offset), disabled states that still
+meet 3:1, and a non-colour indicator for every state.
+
+**Hit area, not box size.** A compact icon button in a 64px header and a
+"Report" link set in `micro` are both correct as drawn, and were 36 and 15
+pixels tall to a thumb — measured in a real phone viewport, the admin console
+had 47 controls under 44px. The `tap-target` utility in `globals.css` grows
+the target from the control's own centre with a pseudo-element, so nothing
+moves, resizes or restyles. It is declared with `@utility` rather than as a
+class in `@layer utilities`, because only the former composes with a variant:
+`[&_a]:tap-target` is how `DataTable` reaches a link inside a cell whose
+markup it does not own, and a plain class silently does nothing there.
+
+It is not for dense stacks. The footer's link columns sit 34px apart, so a
+44px box would make neighbours overlap — a worse outcome than a small target.
+Those links carry `-my-2 py-2` instead, which doubles the target to 31px with
+no visual change at all, and they clear WCAG 2.2 AA through the
+undersized-target spacing exception either way.
 
 ---
 
