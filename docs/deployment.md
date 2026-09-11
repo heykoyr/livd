@@ -93,12 +93,12 @@ self-consistent without anyone configuring them.
 
 ## 3. The database
 
-Forty-five migrations in [`supabase/migrations/`](../supabase/migrations), applied
+Forty-six migrations in [`supabase/migrations/`](../supabase/migrations), applied
 in order. They are the canonical DDL; [`database-schema.md`](database-schema.md)
 explains the reasoning.
 
 Counted against the live project rather than estimated: 41 tables, every one
-with Row Level Security enabled and denying by default · 63 policies · 98
+with Row Level Security enabled and denying by default · 63 policies · 99
 `livd_*` functions · triggers maintaining `property_stats` ·
 `pg_cron` running burst detection hourly.
 

@@ -11,6 +11,13 @@ node scripts/security/http-app.mjs                                # the deployed
 node --env-file=.env.local   scripts/security/notification-contract.mjs                      # the RPC contract 0044 depends on
 ```
 
+`review-edit-matrix.sql` runs the review-correction matrix: the same seven
+authorisation cases as `tests/safety/review-editing.test.ts`, plus what a
+correction must not be able to reach, as `authenticated` and as `anon`. It picks
+its own fixtures and needs no ids set. The finding it was written after is in
+`docs/security-testing.md` under "Phase 21" — three columns of `reviews` that
+were writable by their author because the update guard was a blocklist.
+
 `owner-response-matrix.sql` runs beside them, in the SQL editor or through
 `supabase db query`. Seventeen cases against the live database, as
 `authenticated` and as `anon`: who may post a property response, who may not,

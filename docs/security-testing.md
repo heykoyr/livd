@@ -1398,3 +1398,98 @@ rendered the widget meets the same wall as one that tried the form.
 one, a replayed one, an unreachable Cloudflare, and a mistyped secret — the
 last two deliberately failing open, for the reason the rate limiter already
 documents.
+
+---
+
+## Phase 21 — correcting a published review
+
+The product had told reviewers for months that they could correct what they
+wrote, and there was nowhere to do it. Building the missing half meant opening
+a write path onto published content, so the path was attacked before it was
+believed — and attacking it turned up three columns that had been writable all
+along.
+
+### What was already open, before any of this was built
+
+Run as an ordinary signed-in author against the live project, inside a
+transaction that was rolled back:
+
+| Attack, as the author over PostgREST | Before 0046 | After |
+| --- | --- | --- |
+| `PATCH reviews { created_at: now() }` | **writable** | refused |
+| `PATCH reviews { safety_flags: […] }` | **writable** | refused |
+| `PATCH reviews { rent_amount_minor, tenure_months }` | **writable** | refused |
+| `PATCH reviews { overall_rating }` | refused | refused |
+| `PATCH reviews { status }` | refused | refused |
+| `PATCH reviews { verification_level }` | refused | refused |
+| `PATCH reviews { body, would_recommend }` | allowed | allowed |
+
+`created_at` is the serious one. The edit window is
+`created_at > now() - interval '24 hours'`, so an author inside the window could
+move their own deadline forward and keep moving it — a review that never becomes
+part of the permanent record. The same column is the date the property page
+prints beside a review, which is the one fact a reader uses to judge how much of
+it still describes the building.
+
+None of the three were reachable through the application, because the
+application had no edit path at all. All three were reachable with the
+publishable key that ships in every browser bundle, which is the only definition
+of reachable that counts.
+
+The cause was the shape of the guard rather than any one omission:
+`livd_guard_review_update` was a blocklist of twelve columns, and silence about
+a column is a grant. 0046 inverts it. `body`, `would_recommend` and `updated_at`
+may move; every other column of `reviews` may not, including ones added later.
+
+### The correction matrix
+
+`scripts/security/review-edit-matrix.sql`, run against the live database as
+`authenticated` and as `anon`, inside a transaction the final `raise` aborts.
+
+| Case | Result |
+| --- | --- |
+| 1 · the author, inside the window | saved; deadline returned as `created_at + 24h` |
+| 2 · the author, after it closed | refused — "The edit window for this review has closed" |
+| 3 · a different signed-in account | refused — "You do not have permission to edit this review" |
+| 4 · anonymous | refused — `permission denied for function livd_correct_review` |
+| 5 · naming a review that is not theirs | refused, worded identically to case 3 |
+| 6 · a forged session clock | refused — the comparison is `now()`, from the server |
+| 7 · extending the window by hand | refused by the guard |
+| rewriting the rating | refused |
+| adding or clearing a safety flag | refused |
+| revising the rent or the tenure | refused |
+| unpublishing or awarding a badge | refused |
+| forging `livd.correction` and rewriting the rating | refused |
+| correcting the words and the recommendation | allowed |
+| `anon` reads `reviews.author_id` | refused (column grant) |
+| `anon` reads `review_snapshots` | 0 of 1 rows visible |
+| `anon` reads `moderation_actions` | 0 rows visible |
+
+Case 5 is worded the same as case 3 deliberately. Two distinguishable refusals
+would make the function a way to find out which review ids are real.
+
+### Two assertions that passed for the wrong reason
+
+Worth recording, because both would have gone in the file as green ticks.
+
+`update reviews set safety_flags = '{}'` reported **permitted** on the first
+run. The column already held `'{}'`, so nothing was distinct from anything and
+the guard correctly waved through a no-op. The same happened with
+`verification_level`, set to the level the row already had. Every assertion in
+the committed matrix now writes a value that genuinely differs from the stored
+one, so "permitted" means permitted.
+
+`safety_flags || 'fabricated'` then raised `malformed array literal`, and the
+harness recorded that as a refusal. A check that cannot tell a refusal from its
+own syntax error is not a check. It is `array['fabricated']` now.
+
+### What this does not claim
+
+The content linter runs in TypeScript, in the Server Action, and Postgres
+cannot re-run it. A crafted request calling `livd_correct_review` directly with
+an empty flag array gets the same treatment a crafted INSERT already gets on the
+submission path: the content goes up unflagged, and reporting and moderation
+catch it rather than the linter. That is the posture Livd already had, and the
+correction path is deliberately no weaker than it — the function cannot clear a
+flag, cannot unhold a held review, cannot extend a window, and cannot touch
+anybody else's row.
