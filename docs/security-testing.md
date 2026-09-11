@@ -989,3 +989,150 @@ reasoning that left a moderator able to become an administrator until 0020.
 
 Revoked in `0041`, including from default privileges so the next `create table`
 does not quietly restore it.
+
+## 2026-09-11 · Phase 14 · regression
+
+The existing product, exercised against the **deployed database** rather than a
+fixture: a development server running the real code, reading the real 124
+accounts, 222 reviews and 16 properties through the anon key.
+
+Migration arising: `0043_advisor_findings`.
+
+### The public surface
+
+| Path | Status |
+|---|---|
+| `/` | 200 — recently reviewed, locality index, sample-data notice |
+| `/search?q=London` | 200 — "Results for London", 1 property, filters, sort |
+| `/property/meridian-court-london` | 200 — score, verdict, categories, departure reasons, verification counts, questions to ask |
+| `/places`, `/places/gb/london` | 200 |
+| `/how-it-works`, `/trust`, `/for-owners` | 200 |
+| `/legal/privacy`, `/legal/terms`, `/legal/content-policy` | 200 |
+| `/sign-in` | 200 — magic-link form |
+| `/api/suggest?q=lon` | 200 — one property, no identity |
+| `/robots.txt`, `/sitemap.xml` | 200 |
+| `/account`, `/review`, `/shortlist`, `/admin`, `/admin/audit` | redirect to sign-in |
+
+No server errors across the sweep. No console errors from the application. No
+email address appears in the rendered text of any page.
+
+**The property page carries nine UUIDs in its HTML. Eight are review ids and
+one is the property id. Zero are account ids and zero are author ids** —
+checked by taking the ids off the live page and joining them against the
+database.
+
+That is the Phase 13 fix holding on real data: the heaviest read path in the
+product renders completely, through the anon key, with `author_id` revoked.
+
+### Redirects
+
+`/admin` sends an anonymous visitor to `/sign-in?next=/admin`, not to a
+forbidden page. `requireRolePage` sends a *signed-in* visitor without the role
+to `/not-found` — so somebody who is not a moderator learns nothing about
+whether the path exists, while somebody who is simply signed out is asked to
+sign in like everywhere else.
+
+An `ERR_SSL_PROTOCOL_ERROR` in the console during this sweep was an artefact of
+the test script following a redirect with an https base, not the product: the
+browser's own navigation to `/admin` resolved over http and rendered.
+
+### Google sign-in
+
+Feature-flagged on `NEXT_PUBLIC_GOOGLE_SIGN_IN`, which is unset locally, so the
+button does not render and could not be exercised. The code path exists
+(`src/app/sign-in/google-button.tsx`, `startGoogleSignIn`, and the callback
+route handling `error_description`). A real OAuth round trip cannot be
+performed in any automated environment without live Google credentials; this is
+noted as unverified rather than claimed.
+
+### The authenticated paths, as the database sees them
+
+Run as a signed-in resident with `request.jwt.claims` set exactly as PostgREST
+sets it.
+
+| # | Behaviour | Result |
+|---|---|---|
+| A | Submitting a review with its categories and tags | accepted |
+| B | A second review for the same tenancy | BLOCKED — unique constraint |
+| C | Setting your own `verification_level` | BLOCKED — `Only the written review and recommendation may be corrected` |
+| D | Correcting your own review inside the window | accepted |
+| E | Editing somebody else's review | 0 rows changed |
+| F | Writing a `verification_records` row from a client key | BLOCKED — RLS |
+| G | Filing a property claim | accepted |
+| H | Responding as an owner without an approved claim | BLOCKED — RLS |
+| I | Saving a property to your own shortlist | accepted |
+| J | Saving to **somebody else's** shortlist | BLOCKED — RLS |
+| K | Reading somebody else's shortlist | 0 rows |
+| L | Filing a report as somebody else | BLOCKED |
+
+### A test that passed for the wrong reason
+
+The first version of J read:
+
+```sql
+insert into saved_properties (user_id, property_id, note)
+select id, prop_id, 'theirs' from profiles where id <> me limit 1;
+```
+
+and it *succeeded*, which looked like a serious RLS gap.
+
+It was not. As that signed-in resident, `profiles` returns exactly one row —
+their own — so `where id <> me` matched nothing, the INSERT inserted nothing,
+and no policy was ever consulted. The statement succeeded by doing nothing.
+
+Re-run with the other account's id captured **before** the role switch, it is
+refused. Recorded because this is the third variety of the same failure in this
+project — the false-pass fixture in Phase 5, the regex that could not match in
+Phase 10, and now a statement that touched no rows — and all three looked like
+green ticks.
+
+### What the database linter found
+
+Supabase's advisors were run and triaged rather than accepted or dismissed
+wholesale.
+
+**Fixed in `0043`.** Three functions predating 0020 had no pinned
+`search_path`: `livd_mask_email`, `livd_forbid_mutation` and
+`livd_normalise_audit_action`. For the two SECURITY DEFINER ones that is a real
+hardening gap — an unpinned definer function can be made to resolve a name to
+something the caller controls. Neither was reachable (EXECUTE revoked from
+every role on the first, trigger-only on the second), and pinning costs a line.
+
+Also fixed: `livd_guard_self_report`, created in 0040, inherited the default
+EXECUTE grant to PUBLIC and so appeared as an anon-callable definer function.
+Calling a trigger function directly only raises an error, but it has no
+business in anybody's API surface. Revoked — and the trigger verified still
+firing afterwards, because "a trigger does not need the grant" is exactly the
+sort of assumption that produced 0021.
+
+**Not fixed, deliberately.**
+
+`rls_enabled_no_policy` on `verification_records` and `rate_limit_events`. The
+linter reads this as an oversight; here it is the strongest available setting.
+RLS on with no policy means no client role reads a single row, which is what
+residency documents and rate-limit state require — verified from five roles
+including the submitter. A policy could only widen it.
+
+`authenticated_security_definer_function_executable`, 57 functions. Every one
+is meant to be callable and refuses the caller internally against `auth.uid()`.
+That is the architecture rather than a gap in it, and Phase 13 called a
+representative sample as residents, owners and moderators.
+
+`anon_security_definer_function_executable`, nine. Five are the role predicates
+RLS policies call; 0021 exists because revoking EXECUTE on those makes the
+tables unreadable. Three are the review helpers from 0042, for the same reason.
+The ninth was the trigger function fixed above.
+
+`extension_in_public` — `pg_trgm` and `unaccent` sit in `public`. Moving them
+means rebuilding the search indexes that depend on their operator classes:
+downtime, for no benefit this deployment's threat model recognises. Recorded as
+a known item rather than done quietly at the end of a long session.
+
+`auth_leaked_password_protection` — Livd has no passwords. Sign-in is a magic
+link or Google, so there is nothing for the check to check.
+
+### Security headers
+
+`next.config.ts` applies Content-Security-Policy, Referrer-Policy,
+`X-Frame-Options: DENY`, Permissions-Policy and Strict-Transport-Security to
+every response. Unchanged by any of this work.
