@@ -95,7 +95,7 @@ export default async function SearchPage({
             <div className="flex flex-wrap justify-center gap-3">
               <ButtonLink href="/review/property/new">{copy.search.addProperty}</ButtonLink>
               <ButtonLink href="/places" variant="secondary">
-                {copy.home.exploreLocations}
+                {copy.nav.explore}
               </ButtonLink>
             </div>
           }

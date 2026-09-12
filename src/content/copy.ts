@@ -18,7 +18,13 @@ export const copy = {
 
   nav: {
     search: 'Search',
-    places: 'Places',
+    /**
+     * "Places" described the old index honestly and sold the product badly:
+     * it named a list of locations rather than the thing a visitor came to
+     * do. The route stays `/places` — it is indexed and linked — and only
+     * the label changed.
+     */
+    explore: 'Explore',
     howItWorks: 'How it works',
     trust: 'Trust & safety',
     shortlist: 'Shortlist',
@@ -122,6 +128,76 @@ export const copy = {
     anyCountry: 'Any country',
     anyScore: 'Any score',
     searching: 'Searching',
+  },
+
+  /**
+   * The discovery surface.
+   *
+   * Written to sound like a product helping somebody decide where to live,
+   * never like a database describing itself. No "discover amazing places", no
+   * "explore our collection" — every line here either says what the reader is
+   * looking at or tells them how to get somewhere else.
+   */
+  explore: {
+    title: 'Explore',
+    heading: 'Somewhere you are considering?',
+    lead: 'Search an address, a building or a neighbourhood. Everything on Livd is here because somebody who lived there wrote about it.',
+    metaDescription:
+      'Search a property, a building or a neighbourhood anywhere in the world, and read what residents who actually lived there say about it.',
+
+    scopeLocal: (place: string) => `Showing ${place} first`,
+    scopeGlobal: 'Showing everywhere on Livd',
+    scopeNote: 'Search is worldwide. Nothing here is limited to where you are.',
+
+    recentTitle: 'Recently reviewed',
+    recentTitleIn: (place: string) => `Recently reviewed in ${place}`,
+    recentLead: 'Properties residents have written about most recently.',
+
+    evidencedTitle: 'Most written about',
+    evidencedTitleIn: (place: string) => `Most written about in ${place}`,
+    evidencedLead:
+      'Where residents have left the most to read. More reviews mean a picture you can interrogate rather than one person’s account.',
+
+    neighbourhoodsTitle: 'Neighbourhoods',
+    neighbourhoodsLead: 'What it is like living around here, city by city.',
+
+    citiesTitle: 'Cities',
+    citiesLead: 'Know the city but not the building yet? Start here.',
+    citiesIn: (place: string) => `Cities in ${place}`,
+
+    elsewhereTitle: 'Looking somewhere else?',
+    elsewhereLead:
+      'Search any address in the world, or start from a country residents have written about.',
+    everywhere: 'Every place on Livd',
+    searchAnywhere: 'Search anywhere',
+
+    emptyLocalTitle: (place: string) => `Nothing has been reviewed in ${place} yet`,
+    emptyLocalBody:
+      'Livd grows city by city, from whoever writes first. You can still search anywhere in the world — or be the first resident to write about somewhere here.',
+    emptyTitle: 'Nothing has been reviewed yet',
+    emptyBody:
+      'Once residents start writing, the properties and places they wrote about appear here.',
+    beFirst: 'Be the first resident to write',
+
+    propertyCount: (n: number) => (n === 1 ? '1 property' : `${n} properties`),
+    cityCount: (n: number) => (n === 1 ? '1 city' : `${n} cities`),
+    neighbourhoodCount: (n: number) =>
+      n === 1 ? '1 neighbourhood' : `${n} neighbourhoods`,
+
+    directoryTitle: 'Every place on Livd',
+    directoryLead:
+      'The full index, country by country. Livd grows city by city, from whoever writes first — if somewhere you know is missing, it is missing because nobody has written about it yet.',
+
+    countryHeading: (name: string) => `Renting in ${name}`,
+    countryLead: 'What residents say about living here, city by city.',
+    countryEmptyTitle: (name: string) => `Nothing has been reviewed in ${name} yet`,
+    countryEmptyBody:
+      'No resident has written about a property in this country yet. Search somewhere else, or be the first.',
+
+    neighbourhoodHeading: (name: string) => `Living in ${name}`,
+    neighbourhoodLead: 'What residents say about living around here, from the people who did.',
+    neighbourhoodElsewhereIn: (place: string) => `Other neighbourhoods in ${place}`,
+    propertiesIn: (place: string) => `Properties in ${place}`,
   },
 
   property: {

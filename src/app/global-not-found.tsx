@@ -86,7 +86,7 @@ export default function GlobalNotFound() {
 
               <div className="mt-6 flex flex-wrap gap-3">
                 <ButtonLink href="/places" variant="secondary">
-                  {copy.home.exploreLocations}
+                  {copy.nav.explore}
                 </ButtonLink>
                 <ButtonLink href="/" variant="secondary">
                   Go to the homepage

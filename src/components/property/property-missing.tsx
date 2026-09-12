@@ -42,7 +42,7 @@ export function PropertyMissing() {
 
         <div className="mt-6 flex flex-wrap gap-3">
           <ButtonLink href="/places" variant="secondary">
-            {copy.home.exploreLocations}
+            {copy.nav.explore}
           </ButtonLink>
           <ButtonLink href="/review/new-property" variant="secondary">
             {copy.search.addProperty}

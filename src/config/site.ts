@@ -100,9 +100,17 @@ export const LIMITS = {
   reviewEditWindowHours: 24,
 } as const;
 
+/**
+ * The primary navigation.
+ *
+ * `/places` keeps its route and changes its label. The route is indexed,
+ * linked from property pages and present in the sitemap, so migrating it
+ * would cost real traffic to rename a menu item — and "Explore" is what the
+ * page now does.
+ */
 export const NAV_LINKS = [
   { href: '/search', label: 'Search' },
-  { href: '/places', label: 'Places' },
+  { href: '/places', label: 'Explore' },
   { href: '/how-it-works', label: 'How it works' },
   { href: '/trust', label: 'Trust & safety' },
 ] as const;

@@ -178,9 +178,19 @@ function PlacesSection({
 }) {
   return (
     <section className="container-shell pb-20 md:pb-24">
-      <h2 className="font-display text-title-lg tracking-tightish text-ink">
-        {copy.home.exploreLocations}
-      </h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+        <h2 className="font-display text-title-lg tracking-tightish text-ink">
+          {copy.home.exploreLocations}
+        </h2>
+        {/* The homepage shows a dozen cities; Explore is where somebody who
+            does not have an address in mind actually goes. */}
+        <Link
+          href="/places"
+          className="rounded-sm text-label font-medium text-brand underline underline-offset-4 hover:text-brand-hover"
+        >
+          {copy.nav.explore}
+        </Link>
+      </div>
 
       <ul className="mt-5 flex flex-wrap gap-2">
         {localities.map((locality) => (

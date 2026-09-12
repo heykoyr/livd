@@ -8,7 +8,7 @@ const COLUMNS = [
     heading: copy.footer.product,
     links: [
       { href: '/search', label: copy.nav.search },
-      { href: '/places', label: copy.nav.places },
+      { href: '/places', label: copy.nav.explore },
       { href: '/review', label: copy.nav.writeReview },
       { href: '/shortlist', label: copy.nav.shortlist },
     ],

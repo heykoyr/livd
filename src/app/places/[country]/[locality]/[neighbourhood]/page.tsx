@@ -10,38 +10,44 @@ import { getMarket } from '@/config/markets';
 import { SITE } from '@/config/site';
 import { copy } from '@/content/copy';
 import { formatPercent } from '@/lib/format';
-import {
-  countryHref,
-  decodePlaceSegment,
-  localityHref,
-  neighbourhoodHref,
-} from '@/lib/places';
+import { countryHref, decodePlaceSegment, localityHref, neighbourhoodHref } from '@/lib/places';
 import { getRepository } from '@/server/data';
-import type { PropertySummary } from '@/types/domain';
+import { getCachedNeighbourhoods } from '@/server/data/cache';
 
 /**
- * A city.
+ * A neighbourhood.
  *
- * Server-rendered and indexable — this is the parent a property page hangs off,
- * and the page a search engine is most likely to surface for "reviews in
- * <city>". It is also the middle of the walk down: Explore or a country page
- * leads here, and the neighbourhood chips below lead on to a real area page
- * rather than, as they used to, a noindex search result.
+ * The middle level of the three Livd claims — "what is it like living around
+ * here", between a building and a city. It existed as data on every address
+ * and as a chip on the city page that linked to a noindex search result, which
+ * meant the product asserted a level of intelligence it had no page for.
+ *
+ * What it shows is aggregated from the properties in it and nothing more. There
+ * is no neighbourhood score: averaging property scores would produce a figure
+ * that looks like a finding and is really a property mix. The median is stated
+ * as a median, with the number of scored properties beside it, and the
+ * would-return rate only counts properties with enough evidence to have one.
  */
 
 interface Params {
   country: string;
   locality: string;
+  neighbourhood: string;
 }
 
 async function load(params: Params) {
   const countryCode = params.country.toUpperCase();
   const locality = decodePlaceSegment(params.locality);
+  const neighbourhood = decodePlaceSegment(params.neighbourhood);
 
   const repository = await getRepository();
-  const properties = await repository.propertiesInLocality(countryCode, locality);
+  const properties = await repository.propertiesInNeighbourhood(
+    countryCode,
+    locality,
+    neighbourhood,
+  );
 
-  return { countryCode, locality, properties };
+  return { countryCode, locality, neighbourhood, properties };
 }
 
 export async function generateMetadata({
@@ -56,38 +62,40 @@ export async function generateMetadata({
     return { title: 'Place not found', robots: { index: false, follow: false } };
   }
 
-  const market = getMarket(countryCode);
-  // Use the stored spelling rather than the URL's, so the title reads properly.
-  const name = properties[0]!.property.address.locality;
+  // The stored spelling, not the URL's, so the title reads properly.
+  const { address } = properties[0]!.property;
+  const name = address.neighbourhood ?? decodePlaceSegment(resolved.neighbourhood);
   const reviewCount = properties.reduce((sum, s) => sum + s.intelligence.reviewCount, 0);
 
   return {
-    title: `Renting in ${name}, ${market.name}`,
+    title: `Living in ${name}, ${address.locality}`,
     description: `${properties.length} ${
       properties.length === 1 ? 'property' : 'properties'
-    } in ${name} with ${reviewCount} resident ${
+    } in ${name}, ${address.locality} with ${reviewCount} resident ${
       reviewCount === 1 ? 'review' : 'reviews'
-    } on Livd. Read what people who lived there say before you commit.`,
+    } on Livd. Read what people who lived there say about the area before you commit.`,
     alternates: {
-      canonical: `${SITE.url}${localityHref(countryCode, name)}`,
+      canonical: `${SITE.url}${neighbourhoodHref(countryCode, address.locality, name)}`,
     },
   };
 }
 
-export default async function LocalityPage({ params }: { params: Promise<Params> }) {
+export default async function NeighbourhoodPage({ params }: { params: Promise<Params> }) {
   const resolved = await params;
   const { countryCode, properties } = await load(resolved);
 
   if (properties.length === 0) notFound();
 
+  const { address } = properties[0]!.property;
+  const name = address.neighbourhood ?? decodePlaceSegment(resolved.neighbourhood);
+  const locality = address.locality;
   const market = getMarket(countryCode);
-  const name = properties[0]!.property.address.locality;
 
   const reviewCount = properties.reduce((sum, s) => sum + s.intelligence.reviewCount, 0);
   const scored = properties.filter((s) => s.intelligence.overallScore !== null);
   const medianScore = medianOf(scored.map((s) => s.intelligence.overallScore!));
 
-  // Only properties with enough evidence contribute to a locality-level claim.
+  // Only properties with enough evidence contribute to an area-level claim.
   const evidenced = properties.filter(
     (s) => s.intelligence.confidence === 'moderate' || s.intelligence.confidence === 'strong',
   );
@@ -99,42 +107,28 @@ export default async function LocalityPage({ params }: { params: Promise<Params>
       ? recommendRates.reduce((sum, rate) => sum + rate, 0) / recommendRates.length
       : null;
 
-  /**
-   * The neighbourhoods this city's properties sit in.
-   *
-   * Derived from the properties already loaded for this page rather than
-   * re-queried — it is the same set, and a second round trip to build a chip
-   * row would be a round trip for nothing.
-   */
-  const neighbourhoods = [
-    ...properties
-      .reduce((map, summary) => {
-        const value = summary.property.address.neighbourhood;
-        if (!value) return map;
-        const key = value.toLowerCase();
-        const existing = map.get(key);
-        map.set(key, {
-          name: existing?.name ?? value,
-          reviewCount: (existing?.reviewCount ?? 0) + summary.intelligence.reviewCount,
-        });
-        return map;
-      }, new Map<string, { name: string; reviewCount: number }>())
-      .values(),
-  ].sort((a, b) => b.reviewCount - a.reviewCount || a.name.localeCompare(b.name));
+  // Somewhere to go next when this area is not the one. Same city, so the
+  // query is scoped rather than a walk of the country.
+  const siblings = (
+    await getCachedNeighbourhoods({ countryCode, locality, limit: 12 })
+  ).filter((entry) => entry.neighbourhood.toLowerCase() !== name.toLowerCase());
 
   return (
     <div className="container-shell py-12 md:py-16">
       <nav aria-label="Breadcrumb" className="mb-5">
         <ol className="flex flex-wrap items-center gap-1.5 text-label text-ink-muted">
           <li>
-            <Link href="/places" className="rounded-sm hover:text-ink">
-              {copy.nav.explore}
+            <Link href={countryHref(countryCode)} className="rounded-sm hover:text-ink">
+              {market.name}
             </Link>
           </li>
           <li aria-hidden="true">/</li>
           <li>
-            <Link href={countryHref(countryCode)} className="rounded-sm hover:text-ink">
-              {market.name}
+            <Link
+              href={localityHref(countryCode, locality)}
+              className="rounded-sm hover:text-ink"
+            >
+              {locality}
             </Link>
           </li>
           <li aria-hidden="true">/</li>
@@ -144,11 +138,13 @@ export default async function LocalityPage({ params }: { params: Promise<Params>
 
       <div className="max-w-2xl">
         <h1 className="font-display text-display-lg tracking-display text-ink">
-          Renting in {name}
+          {copy.explore.neighbourhoodHeading(name)}
         </h1>
-        <p className="mt-4 text-body-lg text-ink-muted">
-          What residents say about living here, from the people who did.
+        <p className="mt-2 text-body-lg text-ink-muted">
+          {locality}
+          {address.adminArea ? `, ${address.adminArea}` : ''} · {market.name}
         </p>
+        <p className="mt-4 text-body text-ink-muted">{copy.explore.neighbourhoodLead}</p>
       </div>
 
       <dl className="mt-9 grid grid-cols-2 gap-6 border-y border-border py-6 sm:grid-cols-4">
@@ -176,32 +172,6 @@ export default async function LocalityPage({ params }: { params: Promise<Params>
         />
       </dl>
 
-      {neighbourhoods.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
-            {copy.explore.neighbourhoodsTitle}
-          </h2>
-          <ul className="mt-3 flex flex-wrap gap-2">
-            {neighbourhoods.map((neighbourhood) => (
-              <li key={neighbourhood.name}>
-                <Link
-                  href={neighbourhoodHref(countryCode, name, neighbourhood.name)}
-                  className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3.5 py-1.5 text-label text-ink transition-colors duration-fast hover:border-border-strong hover:bg-surface-sunken"
-                >
-                  {neighbourhood.name}
-                  <span className="tabular text-ink-subtle">
-                    <span aria-hidden="true">{neighbourhood.reviewCount}</span>
-                    <span className="sr-only">
-                      {copy.property.reviewCount(neighbourhood.reviewCount)}
-                    </span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
       <h2 className="mt-12 font-display text-title-lg tracking-tightish text-ink">
         {copy.explore.propertiesIn(name)}
       </h2>
@@ -214,10 +184,36 @@ export default async function LocalityPage({ params }: { params: Promise<Params>
         ))}
       </PropertyGrid>
 
+      {siblings.length > 0 && (
+        <section className="mt-14">
+          <h2 className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
+            {copy.explore.neighbourhoodElsewhereIn(locality)}
+          </h2>
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {siblings.map((sibling) => (
+              <li key={sibling.href}>
+                <Link
+                  href={sibling.href}
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3.5 py-1.5 text-label text-ink transition-colors duration-fast hover:border-border-strong hover:bg-surface-sunken"
+                >
+                  {sibling.neighbourhood}
+                  <span className="tabular text-ink-subtle">
+                    <span aria-hidden="true">{sibling.reviewCount}</span>
+                    <span className="sr-only">
+                      {copy.property.reviewCount(sibling.reviewCount)}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="mt-14">
         <EmptyState
-          title={`Lived somewhere in ${name}?`}
-          description="Every property on this page is here because someone took four minutes to write about it. The next person deciding where to live in this city is relying on that."
+          title={`Lived in ${name}?`}
+          description="Every property on this page is here because somebody took four minutes to write about it. The next person deciding whether to move here is relying on that."
           action={
             <ButtonLink href="/review" size="lg">
               {copy.nav.writeReview}
@@ -237,6 +233,3 @@ function medianOf(values: number[]): number | null {
     ? sorted[mid]!
     : Math.round((sorted[mid - 1]! + sorted[mid]!) / 2);
 }
-
-/** Helper for the summary card list. */
-export type { PropertySummary };
