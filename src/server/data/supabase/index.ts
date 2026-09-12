@@ -6,8 +6,13 @@ import { TAG_DEFINITIONS } from '@/config/tags';
 import { LIMITS, showDemoData } from '@/config/site';
 import { buildPropertyIntelligence, emptyIntelligence } from '@/lib/intelligence';
 import { normaliseForSearch } from '@/lib/search/matching';
+import {
+  interleavePlaceSuggestions,
+  placeSuggestions,
+} from '@/lib/search/place-suggestions';
 import { propertyContextLine, propertyDisplayName } from '@/lib/format';
 import { propertySlug } from '@/lib/utils';
+import { localityHref, neighbourhoodHref } from '@/lib/places';
 import {
   createAnonymousSupabaseClient,
   createServerSupabaseClient,
@@ -87,6 +92,8 @@ import type {
   AccountDeletionSummary,
   LocalitySummary,
   NearbyProperty,
+  NeighbourhoodQuery,
+  NeighbourhoodSummary,
   NotificationPreferences,
   NotificationRecipient,
   ReviewListOptions,
@@ -764,24 +771,35 @@ export class SupabaseRepository implements LivdRepository {
     // The RPC already ranked these; restore that order after the id lookup.
     const order = new Map(ids.map((id, index) => [id, index]));
 
-    return (rows ?? [])
-      .map((row) => {
-        const property = toProperty(row as unknown as PropertyRow);
-        const stats = (row as unknown as { property_stats?: { review_count: number } | null })
-          .property_stats;
+    const matched = (rows ?? []).map((row) => {
+      const property = toProperty(row as unknown as PropertyRow);
+      const stats = (row as unknown as { property_stats?: { review_count: number } | null })
+        .property_stats;
 
-        return {
-          kind: 'property' as const,
-          label: propertyDisplayName(property.address),
-          sublabel: propertyContextLine(property.address),
-          href: `/property/${property.slug}`,
-          reviewCount: stats?.review_count ?? 0,
-          _order: order.get(property.id) ?? 999,
-        };
-      })
-      .sort((a, b) => a._order - b._order)
-      .slice(0, limit)
-      .map(({ _order: _ignored, ...suggestion }) => suggestion);
+      return {
+        property,
+        reviewCount: stats?.review_count ?? 0,
+        order: order.get(property.id) ?? 999,
+      };
+    });
+    matched.sort((a, b) => a.order - b.order);
+
+    const properties: SearchSuggestion[] = matched.map(({ property, reviewCount }) => ({
+      kind: 'property' as const,
+      label: propertyDisplayName(property.address),
+      sublabel: propertyContextLine(property.address),
+      href: `/property/${property.slug}`,
+      reviewCount,
+    }));
+
+    return interleavePlaceSuggestions(
+      properties,
+      placeSuggestions(
+        trimmed,
+        matched.map(({ property }) => property.address),
+      ),
+      limit,
+    );
   }
 
   async recentlyReviewed(options: DiscoveryOptions = {}): Promise<PropertySummary[]> {
@@ -870,9 +888,7 @@ export class SupabaseRepository implements LivdRepository {
           adminArea: row.admin_area,
           propertyCount: 1,
           reviewCount,
-          href: `/places/${row.country_code.toLowerCase()}/${encodeURIComponent(
-            row.locality.toLowerCase(),
-          )}`,
+          href: localityHref(row.country_code, row.locality),
         });
       }
     }
@@ -896,6 +912,94 @@ export class SupabaseRepository implements LivdRepository {
 
     const { data, error } = await query;
     if (error) throw new Error(`propertiesInLocality: ${error.message}`);
+
+    const summaries = await this.summarise(
+      (data ?? []).map((row) => toProperty(row as unknown as PropertyRow)),
+    );
+    return summaries.sort((a, b) => b.intelligence.reviewCount - a.intelligence.reviewCount);
+  }
+
+  async listNeighbourhoods(options: NeighbourhoodQuery = {}): Promise<NeighbourhoodSummary[]> {
+    const supabase = this.publicClient();
+
+    // Three columns and a count, never a property row. The aggregate itself is
+    // small; what would be expensive is fetching the properties to build it.
+    let query = supabase
+      .from('properties')
+      .select('country_code, locality, neighbourhood, property_stats ( review_count )')
+      .eq('status', 'active')
+      .not('neighbourhood', 'is', null);
+
+    if (options.countryCode) query = query.eq('country_code', options.countryCode.toUpperCase());
+    if (options.locality) query = query.ilike('locality', options.locality);
+    if (!showDemoData()) query = query.eq('is_demo', false);
+
+    const { data, error } = await query;
+    if (error) throw new Error(`listNeighbourhoods: ${error.message}`);
+
+    const neighbourhoods = new Map<string, NeighbourhoodSummary>();
+
+    // A to-one embed is still typed as an array by the client's generic types,
+    // so it is normalised here rather than trusted to be an object.
+    for (const row of (data ?? []) as unknown as Array<{
+      country_code: string;
+      locality: string;
+      neighbourhood: string | null;
+      property_stats: { review_count: number } | Array<{ review_count: number }> | null;
+    }>) {
+      if (!row.neighbourhood) continue;
+
+      const key = `${row.country_code}:${normaliseForSearch(row.locality)}:${normaliseForSearch(
+        row.neighbourhood,
+      )}`;
+      const stats = Array.isArray(row.property_stats) ? row.property_stats[0] : row.property_stats;
+      const reviewCount = stats?.review_count ?? 0;
+      const existing = neighbourhoods.get(key);
+
+      if (existing) {
+        existing.propertyCount += 1;
+        existing.reviewCount += reviewCount;
+      } else {
+        neighbourhoods.set(key, {
+          countryCode: row.country_code,
+          locality: row.locality,
+          neighbourhood: row.neighbourhood,
+          propertyCount: 1,
+          reviewCount,
+          href: neighbourhoodHref(row.country_code, row.locality, row.neighbourhood),
+        });
+      }
+    }
+
+    const ranked = [...neighbourhoods.values()].sort(
+      (a, b) =>
+        b.reviewCount - a.reviewCount ||
+        b.propertyCount - a.propertyCount ||
+        a.neighbourhood.localeCompare(b.neighbourhood),
+    );
+
+    return options.limit === undefined ? ranked : ranked.slice(0, options.limit);
+  }
+
+  async propertiesInNeighbourhood(
+    countryCode: string,
+    locality: string,
+    neighbourhood: string,
+  ): Promise<PropertySummary[]> {
+    const supabase = this.publicClient();
+
+    let query = supabase
+      .from('properties')
+      .select(PROPERTY_SELECT)
+      .eq('country_code', countryCode.toUpperCase())
+      .ilike('locality', locality)
+      .ilike('neighbourhood', neighbourhood)
+      .eq('status', 'active');
+
+    if (!showDemoData()) query = query.eq('is_demo', false);
+
+    const { data, error } = await query;
+    if (error) throw new Error(`propertiesInNeighbourhood: ${error.message}`);
 
     const summaries = await this.summarise(
       (data ?? []).map((row) => toProperty(row as unknown as PropertyRow)),

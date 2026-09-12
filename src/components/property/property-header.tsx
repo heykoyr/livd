@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { Badge, Card, Eyebrow, Stat } from '@/components/ui/primitives';
 import { getMarket, propertyTypeLabel } from '@/config/markets';
+import { countryHref, localityHref, neighbourhoodHref } from '@/lib/places';
 import { copy } from '@/content/copy';
 import {
   formatMoney,
@@ -44,24 +45,43 @@ export function PropertyHeader({
   return (
     <header className="border-b border-border bg-surface">
       <div className="container-shell py-8 md:py-12">
+        {/* City, then neighbourhood where the address names one, then the
+            property. The trail is the hierarchy the product claims — a reader
+            who decides this building is not for them is one tap from the area
+            around it rather than back at a search box. */}
         <nav aria-label="Breadcrumb" className="mb-5">
           <ol className="flex flex-wrap items-center gap-1.5 text-label text-ink-muted">
             <li>
-              <Link href="/search" className="rounded-sm hover:text-ink">
-                {copy.search.heading}
+              <Link href={countryHref(address.countryCode)} className="rounded-sm hover:text-ink">
+                {market.name}
               </Link>
             </li>
             <li aria-hidden="true">/</li>
             <li>
               <Link
-                href={`/places/${address.countryCode.toLowerCase()}/${encodeURIComponent(
-                  address.locality.toLowerCase(),
-                )}`}
+                href={localityHref(address.countryCode, address.locality)}
                 className="rounded-sm hover:text-ink"
               >
                 {address.locality}
               </Link>
             </li>
+            {address.neighbourhood && (
+              <>
+                <li aria-hidden="true">/</li>
+                <li>
+                  <Link
+                    href={neighbourhoodHref(
+                      address.countryCode,
+                      address.locality,
+                      address.neighbourhood,
+                    )}
+                    className="rounded-sm hover:text-ink"
+                  >
+                    {address.neighbourhood}
+                  </Link>
+                </li>
+              </>
+            )}
             <li aria-hidden="true">/</li>
             <li className="text-ink">{name}</li>
           </ol>

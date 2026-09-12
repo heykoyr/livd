@@ -167,6 +167,30 @@ export interface LocalitySummary {
   href: string;
 }
 
+/**
+ * A neighbourhood, aggregated from the properties that sit in one.
+ *
+ * Neighbourhood is a free-text field on an address rather than a table of its
+ * own, so this is derived rather than looked up. That is deliberate: Livd knows
+ * about a neighbourhood exactly when a resident has named one, and inventing a
+ * gazetteer would mean listing areas Livd has nothing to say about.
+ */
+export interface NeighbourhoodSummary {
+  countryCode: string;
+  locality: string;
+  neighbourhood: string;
+  propertyCount: number;
+  reviewCount: number;
+  href: string;
+}
+
+/** How a neighbourhood listing is narrowed. Always scoped, never global-by-default. */
+export interface NeighbourhoodQuery {
+  countryCode?: string | null;
+  locality?: string | null;
+  limit?: number;
+}
+
 /** What an account erasure actually did. Reported back, never guessed at. */
 export interface AccountDeletionSummary {
   /** Reviews left standing on property pages, now unattributable. */
@@ -471,6 +495,19 @@ export interface LivdRepository {
   highestRated(options?: DiscoveryOptions): Promise<PropertySummary[]>;
   listLocalities(countryCode?: string | null): Promise<LocalitySummary[]>;
   propertiesInLocality(countryCode: string, locality: string): Promise<PropertySummary[]>;
+  /**
+   * Neighbourhoods residents have actually written about, ranked by evidence.
+   *
+   * Bounded by the query rather than by the caller remembering to slice: the
+   * discovery surface asks for a country or a city and a limit, and gets back
+   * only that. Nothing here walks the whole world to render a section.
+   */
+  listNeighbourhoods(options?: NeighbourhoodQuery): Promise<NeighbourhoodSummary[]>;
+  propertiesInNeighbourhood(
+    countryCode: string,
+    locality: string,
+    neighbourhood: string,
+  ): Promise<PropertySummary[]>;
 
   /* ---- Reviews ---- */
 

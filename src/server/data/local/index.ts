@@ -8,6 +8,11 @@ import { buildPropertyIntelligence, emptyIntelligence } from '@/lib/intelligence
 import { matchScore, normaliseForSearch } from '@/lib/search/matching';
 import { formatAddressInline, propertyContextLine, propertyDisplayName } from '@/lib/format';
 import { propertySlug, shortId } from '@/lib/utils';
+import { localityHref, neighbourhoodHref } from '@/lib/places';
+import {
+  interleavePlaceSuggestions,
+  placeSuggestions,
+} from '@/lib/search/place-suggestions';
 import { editWindowFor, isCorrectableStatus } from '@/lib/reviews/edit-window';
 import { CATEGORY_DEFINITIONS } from '@/config/categories';
 import type {
@@ -94,6 +99,8 @@ import type {
   AccountDeletionSummary,
   LocalitySummary,
   NearbyProperty,
+  NeighbourhoodQuery,
+  NeighbourhoodSummary,
   NotificationPreferences,
   NotificationRecipient,
   ReviewListOptions,
@@ -695,14 +702,14 @@ export class LocalRepository implements LivdRepository {
     if (trimmed.length < 2) return [];
 
     const properties = visibleProperties(database);
-    const suggestions: Array<SearchSuggestion & { score: number }> = [];
+    const matched: Array<SearchSuggestion & { score: number }> = [];
 
     for (const property of properties) {
       const result = matchScore(trimmed, { haystack: haystackFor(property) });
       if (!result) continue;
 
       const intelligence = intelligenceFor(database, property.id);
-      suggestions.push({
+      matched.push({
         kind: 'property',
         label: propertyDisplayName(property.address),
         sublabel: propertyContextLine(property.address),
@@ -712,52 +719,22 @@ export class LocalRepository implements LivdRepository {
       });
     }
 
-    // Localities and neighbourhoods, so "Lekki" leads somewhere useful even
-    // when no single property matches the spelling.
-    const places = new Map<string, { label: string; sublabel: string; href: string; count: number }>();
-    for (const property of properties) {
-      const { locality, adminArea, countryCode, neighbourhood } = property.address;
-
-      const localityKey = `${countryCode}:${locality}`;
-      const existingLocality = places.get(localityKey);
-      places.set(localityKey, {
-        label: locality,
-        sublabel: [adminArea, countryCode].filter(Boolean).join(', '),
-        href: `/places/${countryCode.toLowerCase()}/${encodeURIComponent(locality.toLowerCase())}`,
-        count: (existingLocality?.count ?? 0) + 1,
-      });
-
-      if (neighbourhood) {
-        const neighbourhoodKey = `${countryCode}:${locality}:${neighbourhood}`;
-        const existing = places.get(neighbourhoodKey);
-        places.set(neighbourhoodKey, {
-          label: neighbourhood,
-          sublabel: [locality, adminArea].filter(Boolean).join(', '),
-          href: `/search?q=${encodeURIComponent(neighbourhood)}`,
-          count: (existing?.count ?? 0) + 1,
-        });
-      }
-    }
-
-    for (const [key, place] of places) {
-      const result = matchScore(trimmed, { haystack: place.label });
-      if (!result) continue;
-      suggestions.push({
-        kind: key.split(':').length > 2 ? 'neighbourhood' : 'locality',
-        label: place.label,
-        sublabel: place.sublabel,
-        href: place.href,
-        reviewCount: null,
-        // Places rank slightly below an equally-matching property, because a
-        // searcher with a specific address in mind should see it first.
-        score: result.score - 3,
-      });
-    }
-
-    return suggestions
+    const ranked = matched
       .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label))
-      .slice(0, limit)
       .map(({ score: _score, ...suggestion }) => suggestion);
+
+    // Cities and neighbourhoods, so "Lekki" leads somewhere useful even when
+    // no single property matches the spelling. Derived from every visible
+    // property here, because the local store can afford to look at all of
+    // them; the ranking itself is shared with the Supabase adapter.
+    return interleavePlaceSuggestions(
+      ranked,
+      placeSuggestions(
+        trimmed,
+        properties.map((property) => property.address),
+      ),
+      limit,
+    );
   }
 
   async recentlyReviewed(options: DiscoveryOptions = {}): Promise<PropertySummary[]> {
@@ -834,9 +811,7 @@ export class LocalRepository implements LivdRepository {
           adminArea: property.address.adminArea,
           propertyCount: 1,
           reviewCount,
-          href: `/places/${property.address.countryCode.toLowerCase()}/${encodeURIComponent(
-            property.address.locality.toLowerCase(),
-          )}`,
+          href: localityHref(property.address.countryCode, property.address.locality),
         });
       }
     }
@@ -855,6 +830,72 @@ export class LocalRepository implements LivdRepository {
         (p) =>
           p.address.countryCode === countryCode.toUpperCase() &&
           normaliseForSearch(p.address.locality) === target,
+      )
+      .map((property) => summaryFor(database, property))
+      .sort((a, b) => b.intelligence.reviewCount - a.intelligence.reviewCount);
+  }
+
+  async listNeighbourhoods(options: NeighbourhoodQuery = {}): Promise<NeighbourhoodSummary[]> {
+    const database = await getDatabase();
+    const localityTarget = options.locality ? normaliseForSearch(options.locality) : null;
+
+    const properties = visibleProperties(database).filter((property) => {
+      const { countryCode, locality, neighbourhood } = property.address;
+      if (!neighbourhood) return false;
+      if (options.countryCode && countryCode !== options.countryCode.toUpperCase()) return false;
+      if (localityTarget && normaliseForSearch(locality) !== localityTarget) return false;
+      return true;
+    });
+
+    const neighbourhoods = new Map<string, NeighbourhoodSummary>();
+
+    for (const property of properties) {
+      const { countryCode, locality, neighbourhood } = property.address;
+      const key = `${countryCode}:${normaliseForSearch(locality)}:${normaliseForSearch(neighbourhood!)}`;
+      const reviewCount = publishedReviewsFor(database, property.id).length;
+      const existing = neighbourhoods.get(key);
+
+      if (existing) {
+        existing.propertyCount += 1;
+        existing.reviewCount += reviewCount;
+      } else {
+        neighbourhoods.set(key, {
+          countryCode,
+          locality,
+          neighbourhood: neighbourhood!,
+          propertyCount: 1,
+          reviewCount,
+          href: neighbourhoodHref(countryCode, locality, neighbourhood!),
+        });
+      }
+    }
+
+    const ranked = [...neighbourhoods.values()].sort(
+      (a, b) =>
+        b.reviewCount - a.reviewCount ||
+        b.propertyCount - a.propertyCount ||
+        a.neighbourhood.localeCompare(b.neighbourhood),
+    );
+
+    return options.limit === undefined ? ranked : ranked.slice(0, options.limit);
+  }
+
+  async propertiesInNeighbourhood(
+    countryCode: string,
+    locality: string,
+    neighbourhood: string,
+  ): Promise<PropertySummary[]> {
+    const database = await getDatabase();
+    const localityTarget = normaliseForSearch(locality);
+    const neighbourhoodTarget = normaliseForSearch(neighbourhood);
+
+    return visibleProperties(database)
+      .filter(
+        (p) =>
+          p.address.countryCode === countryCode.toUpperCase() &&
+          normaliseForSearch(p.address.locality) === localityTarget &&
+          p.address.neighbourhood !== null &&
+          normaliseForSearch(p.address.neighbourhood) === neighbourhoodTarget,
       )
       .map((property) => summaryFor(database, property))
       .sort((a, b) => b.intelligence.reviewCount - a.intelligence.reviewCount);

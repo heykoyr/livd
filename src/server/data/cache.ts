@@ -3,6 +3,7 @@ import 'server-only';
 import { unstable_cache, updateTag } from 'next/cache';
 
 import type { PropertyIntelligence, PropertySummary } from '@/types/domain';
+import type { NeighbourhoodSummary } from './repository';
 import { getRepository } from './index';
 
 /**
@@ -52,33 +53,53 @@ export const getCachedIntelligence = (propertyId: string): Promise<PropertyIntel
     { tags: [propertyTag(propertyId)], revalidate: 300 },
   )();
 
-export const getCachedRecentlyReviewed = (limit: number): Promise<PropertySummary[]> =>
+/**
+ * Discovery is cached per country as well as per limit.
+ *
+ * The Explore surface asks for the viewer's own country first, so the cache
+ * key has to carry it — without that, the first visitor's country would be
+ * served to everyone for the next ten minutes. `all` is the global list, which
+ * is what a viewer with no resolvable country gets.
+ */
+const scopeKey = (countryCode?: string | null): string =>
+  countryCode ? countryCode.toUpperCase() : 'all';
+
+export const getCachedRecentlyReviewed = (
+  limit: number,
+  countryCode?: string | null,
+): Promise<PropertySummary[]> =>
   unstable_cache(
     async () => {
       const repository = await getRepository();
-      return repository.recentlyReviewed({ limit });
+      return repository.recentlyReviewed({ limit, countryCode });
     },
-    ['recently-reviewed', String(limit)],
+    ['recently-reviewed', String(limit), scopeKey(countryCode)],
     { tags: [DISCOVERY_TAG], revalidate: 600 },
   )();
 
-export const getCachedMostReviewed = (limit: number): Promise<PropertySummary[]> =>
+export const getCachedMostReviewed = (
+  limit: number,
+  countryCode?: string | null,
+): Promise<PropertySummary[]> =>
   unstable_cache(
     async () => {
       const repository = await getRepository();
-      return repository.mostReviewed({ limit });
+      return repository.mostReviewed({ limit, countryCode });
     },
-    ['most-reviewed', String(limit)],
+    ['most-reviewed', String(limit), scopeKey(countryCode)],
     { tags: [DISCOVERY_TAG], revalidate: 600 },
   )();
 
-export const getCachedHighestRated = (limit: number): Promise<PropertySummary[]> =>
+export const getCachedHighestRated = (
+  limit: number,
+  countryCode?: string | null,
+): Promise<PropertySummary[]> =>
   unstable_cache(
     async () => {
       const repository = await getRepository();
-      return repository.highestRated({ limit });
+      return repository.highestRated({ limit, countryCode });
     },
-    ['highest-rated', String(limit)],
+    ['highest-rated', String(limit), scopeKey(countryCode)],
     { tags: [DISCOVERY_TAG], revalidate: 600 },
   )();
 
@@ -88,6 +109,23 @@ export const getCachedLocalities = (countryCode?: string | null) =>
       const repository = await getRepository();
       return repository.listLocalities(countryCode);
     },
-    ['localities', countryCode ?? 'all'],
+    ['localities', scopeKey(countryCode)],
+    { tags: [DISCOVERY_TAG], revalidate: 3600 },
+  )();
+
+export const getCachedNeighbourhoods = (
+  options: { countryCode?: string | null; locality?: string | null; limit?: number } = {},
+): Promise<NeighbourhoodSummary[]> =>
+  unstable_cache(
+    async () => {
+      const repository = await getRepository();
+      return repository.listNeighbourhoods(options);
+    },
+    [
+      'neighbourhoods',
+      scopeKey(options.countryCode),
+      options.locality?.toLowerCase() ?? 'all',
+      String(options.limit ?? 'all'),
+    ],
     { tags: [DISCOVERY_TAG], revalidate: 3600 },
   )();
