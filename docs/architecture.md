@@ -68,7 +68,11 @@ adapter refuses to start when `NODE_ENV=production`.
 | --- | --- |
 | `/` | Static, revalidated hourly |
 | `/property/[slug]` | Server-rendered, `revalidate: 300`, tag-invalidated on review write |
+| `/places` | Dynamic — discovery prefers the visitor's country; every list cached at the data layer |
+| `/places/all` | Server-rendered, revalidated hourly |
+| `/places/[country]` | Server-rendered, revalidated hourly |
 | `/places/[country]/[locality]` | Server-rendered, revalidated hourly |
+| `/places/[country]/[locality]/[neighbourhood]` | Server-rendered, revalidated hourly |
 | `/search` | Dynamic — depends on query |
 | `/api/suggest` | Route handler, 60s cache, no personal data |
 | `/review/*`, `/account/*`, `/admin/*` | Dynamic, `no-store`, auth-gated |
@@ -92,7 +96,7 @@ src/
 │   ├── how-it-works/       ·  trust/  ·  for-owners/  ·  legal/
 │   ├── search/             Results
 │   ├── property/[slug]/    Property profile + reviews + claim
-│   ├── places/             Location index pages (SEO surface)
+│   ├── places/             Explore, then country / city / neighbourhood (SEO surface)
 │   ├── review/             Contribution wizard
 │   ├── shortlist/          Saved properties + comparison
 │   ├── account/            Profile, my reviews
@@ -283,9 +287,18 @@ wrote or changes their account's standing.
 
 Server-rendered property pages with per-page metadata, canonical URLs, Open Graph
 and Twitter cards; `Place` + `AggregateRating` JSON-LD emitted **only** where the
-confidence band justifies it; location index pages at
-`/places/[country]/[locality]`; generated `sitemap.xml` and `robots.txt`
-excluding all authenticated routes.
+confidence band justifies it; three levels of indexable place page —
+`/places/[country]`, `/places/[country]/[locality]` and
+`/places/[country]/[locality]/[neighbourhood]` — plus the full index at
+`/places/all`; generated `sitemap.xml` and `robots.txt` excluding all
+authenticated routes.
+
+`/places` itself is the discovery surface rather than an index, and its
+canonical URL carries no scope: the country it leads with is resolved per
+visitor from their account or a coarse edge header and is never in the URL, so
+there is no near-duplicate of a country page to compete with. The navigation
+labels it "Explore"; the route is unchanged because it is indexed, linked from
+every property page and present in the sitemap.
 
 No review author information — not even a pseudonym — appears in structured data.
 

@@ -49,6 +49,17 @@ axe-core audit against a production build, four violations fixed · contrast
 verified in both themes against real computed styles · mobile pass · every
 route checked · production guards corrected.
 
+### Phase 8 — Explore ✅
+`/places` reworked from a global country index into a discovery surface:
+search first, then properties near you (opt-in, nothing stored), recently
+reviewed, most written about, neighbourhoods grouped by city, and cities.
+Local by default and never local only — the country it leads with comes from
+the account or a coarse edge header, search stays worldwide, and every other
+country is one link away. Three new levels of place page complete the
+hierarchy the product already claimed: country, neighbourhood, and the full
+index moved to `/places/all`. The route, its canonical URL and every city link
+are unchanged; only the navigation label became "Explore".
+
 ### Deployment ✅
 Supabase project provisioned, the eight migrations that existed at the time
 applied, and the demonstration data loaded into it — 16 properties, 222 reviews and 3,558 child rows, every
