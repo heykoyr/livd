@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
     "reset": "node scripts/reset-local.mjs",
+    "brand:build": "node scripts/build-brand-assets.mjs",
     "audit:a11y": "node scripts/audit-a11y.mjs",
     "seed:supabase": "esbuild scripts/seed-supabase.mjs --bundle --platform=node --format=esm --alias:@=./src --packages=external --outfile=.seed-sql/seed.mjs --log-level=warning && node .seed-sql/seed.mjs",
     "seed:sql": "esbuild scripts/build-seed-sql.mjs --bundle --platform=node --format=esm --alias:@=./src --outfile=.seed-sql/build.mjs --log-level=warning && node .seed-sql/build.mjs",
