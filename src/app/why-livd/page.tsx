@@ -230,13 +230,14 @@ function ExampleProperty() {
   return (
     <figure className="lg:sticky lg:top-24 lg:self-start">
       <Card className="p-6">
+        {/* Labelled twice, not three times. The badge is the product's own
+            convention for data that is not a real record, and the caption
+            underneath says so in words; an eyebrow saying "Illustration"
+            above a badge saying "Illustration" read as a bug. */}
         <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <Eyebrow>{copy.whyLivd.knowIllustration}</Eyebrow>
-            <p className="mt-2 font-display text-title-md tracking-tightish text-ink">
-              How a property reads
-            </p>
-          </div>
+          <p className="min-w-0 font-display text-title-md tracking-tightish text-ink">
+            {copy.whyLivd.knowIllustrationTitle}
+          </p>
           <Badge tone="accent">{copy.whyLivd.knowIllustration}</Badge>
         </div>
 
@@ -248,19 +249,26 @@ function ExampleProperty() {
           </div>
         </div>
 
+        {/* Each group is one `div` deep and holds only `dt`/`dd`, which is the
+            whole of what a definition list may contain. The meter is a second
+            `dd` rather than a sibling of the group — the same reasoning as
+            `Stat`, where a hint lives inside the `dd` for exactly this reason.
+            Two `dd`s to one `dt` is valid; a `div` inside the group is not. */}
         <dl className="mt-6 flex flex-col gap-3.5 border-t border-border pt-5">
           {categories.map((category) => (
-            <div key={category.label}>
-              <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-label text-ink-muted">{category.label}</dt>
-                <dd className="text-label tabular font-medium text-ink">{category.score}</dd>
-              </div>
-              <Meter
-                value={category.score}
-                tone={scoreBand(category.score)}
-                label={`${category.label} ${category.score} ${copy.score.outOf}`}
-                className="mt-1.5"
-              />
+            <div
+              key={category.label}
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1.5"
+            >
+              <dt className="text-label text-ink-muted">{category.label}</dt>
+              <dd className="text-label tabular font-medium text-ink">{category.score}</dd>
+              <dd className="col-span-2">
+                <Meter
+                  value={category.score}
+                  tone={scoreBand(category.score)}
+                  label={`${category.label} ${category.score} ${copy.score.outOf}`}
+                />
+              </dd>
             </div>
           ))}
         </dl>

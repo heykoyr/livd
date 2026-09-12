@@ -60,6 +60,7 @@ const PAGES = [
   ['Locality', '/places/ng/lagos'],
   ['Neighbourhood', '/places/ng/lagos/lekki%20phase%201'],
   ['Sign in', '/sign-in'],
+  ['Why Livd', '/why-livd'],
   ['How it works', '/how-it-works'],
   ['Trust & safety', '/trust'],
   ['For owners', '/for-owners'],

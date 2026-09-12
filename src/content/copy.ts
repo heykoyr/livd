@@ -158,6 +158,7 @@ export const copy = {
       { category: 'Value for money', question: 'Knowing what you know now, was it worth the rent?' },
     ],
     knowIllustration: 'Illustration',
+    knowIllustrationTitle: 'How a property reads',
     knowIllustrationNote:
       'An example of how a property reads once residents have rated it. Not a real property.',
 
