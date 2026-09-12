@@ -31,6 +31,15 @@ export function PlaceTile({
   reviewCount: number;
   className?: string;
 }) {
+  /**
+   * A city whose region carries its own name says it once.
+   *
+   * Berlin is in Berlin and Lagos is in Lagos State, and a tile reading
+   * "Berlin / Berlin" looks like a rendering fault rather than an address.
+   */
+  const subtitle =
+    context && context.trim().toLowerCase() !== name.trim().toLowerCase() ? context : null;
+
   return (
     <Link
       href={href}
@@ -44,8 +53,8 @@ export function PlaceTile({
           whose tracks are `minmax(0, 1fr)` — the name cannot widen the track,
           and a two-line place name would make the rows ragged. */}
       <span className="block truncate text-body font-medium text-ink">{name}</span>
-      {context && (
-        <span className="mt-0.5 block truncate text-label text-ink-muted">{context}</span>
+      {subtitle && (
+        <span className="mt-0.5 block truncate text-label text-ink-muted">{subtitle}</span>
       )}
       <span className="mt-1.5 block text-micro tabular text-ink-subtle">
         {copy.explore.propertyCount(propertyCount)} · {copy.property.reviewCount(reviewCount)}
