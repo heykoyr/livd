@@ -182,10 +182,22 @@ describe('removing a review does not destroy what it said', () => {
     const snapshots = await repository.listReviewSnapshots(review.id);
 
     expect(snapshots).toHaveLength(2);
-    // Oldest first: the published original.
-    const oldest = snapshots[snapshots.length - 1];
-    expect(oldest?.body).toBe(ORIGINAL_BODY);
+
+    // Newest first, so the last row is the state the review was published in.
+    // Asserted by content as well as by position: the ordering is the thing
+    // under test here, and an assertion that only reads `[0]` would pass just
+    // as happily if the two rows came back the wrong way round.
+    const [newest, oldest] = snapshots;
+
     expect(oldest?.status).toBe('published');
+    expect(oldest?.body).toBe(ORIGINAL_BODY);
+
+    // The second decision captured the held state, not a second copy of the
+    // published one — "held, edited and restored" must not read as though the
+    // review went straight from published to published.
+    expect(newest?.status).toBe('held');
+
+    expect(snapshots.map((snapshot) => snapshot.status)).toEqual(['held', 'published']);
   });
 
   it('preserves the state before a verification level changes', async () => {

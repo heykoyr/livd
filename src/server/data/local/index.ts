@@ -2448,9 +2448,36 @@ export class LocalRepository implements LivdRepository {
   async listReviewSnapshots(reviewId: string): Promise<ReviewSnapshot[]> {
     const database = await getDatabase();
 
+    /**
+     * Newest first, and the tie-break is chronological rather than arbitrary.
+     *
+     * This sorted on `createdAt` and then on `id`, which is stable — the same
+     * rows always came back in the same order — but not ordered in time:
+     * `shortId` is random, so two snapshots sharing a millisecond came back
+     * in whichever order their random ids happened to fall. `toISOString()`
+     * has millisecond precision and a moderator holding and then restoring a
+     * review writes two snapshots in immediate succession, so sharing a
+     * millisecond is routine rather than theoretical.
+     *
+     * That made a documented promise untrue — the function's own comment in
+     * migration 0030 says "the oldest row is the state it was published in" —
+     * and it is why `tests/safety/evidence.test.ts` failed about one run in
+     * six.
+     *
+     * `reviewSnapshots` is append-only, so the array index is the order the
+     * rows were written and the only chronological information left once the
+     * timestamps are equal. Postgres does not need this: `created_at` there is
+     * microsecond-precision and each snapshot is written by its own
+     * transaction, so `created_at desc, id desc` cannot tie in practice.
+     */
     return database.reviewSnapshots
-      .filter((snapshot) => snapshot.reviewId === reviewId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((snapshot, index) => ({ snapshot, index }))
+      .filter(({ snapshot }) => snapshot.reviewId === reviewId)
+      .sort(
+        (a, b) =>
+          b.snapshot.createdAt.localeCompare(a.snapshot.createdAt) || b.index - a.index,
+      )
+      .map(({ snapshot }) => snapshot)
       .slice(0, 50)
       .map((snapshot) => ({
         id: snapshot.id,

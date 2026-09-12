@@ -255,14 +255,28 @@ describe('what a reader is given', () => {
     const [mineB] = (await repository.listPublicReviews(ids[1]!)).items;
     const [theirs] = (await repository.listPublicReviews(third.id)).items;
 
+    /**
+     * Fields that identify the *review* rather than its author.
+     *
+     * Excluded from the comparison because they vary between any two reviews
+     * for reasons that have nothing to do with who wrote them — and because
+     * leaving them in made this test depend on the clock. Three reviews
+     * written in immediate succession may or may not share a millisecond, so
+     * `createdAt` differed in one comparison and not the other purely by
+     * timing, and the assertion failed about one run in six with no defect
+     * present.
+     */
+    const PER_REVIEW = new Set(['id', 'propertyId', 'createdAt']);
+
     const differing = (
       left: Record<string, unknown>,
       right: Record<string, unknown>,
     ): string[] => {
       const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-      return [...keys].filter(
-        (key) => JSON.stringify(left[key]) !== JSON.stringify(right[key]),
-      );
+      return [...keys]
+        .filter((key) => !PER_REVIEW.has(key))
+        .filter((key) => JSON.stringify(left[key]) !== JSON.stringify(right[key]))
+        .sort();
     };
 
     const sameAuthor = differing(
@@ -274,11 +288,16 @@ describe('what a reader is given', () => {
       theirs as unknown as Record<string, unknown>,
     );
 
-    // Whatever differs between two reviews by one person must also differ
-    // between two reviews by different people — an id, a property, a
-    // timestamp. Nothing may differ in only one of the two comparisons,
-    // because that is precisely a field that encodes authorship.
-    expect(sameAuthor.sort()).toEqual(differentAuthor.sort());
+    // Nothing may differ in only one of the two comparisons, because that is
+    // precisely a field that encodes authorship.
+    expect(sameAuthor).toEqual(differentAuthor);
+
+    // The sharper form, and the one that would actually catch a pseudonym:
+    // these three reviews are identical drafts, so once the per-review
+    // identifiers are set aside nothing should differ at all. A field derived
+    // from the author would show up here as a difference between two authors
+    // and not between two reviews by one.
+    expect(differentAuthor).toEqual([]);
   });
 });
 
