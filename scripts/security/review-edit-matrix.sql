@@ -18,6 +18,10 @@
 --
 --   supabase db query < scripts/security/review-edit-matrix.sql
 --
+-- It covers the parent row and the three child tables that hold a review's
+-- ratings, tags and departure reasons — those had an insert policy that asked
+-- only who was asking and never when, which 0048 closed.
+--
 -- or paste it into the SQL editor. It picks its own fixtures: a published
 -- review inside the window, one outside it, and an account that wrote neither.
 -- If it reports `no fixture`, seed a review and run it again.
@@ -183,11 +187,21 @@ begin
       json_build_object('sub', author, 'role', 'authenticated')::text, true);
     set local role authenticated;
 
+    -- Correctable since 0047, so this one is expected to pass. It is still
+    -- fenced: `reviews_update_own` admits only the author of a published
+    -- review inside the window, and the table's own CHECK holds the range.
     begin
       update reviews set overall_rating = 6 - overall_rating where id = fresh_id;
-      report := report || E'extra   rewrite the rating      : FAIL — writable\n';
+      report := report || E'extra   correct the rating      : OK — permitted\n';
     exception when others then
-      report := report || 'extra   rewrite the rating      : OK — ' || sqlerrm || E'\n';
+      report := report || 'extra   correct the rating      : FAIL — wrongly refused, ' || sqlerrm || E'\n';
+    end;
+
+    begin
+      update reviews set overall_rating = 9 where id = fresh_id;
+      report := report || E'extra   rating out of range     : FAIL — accepted\n';
+    exception when others then
+      report := report || 'extra   rating out of range     : OK — ' || left(sqlerrm, 48) || E'\n';
     end;
 
     -- An array literal, not a bare string. Spelt wrong the first time this was
@@ -252,6 +266,50 @@ begin
       report := report || E'extra   correct the words       : OK — permitted\n';
     exception when others then
       report := report || 'extra   correct the words       : FAIL — wrongly refused, ' || sqlerrm || E'\n';
+    end;
+  end;
+  reset role;
+
+  /* --- The child tables ------------------------------------------- */
+  -- A review's ratings, tags and departure reasons do not live on `reviews`,
+  -- and until 0048 their insert policies asked only "is this yours" — so an
+  -- author could add a rating to a review of any age and move the property's
+  -- scores through the refresh trigger. These four are that door.
+
+  begin
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', stale_by, 'role', 'authenticated')::text, true);
+    set local role authenticated;
+
+    begin
+      insert into review_category_ratings (review_id, category_key, rating)
+      values (stale_id, 'value', 5);
+      report := report || E'child   rate an old review      : FAIL — writable\n';
+    exception when others then
+      report := report || 'child   rate an old review      : OK — ' || left(sqlerrm, 48) || E'\n';
+    end;
+
+    begin
+      insert into review_tags (review_id, tag_key) values (stale_id, 'feels_safe');
+      report := report || E'child   tag an old review       : FAIL — writable\n';
+    exception when others then
+      report := report || 'child   tag an old review       : OK — ' || left(sqlerrm, 48) || E'\n';
+    end;
+
+    begin
+      insert into review_departure_reasons (review_id, reason_key, is_primary)
+      values (stale_id, 'rent_increase', false);
+      report := report || E'child   add a departure reason  : FAIL — writable\n';
+    exception when others then
+      report := report || 'child   add a departure reason  : OK — ' || left(sqlerrm, 48) || E'\n';
+    end;
+
+    begin
+      insert into review_category_ratings (review_id, category_key, rating)
+      values (fresh_id, 'value', 5);
+      report := report || E'child   rate somebody else''s    : FAIL — writable\n';
+    exception when others then
+      report := report || 'child   rate somebody else''s    : OK — ' || left(sqlerrm, 48) || E'\n';
     end;
   end;
   reset role;

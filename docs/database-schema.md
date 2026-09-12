@@ -142,12 +142,14 @@ be corrected by the person who wrote it, while it is `published`, for
 | Where | What enforces it |
 | --- | --- |
 | `reviews_update_own` | `author_id = auth.uid() and status = 'published' and created_at > now() - interval '24 hours'` |
+| `livd_review_is_open_for_me` | the same three, for the child tables that hold the ratings, tags and departure reasons |
 | `livd_correct_review` | the same three, re-checked against `now()` inside the function |
 | the local adapter | the same arithmetic against `Date.now()` |
 | `src/lib/reviews/edit-window.ts` | what the pages render — never a control |
 
 `livd_guard_review_update` decides *what* may change, and since 0046 it is an
-allow-list: `body`, `would_recommend`, `updated_at`, and nothing else. It was a
+allow-list: `body`, `would_recommend`, `overall_rating` (0047), `updated_at`,
+and nothing else. It was a
 blocklist of twelve columns until then, and the three it had never been told
 about — `created_at`, `safety_flags`, and the rent and tenure figures — were
 writable by the author through PostgREST. `created_at` is the one that mattered:
@@ -167,6 +169,34 @@ column is untouched:
   the new text. One-way: the function can hold a review and cannot unhold one,
   and it unions `safety_flags` rather than assigning them, so a correction can
   raise a flag and can never clear one.
+
+### The ratings (0047)
+
+`overall_rating` and the category set are correctable inside the same window.
+0004 froze them, reasoning that a rating rewritten afterwards would launder a
+review's meaning while keeping its timestamp and its badge; that argument is
+about *unbounded* rewriting, and three things bound it:
+
+| | |
+| --- | --- |
+| the window | 24 hours from a `created_at` that 0046 made immutable |
+| the snapshot | `livd_snapshot_review` has copied `overall_rating` and the category set since 0030, with `changed_by` |
+| the rollup | `reviews_refresh_stats` and `review_category_ratings_refresh_stats` both fire on UPDATE, so `property_stats` recomputes in the same transaction |
+
+Category ratings are replaced by `livd_correct_review`, never merged: a category
+the reviewer cleared is one they no longer wish to rate. The delete and the
+insert are one block, so neither trigger ever sees an empty set and computes a
+score from nothing. At least one category must survive, which is the rule the
+submission flow already applies.
+
+**`review_category_ratings`, `review_tags`, `review_departure_reasons`** carry
+the window too, since 0048. Their insert policies asked `livd_review_is_mine`
+and nothing else, so an author could add a rating, a tag or a departure reason
+to a review of any age or status and move the property’s aggregates through the
+refresh trigger. They now ask `livd_review_is_open_for_me` — mine, published,
+inside the window — which is the same three conditions the parent row is held
+to. None of the three has an update or delete policy for any client role;
+replacing a set is `livd_correct_review`’s job alone.
 
 `livd_snapshot_review` fires before any of this, so the first snapshot of a
 review is the state it was published in. A correction writes `reason =

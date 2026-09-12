@@ -1493,3 +1493,94 @@ catch it rather than the linter. That is the posture Livd already had, and the
 correction path is deliberately no weaker than it — the function cannot clear a
 flag, cannot unhold a held review, cannot extend a window, and cannot touch
 anybody else's row.
+
+---
+
+## Phase 22 — the ratings become correctable
+
+The product decision was that a rating is part of what somebody said, so a
+correction that reaches the sentence but not the number is half a correction.
+Opening it meant putting a write path onto the figures that feed every
+aggregate on a property page, so the path was attacked first.
+
+### What the rollup does when a rating moves
+
+The risk that makes an editable rating dangerous is not the edit — it is an edit
+that leaves the property's own score behind, so a page shows 2/5 under a review
+that now reads 5/5. Run against the live project inside a rolled-back
+transaction:
+
+```
+property has 1 published review(s)
+before: score=null confidence=insufficient ess=1.80 updated=2026-09-11 20:02:28+00
+after : score=null confidence=insufficient ess=1.80 updated=2026-09-11 23:55:43+00
+rollup recomputed: YES
+```
+
+The score stays null because one review is legitimately `insufficient`, which is
+why `updated_at` is the thing to watch: `reviews_refresh_stats` and
+`review_category_ratings_refresh_stats` both fire on UPDATE and recompute inside
+the correction's own transaction.
+
+### The direct surface, under the new rule
+
+| Attack, as the author over PostgREST | Result |
+| --- | --- |
+| `PATCH reviews { overall_rating }` | **permitted** — intended by 0047 |
+| `PATCH reviews { overall_rating: 9 }` | refused by the table's CHECK |
+| `PATCH reviews { created_at }` | refused |
+| `PATCH reviews { tenure_months }` | refused |
+| `PATCH reviews { verification_level }` | refused |
+| `PATCH reviews { safety_flags }` | refused |
+
+### The finding: the window did not reach the child tables
+
+A review's ratings, tags and departure reasons are not columns on `reviews`.
+They are three child tables, and each carried an insert policy that asked one
+question — `livd_review_is_mine(review_id)`. Not whether the review was still
+published, and not whether it was still inside the edit window. So this, as an
+ordinary signed-in author:
+
+```
+POST /rest/v1/review_category_ratings
+{ "review_id": "<mine, from last year>", "category_key": "value", "rating": 5 }
+```
+
+succeeded, and `review_category_ratings_refresh_stats` then moved the property's
+category scores, overall score and confidence band on the strength of a rating
+added to a review that became permanent a year ago. The same door stood open on
+`review_tags`, which feeds what residents mention most, and on
+`review_departure_reasons`, which feeds the departure analysis — the most
+load-bearing thing this product computes.
+
+It was invisible because the application inserts those rows exactly once, in the
+same breath as the review, and no interface has ever offered a second chance.
+The policy was written to permit that one moment, and it did — it just never
+stopped permitting it. Same shape of mistake as 0046's blocklist, in the other
+direction: a rule naming who is allowed has to name when.
+
+0048 closes it with `livd_review_is_open_for_me`, the same three conditions the
+parent row is held to. Verified live:
+
+| Case | Before 0048 | After |
+| --- | --- | --- |
+| Rate a review of mine from last year | **accepted** | refused by RLS |
+| Tag a review of mine from last year | **accepted** | refused by RLS |
+| Add a departure reason to it | **accepted** | refused by RLS |
+| Rate somebody else's review | refused | refused |
+| Rate my own review inside the window | accepted | accepted (submission path intact) |
+
+### One test that passed for the wrong reason
+
+The last row above first reported `FAIL — wrongly refused`, on a `duplicate key`
+error: the category it picked was already rated on that review, so a unique
+constraint answered before the policy did. Re-run against a category the review
+did not carry, it passes. A check that cannot tell a policy refusal from a
+constraint refusal is not a check — the same lesson as the `malformed array
+literal` case in Phase 21, found the same way.
+
+### What the correction matrix now covers
+
+`scripts/security/review-edit-matrix.sql` carries the seven authorisation cases,
+the column-level attacks with the rating assertion inverted, an out-of-range
+rating, and the four child-table cases above.
