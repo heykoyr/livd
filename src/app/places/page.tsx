@@ -210,8 +210,25 @@ function ExploreHeader({
 
           <p className="mt-4 max-w-xl text-body-lg text-ink-muted">{copy.explore.lead}</p>
 
-          <div className="mt-8 max-w-2xl">
-            <SearchCombobox size="lg" placeholder={copy.home.searchPlaceholder} />
+          {/* Deliberately secondary, and deliberately not the page's opening
+              move. Explore leading with a full-width search field is what made
+              it read as a second copy of `/search`; somebody who already knows
+              the address wants that page, and this is the one line that says
+              so. The field stays because refusing to offer it would be
+              obstinate — it is just no longer the headline. */}
+          <div className="mt-7 flex flex-wrap items-center gap-x-4 gap-y-3">
+            <div className="min-w-0 flex-1 basis-72">
+              <SearchCombobox placeholder={copy.home.searchPlaceholder} />
+            </div>
+            <p className="text-label text-ink-subtle">
+              {copy.explore.searchAside}{' '}
+              <Link
+                href="/search"
+                className="rounded-sm font-medium text-brand underline underline-offset-4 hover:text-brand-hover"
+              >
+                {copy.search.startTitle}
+              </Link>
+            </p>
           </div>
 
           {/* Said only where it needs saying. "Showing everywhere on Livd" is

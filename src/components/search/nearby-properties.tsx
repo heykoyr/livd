@@ -58,9 +58,22 @@ export function NearbyProperties() {
 
     try {
       const reading = await geo.request();
-      // A null reading means the hook has set an error of its own — a denial,
-      // a timeout, an unsupported browser. Rendering is driven off that rather
-      // than off an empty result list.
+
+      /**
+       * A null reading means the hook is holding an error — a denial, a
+       * timeout, an unsupported browser — and that error is what the interface
+       * renders. So it must survive this function.
+       *
+       * `geo.clear()` used to run in a `finally`, which reset the hook to its
+       * initial state on every path including the failures. The error was
+       * therefore erased microseconds after it was set, every outcome arrived
+       * at the render with `error: null` and an empty item list, and all five
+       * states collapsed into one. That is the same defect as the empty-state
+       * wording, one layer down, and no amount of copy would have fixed it.
+       *
+       * What `clear()` is actually for is dropping the position once it has
+       * been used. An error code is not a position, so it is not its business.
+       */
       if (!reading) return;
 
       const formData = new FormData();
@@ -68,15 +81,29 @@ export function NearbyProperties() {
       formData.set('longitude', String(reading.longitude));
 
       setState(await findNearbyProperties(initialNearbyState, formData));
+
+      // The reading has done its work. Dropped here rather than in a
+      // `finally`, so only a position that existed is cleared.
+      geo.clear();
     } finally {
       setWorking(false);
-      // The reading has done its work.
-      geo.clear();
     }
   }, [geo]);
 
   const busy = working || geo.status === 'requesting';
-  const radiusLabel = (meters: number): string => formatDistance(meters);
+
+  /**
+   * The radius, in the units the results are already using.
+   *
+   * `formatDistance` is market-aware — a property in the United States reads
+   * "1,200 ft", one in Nigeria reads "370 m" — so labelling the radius in
+   * metric regardless would put "within 3 km" directly above "0.7 mi away".
+   * Anything near you is by definition in your country, so the first result
+   * is the right thing to take the units from. With no results there is
+   * nothing to be consistent with, and metric is the product's default.
+   */
+  const radiusLabel = (meters: number): string =>
+    formatDistance(meters, state.items[0]?.countryCode);
 
   return (
     <section aria-labelledby="nearby-heading" className="mt-10">
@@ -247,8 +274,7 @@ function Outcome({
     );
   }
 
-  const radius =
-    state.radiusMeters !== null ? formatDistance(state.radiusMeters) : formatDistance(3000);
+  const radius = formatDistance(state.radiusMeters ?? 3000);
 
   /* C′ — located, nothing found, and Livd is holding properties it cannot
      place. The one state that explains the bug rather than hiding it. */

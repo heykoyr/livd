@@ -109,6 +109,23 @@ export default async function AdminDashboard() {
   const repository = await getRepository();
   const recentDecisions = await repository.listModerationActions(undefined, 8);
 
+  /**
+   * Properties Livd cannot place on a map.
+   *
+   * Surfaced here because the alternative is what already happened: a
+   * geocoder that was never configured meant every property a real
+   * contributor added was stored without coordinates, which made it
+   * invisible to proximity search — and nothing anywhere said so. The
+   * symptom reached a resident before it reached anybody who could fix it.
+   *
+   * Zero is the normal state and renders as such. Anything above zero is a
+   * coverage gap with a known remedy: configure `LIVD_GEOCODER` and run
+   * `npm run geocode:backfill`.
+   */
+  const unlocatableProperties = await repository
+    .unlocatablePropertyCount()
+    .catch(() => 0);
+
   const clear =
     queues.length === 0 && cases.open === 0 && (trustAndSafety?.openAuthorityRequests ?? 0) === 0;
 
@@ -355,6 +372,23 @@ export default async function AdminDashboard() {
               hint="the number that matters"
             />
           </dl>
+
+          {/* Only when there is something to say. A zero here is the healthy
+              state and does not need a row of its own. */}
+          {unlocatableProperties > 0 && (
+            <p className="mt-6 border-t border-border pt-5 text-label text-ink-muted">
+              <span className="font-medium text-caution">
+                {unlocatableProperties === 1
+                  ? '1 property has no location recorded'
+                  : `${unlocatableProperties} properties have no location recorded`}
+              </span>{' '}
+              — so they cannot appear in proximity search or offer location
+              verification, however close a resident is standing. Set{' '}
+              <code className="tabular">LIVD_GEOCODER</code> and run{' '}
+              <code className="tabular">npm run geocode:backfill</code> to
+              resolve them from their addresses.
+            </p>
+          )}
         </Card>
       </section>
     </div>

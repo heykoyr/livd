@@ -160,10 +160,23 @@ export const copy = {
    */
   explore: {
     title: 'Explore',
-    heading: 'Somewhere you are considering?',
-    lead: 'Search an address, a building or a neighbourhood. Everything on Livd is here because somebody who lived there wrote about it.',
+    /**
+     * Explore is not a second search box.
+     *
+     * It used to open with "Somewhere you are considering?" above a full-width
+     * search field — which is exactly what `/search` is for, so the two pages
+     * read as the same product with different furniture. The distinction is a
+     * real one and the copy now carries it: Explore is for somebody who does
+     * not yet have an address in mind, and leads with what residents have
+     * written rather than with a field to type in. The field is still here,
+     * smaller and below the lead, because refusing to offer it would be
+     * obstinate.
+     */
+    heading: 'Where do people actually want to live?',
+    lead: 'Livd knows what residents said about somewhere they lived — why they stayed, why they left, and what kept going wrong. Start from what they wrote.',
+    searchAside: 'Know the address already?',
     metaDescription:
-      'Search a property, a building or a neighbourhood anywhere in the world, and read what residents who actually lived there say about it.',
+      'Discover properties, neighbourhoods and cities through what residents who lived there actually wrote — recently reviewed, most written about, and near you.',
 
     scopeLocal: (place: string) => `Showing ${place} first`,
     scopeGlobal: 'Showing everywhere on Livd',

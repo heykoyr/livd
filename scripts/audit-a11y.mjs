@@ -48,8 +48,10 @@ const COOKIE = process.env.LIVD_AUDIT_COOKIE ?? null;
 
 const PAGES = [
   ['Landing', '/'],
+  ['Search, starting state', '/search'],
   ['Search results', '/search?q=lagos'],
   ['Search, no results', '/search?q=zzzznotathing'],
+  ['Search, browse by filter', '/search?country=NG'],
   ['Property profile', '/property/admiralty-heights-lagos'],
   ['Property, unreviewed', '/property/ballard-yard-seattle'],
   ['Explore', '/places'],

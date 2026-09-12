@@ -201,6 +201,69 @@ Environment variables to set on the project:
 | `NEXT_PUBLIC_SITE_URL` | Production | Previews fall back to `VERCEL_URL` |
 | `LIVD_SESSION_SECRET` | Production, Preview | |
 | `LIVD_SHOW_DEMO_DATA` | Production, Preview | `true` only while seeded data is the content |
+| `LIVD_GEOCODER` | Production, Preview | **Required for proximity search and location verification to work at all.** See below |
+| `LIVD_GEOCODER_CONTACT` | Production, Preview | Required if `LIVD_GEOCODER` includes `nominatim` |
+
+### Without a geocoder, two features are silently off
+
+This is not a nice-to-have, and it has already cost a real failure worth
+writing down.
+
+`createProperty` geocodes the address when a geocoder is configured, and stores
+`coordinates: null` when one is not. A property with no coordinates:
+
+- can never appear in "Show properties near me", because
+  `livd_properties_near` requires a non-null position — correctly, since a null
+  coordinate cannot be measured against anything; and
+- never offers the location-verification step in the review wizard, because
+  there is nothing to check the resident's position against.
+
+Both failures are invisible. Nothing errors, nothing is logged, and the
+property looks completely normal on its own page.
+
+What that produced: the first two properties real contributors added were both
+stored without coordinates, and a resident standing inside one of them — one
+they had reviewed themselves — was told there were no Livd properties nearby.
+The proximity code was correct throughout; the deployment simply had no
+geocoder.
+
+Two things now make it visible rather than silent:
+
+- the admin overview shows a count of properties with no location recorded, and
+  names this remedy;
+- the nearby control distinguishes "nothing is near you" from "Livd holds
+  properties here it cannot place", and says which.
+
+**The cheapest correct configuration needs no API key:**
+
+```
+LIVD_GEOCODER=nominatim
+LIVD_GEOCODER_CONTACT=you@example.com
+```
+
+Nominatim is free and asks only for an identifying contact in the `User-Agent`,
+which its usage policy requires — the provider is skipped rather than used in
+breach of it if the contact is missing. Its coverage is uneven, and
+deliberately so in the code: it resolves European addresses to buildings and
+frequently returns only a road for Lagos, which the precision gate then refuses
+rather than accepting a wrong coordinate. For markets where that matters, chain
+a commercial provider in front of it:
+
+```
+LIVD_GEOCODER=google,nominatim
+GOOGLE_MAPS_API_KEY=...
+```
+
+Setting this only helps properties added afterwards. For the ones already
+stored without a position:
+
+```
+npm run geocode:backfill            # reports, writes nothing
+npm run geocode:backfill -- --write
+```
+
+It never overwrites an existing coordinate, never lowers the precision bar, and
+never touches seeded data.
 
 Adding a secret:
 
