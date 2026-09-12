@@ -107,7 +107,7 @@ src/
 │   ├── property/           Score dial, category bars, departure chart, timeline
 │   ├── search/             Combobox, filters, nearby
 │   ├── layout/             Header, footer, nav, skip link
-│   └── brand/              Logotype
+│   └── brand/              Logotype and brand mark
 
    The review wizard's steps live beside the route that owns them, in
    `src/app/review/`, rather than in `components/`.

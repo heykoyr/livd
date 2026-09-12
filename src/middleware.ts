@@ -82,7 +82,11 @@ export const config = {
      * Every path except the ones that can never carry a session: Next's own
      * build output, the image optimiser, and files with an extension. Running
      * on those would refresh a token on the way to a favicon.
+     *
+     * `manifest.webmanifest` is named rather than matched by extension, which
+     * is the whole reason it needs naming — it is fetched on first paint by
+     * every browser that supports installing a site.
      */
-    '/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)',
   ],
 };
