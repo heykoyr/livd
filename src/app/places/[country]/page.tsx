@@ -90,11 +90,18 @@ export default async function CountryPage({ params }: { params: Promise<Params> 
 
   const market = getMarket(countryCode);
 
-  const [localities, neighbourhoods, recentlyReviewed] = await Promise.all([
+  const [localities, allNeighbourhoods, recentlyReviewed] = await Promise.all([
     getCachedLocalities(countryCode),
     getCachedNeighbourhoods({ countryCode, limit: 18 }),
     getCachedRecentlyReviewed(3, countryCode),
   ]);
+
+  // An area with a property and no reviews has nothing to say under a heading
+  // about what it is like to live there. The cities section above still counts
+  // it, because that is a count rather than a claim.
+  const neighbourhoods = allNeighbourhoods.filter(
+    (neighbourhood) => neighbourhood.reviewCount > 0,
+  );
 
   const reviewCount = localities.reduce((sum, locality) => sum + locality.reviewCount, 0);
   const propertyCount = localities.reduce((sum, locality) => sum + locality.propertyCount, 0);

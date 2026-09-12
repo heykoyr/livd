@@ -38,6 +38,16 @@ export function MobileNav({ user, isStaff }: { user: UserProfile | null; isStaff
     setOpen(false);
   }, [pathname]);
 
+  /**
+   * Closing on the press as well as on the path change.
+   *
+   * The effect above is keyed on the pathname, so tapping the link for the
+   * page you are already on changed nothing and left the drawer sitting open
+   * over it with the body still scroll-locked. That is reachable from every
+   * page in the navigation, and closing on the press costs one handler.
+   */
+  const close = (): void => setOpen(false);
+
   useEffect(() => {
     if (!open) return;
 
@@ -101,6 +111,7 @@ export function MobileNav({ user, isStaff }: { user: UserProfile | null; isStaff
               <li key={link.href}>
                 <Link
                   href={link.href}
+                  onClick={close}
                   className={cn(
                     'flex items-center justify-between border-b border-border py-4 text-title-md text-ink',
                     pathname === link.href && 'text-brand',
@@ -117,6 +128,7 @@ export function MobileNav({ user, isStaff }: { user: UserProfile | null; isStaff
                 <li>
                   <Link
                     href="/shortlist"
+                    onClick={close}
                     className="flex items-center justify-between border-b border-border py-4 text-title-md text-ink"
                   >
                     {copy.nav.shortlist}
@@ -126,6 +138,7 @@ export function MobileNav({ user, isStaff }: { user: UserProfile | null; isStaff
                 <li>
                   <Link
                     href="/account"
+                    onClick={close}
                     className="flex items-center justify-between border-b border-border py-4 text-title-md text-ink"
                   >
                     {copy.nav.account}
@@ -139,6 +152,7 @@ export function MobileNav({ user, isStaff }: { user: UserProfile | null; isStaff
               <li>
                 <Link
                   href="/admin"
+                  onClick={close}
                   className="flex items-center justify-between border-b border-border py-4 text-title-md text-accent"
                 >
                   {copy.nav.admin}
@@ -149,14 +163,14 @@ export function MobileNav({ user, isStaff }: { user: UserProfile | null; isStaff
           </ul>
 
           <div className="mt-8 flex flex-col gap-3">
-            <ButtonLink href="/review" size="lg" fullWidth>
+            <ButtonLink href="/review" onClick={close} size="lg" fullWidth>
               {copy.nav.writeReview}
             </ButtonLink>
 
             {user ? (
               <SignOutButton fullWidth />
             ) : (
-              <ButtonLink href="/sign-in" variant="secondary" size="lg" fullWidth>
+              <ButtonLink href="/sign-in" onClick={close} variant="secondary" size="lg" fullWidth>
                 {copy.nav.signIn}
               </ButtonLink>
             )}

@@ -89,10 +89,17 @@ export default async function ExplorePage() {
   const guessedButEmpty =
     preferred !== null && preferredLocalities.length === 0 && allLocalities.length > 0;
 
-  const neighbourhoods = await getCachedNeighbourhoods({
-    countryCode: country,
-    limit: LIMITS.neighbourhoods,
-  });
+  /**
+   * Only areas residents have actually written about.
+   *
+   * A neighbourhood with a property and no reviews is a real place and a
+   * correct row, and it has nothing to say under a heading promising what it
+   * is like to live around there. It sorts last in the ranking, so filtering
+   * after the limit still leaves the strongest areas.
+   */
+  const neighbourhoods = (
+    await getCachedNeighbourhoods({ countryCode: country, limit: LIMITS.neighbourhoods })
+  ).filter((neighbourhood) => neighbourhood.reviewCount > 0);
 
   const isEmpty = allLocalities.length === 0;
 
@@ -207,12 +214,15 @@ function ExploreHeader({
             <SearchCombobox size="lg" placeholder={copy.home.searchPlaceholder} />
           </div>
 
+          {/* Said only where it needs saying. "Showing everywhere on Livd" is
+              already the whole of the promise; repeating that search is
+              worldwide underneath it is words for their own sake. */}
           {!isEmpty && (
             <p className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label text-ink-subtle">
               <span className="text-ink-muted">
                 {countryName ? copy.explore.scopeLocal(countryName) : copy.explore.scopeGlobal}
               </span>
-              <span>{copy.explore.scopeNote}</span>
+              {countryName && <span>{copy.explore.scopeNote}</span>}
             </p>
           )}
         </div>
@@ -269,7 +279,20 @@ async function MostWrittenAboutSection({
   country: string | null;
   countryName: string | null;
 }) {
-  const summaries = await getCachedMostReviewed(LIMITS.evidenced, country);
+  // Over-fetched and then deduplicated against the section above it. The two
+  // rankings overlap heavily at Livd's current size, and a page that shows a
+  // reader the same six buildings twice has wasted half of itself. Both reads
+  // hit the same cache entries the other section uses, so this costs nothing.
+  const [recent, mostReviewed] = await Promise.all([
+    getCachedRecentlyReviewed(LIMITS.recent, country),
+    getCachedMostReviewed(LIMITS.recent + LIMITS.evidenced, country),
+  ]);
+
+  const alreadyShown = new Set(recent.map((summary) => summary.property.id));
+  const summaries = mostReviewed
+    .filter((summary) => !alreadyShown.has(summary.property.id))
+    .slice(0, LIMITS.evidenced);
+
   if (summaries.length === 0) return null;
 
   return (

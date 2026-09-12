@@ -22,13 +22,24 @@ export function NeighbourhoodGroups({
   neighbourhoods,
   /** Per city, so one dense city cannot crowd out every other. */
   perLocality = 8,
+  /**
+   * Cities shown at all.
+   *
+   * Without this the section became the country index again, one level down:
+   * fifteen city headings with a single chip under each, which is a list of
+   * everywhere Livd has heard of rather than a few areas worth reading about.
+   * Groups are ranked by the evidence behind them, so the cap keeps the ones
+   * with something to say.
+   */
+  maxLocalities = 6,
 }: {
   neighbourhoods: NeighbourhoodSummary[];
   perLocality?: number;
+  maxLocalities?: number;
 }) {
   const groups = new Map<
     string,
-    { countryCode: string; locality: string; items: NeighbourhoodSummary[] }
+    { countryCode: string; locality: string; reviewCount: number; items: NeighbourhoodSummary[] }
   >();
 
   for (const neighbourhood of neighbourhoods) {
@@ -36,18 +47,29 @@ export function NeighbourhoodGroups({
     const group = groups.get(key);
     if (group) {
       group.items.push(neighbourhood);
+      group.reviewCount += neighbourhood.reviewCount;
     } else {
       groups.set(key, {
         countryCode: neighbourhood.countryCode,
         locality: neighbourhood.locality,
+        reviewCount: neighbourhood.reviewCount,
         items: [neighbourhood],
       });
     }
   }
 
+  const ranked = [...groups.values()]
+    .sort(
+      (a, b) =>
+        b.reviewCount - a.reviewCount ||
+        b.items.length - a.items.length ||
+        a.locality.localeCompare(b.locality),
+    )
+    .slice(0, maxLocalities);
+
   return (
     <div className="flex flex-col gap-8">
-      {[...groups.values()].map((group) => (
+      {ranked.map((group) => (
         <div key={`${group.countryCode}:${group.locality}`}>
           <h3 className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <Link
