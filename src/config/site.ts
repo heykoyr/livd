@@ -111,6 +111,7 @@ export const LIMITS = {
 export const NAV_LINKS = [
   { href: '/search', label: 'Search' },
   { href: '/places', label: 'Explore' },
+  { href: '/why-livd', label: 'Why Livd' },
   { href: '/how-it-works', label: 'How it works' },
   { href: '/trust', label: 'Trust & safety' },
 ] as const;

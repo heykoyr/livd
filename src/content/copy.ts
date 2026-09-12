@@ -25,6 +25,7 @@ export const copy = {
      * the label changed.
      */
     explore: 'Explore',
+    whyLivd: 'Why Livd',
     howItWorks: 'How it works',
     trust: 'Trust & safety',
     shortlist: 'Shortlist',
@@ -89,6 +90,233 @@ export const copy = {
     discoverLead: 'Properties residents have written about most recently.',
     browseAll: 'Browse all properties',
     exploreLocations: 'Explore by location',
+  },
+
+  /**
+   * Why Livd.
+   *
+   * The product's argument, in the product's voice. Three rules held
+   * throughout, because this is the page most likely to drift into marketing:
+   *
+   *   1. No claim Livd cannot support. It does not prevent fraud, guarantee a
+   *      good decision, or know the truth about a property. It collects what
+   *      residents said and shows the evidence behind it. Every line here is
+   *      checked against that.
+   *   2. No accusation. Housing goes wrong in ways worth naming, and naming
+   *      them as categories of risk is honest where naming a group of people
+   *      would be defamatory and false. "Some residents only discover X after
+   *      moving in" is true everywhere; "landlords do X" is neither.
+   *   3. No sentiment for its own sake. The contribution section is the
+   *      emotional centre of the page and it earns that by being specific —
+   *      what you know, why it is worth something, how long it takes.
+   */
+  whyLivd: {
+    eyebrow: 'Why Livd',
+    title: 'You can see the property. You cannot see the year.',
+    lead: 'A viewing lasts an hour. A tenancy lasts a year or more. Almost everything worth knowing about living somewhere happens in between — and only the people who lived there can tell you what it was.',
+    searchCta: 'Search a property',
+    contributeCta: 'Share your experience',
+
+    /* --- The gap ----------------------------------------------------- */
+    gapTitle: 'An hour against a year',
+    gapLead:
+      'This is an information problem before it is anything else. A viewing is a short, arranged look at a space, and it is genuinely useful for what it can show. It is simply not long enough to learn the things that decide whether you are happy living there.',
+    gapShowsTitle: 'What an hour can show you',
+    gapShows: [
+      'The size of the rooms and the light in them.',
+      'The finish, the fittings, the state of the paint.',
+      'The street, on one afternoon, in one season.',
+      'Whatever the listing chose to photograph.',
+      'What the property is asking, and what is included.',
+    ],
+    gapCannotTitle: 'What it cannot',
+    gapCannot: [
+      'Whether the heating holds up in February, or the cooling in August.',
+      'How long a repair actually takes once it is reported.',
+      'Whether the water runs at seven in the morning.',
+      'What the building sounds like on a Friday night.',
+      'What management is like when something goes wrong.',
+      'Why the last four residents decided to leave.',
+    ],
+    gapClose:
+      'Nobody is necessarily hiding any of this. An hour is not long enough to find it out, and the people who could tell you have usually already moved on.',
+
+    /* --- What residents know ----------------------------------------- */
+    knowTitle: 'Residents know what the viewing does not show',
+    knowLead:
+      'Livd asks former and current residents the questions a viewing cannot answer, one category at a time, and only counts a category where residents actually rated it. These are the things people ask friends about before they sign — asked systematically instead.',
+    knowQuestionsTitle: 'The questions behind the categories',
+    knowQuestions: [
+      { category: 'Noise', question: 'Could you sleep, work and think in it?' },
+      { category: 'Building maintenance', question: 'When something broke, what happened next?' },
+      { category: 'Management', question: 'Were the people responsible reachable and straight with you?' },
+      { category: 'Water supply', question: 'Did it run when you needed it?' },
+      { category: 'Power reliability', question: 'How often did it go, and for how long?' },
+      { category: 'Internet', question: 'Could you actually work from home?' },
+      { category: 'Safety and security', question: 'Did you feel secure coming home late?' },
+      { category: 'Neighbours and community', question: 'Who else lives there, and what is it like?' },
+      { category: 'Value for money', question: 'Knowing what you know now, was it worth the rent?' },
+    ],
+    knowIllustration: 'Illustration',
+    knowIllustrationNote:
+      'An example of how a property reads once residents have rated it. Not a real property.',
+
+    /* --- The four minutes: the emotional centre ---------------------- */
+    contributeTitle: 'The part that only works if you do it',
+    contributeOpening:
+      'Every property page on Livd exists because one person decided to write the first review.',
+    contributeClaim: 'You know something the next person does not.',
+    contributeKnows: [
+      'You know what the viewing did not show.',
+      'You know what happened after the keys changed hands.',
+      'You know whether what you were told turned out to be true.',
+      'You know what got fixed, what did not, and how long it took.',
+      'You know what changed while you were there.',
+      'You know why you stayed, or why you left.',
+    ],
+    contributeMinutes: 'It takes about four minutes to pass that on.',
+    contributeWorth:
+      'Those four minutes are worth something specific to somebody you will never meet. A recurring problem they can ask about before they pay. A question they would not have known to ask. A pattern across several residents rather than one bad week. Sometimes the information that matters most is the information people only get after the money has gone.',
+    contributeAnonymity:
+      'Your review shows as a former or current resident. Never your name, and never to the property owner.',
+    contributeClose: 'You know something the next person does not. Tell them.',
+    contributeTrustCta: 'How we protect reviewers',
+
+    /* --- One review ---------------------------------------------------- */
+    questionTitle: 'One review is enough to change the question you ask',
+    questionLead:
+      'Livd does not tell you whether a property is good or bad. One person had one experience, and Livd says so — with the number of reviews behind every figure and the confidence stated beside it.',
+    questionBody:
+      'What a single account can do is change what you ask at the viewing. Somebody mentions the water; you ask how often it goes and who to call. Three people mention the same repair across two years; that is no longer an anecdote. Somebody left over a rent increase they did not expect; you ask what happened at the last renewal.',
+    questionClose:
+      'Better questions, asked before you commit, are most of what this is for.',
+
+    /* --- Trust --------------------------------------------------------- */
+    trustEyebrow: 'Why trust it',
+    trustStatement: 'Anonymous to the public. Accountable to Livd.',
+    trustLead:
+      'Those two halves are the whole design. People will not write honestly about where they live if their landlord can find out who they are — and a platform where nobody is accountable for anything fills up with invention. Livd is built to be both at once.',
+    trustPillars: [
+      {
+        title: 'Residency verification',
+        body: 'Livd works to establish that a reviewer has a real connection to the property they are writing about, and says which level of evidence sits behind each review rather than presenting them all as equal.',
+      },
+      {
+        title: 'Location verification',
+        body: 'Where a property has a known position, a resident can confirm they are at it. That is evidence of presence, and Livd says exactly that — being at a building is not proof of a tenancy, and it is never described as one.',
+      },
+      {
+        title: 'Recency',
+        body: 'A recent experience counts for more than an old one, and the weighting is explained rather than hidden. A property reviewed heavily four years ago and not since is shown as exactly that.',
+      },
+      {
+        title: 'Anonymous publicly',
+        body: 'A review is attributed to a former or current resident. Your name is never shown, never given to the property owner, and never inferable from the page.',
+      },
+      {
+        title: 'Accountable internally',
+        body: 'Livd can investigate fraud, coordinated review activity and serious policy breaches, and reaching an identity is a separate, recorded action with its own authorisation — not a side effect of moderation.',
+      },
+      {
+        title: 'Moderation',
+        body: 'Reported content is reviewed against a published content policy. A review that breaks it comes down; a review somebody simply dislikes does not.',
+      },
+      {
+        title: 'Owner responses',
+        body: 'A verified owner or manager can reply publicly to any review. They cannot edit one, remove one, or find out who wrote it.',
+      },
+    ],
+    trustCta: 'Read the trust and safety model',
+
+    /* --- Won't do ------------------------------------------------------ */
+    wontTitle: 'What Livd will not do',
+    wontLead:
+      'Worth stating plainly, because every one of these is something a review platform can be talked into.',
+    wont: [
+      {
+        title: 'Sell a better rating',
+        body: 'No commercial relationship changes what residents said. There is no package that improves a score, no paid removal, and no arrangement under which money moves a property up a list.',
+      },
+      {
+        title: 'Tell an owner who wrote a review',
+        body: 'Not for a fee, not on request, and not as a favour. Public anonymity is the condition under which people write honestly, and it is not ours to trade.',
+      },
+      {
+        title: 'Pretend one experience speaks for everyone',
+        body: 'Two reviews are shown as two reviews. Livd states the sample size and the confidence next to every figure, and withholds a score it cannot support rather than printing a number that looks like one.',
+      },
+      {
+        title: 'Manufacture confidence',
+        body: 'Where the evidence is thin, the page says so and points you at the individual reviews instead. A precise-looking figure built on almost nothing is the most misleading thing a product like this can do.',
+      },
+      {
+        title: 'Confuse a listing with a lived experience',
+        body: 'A well-photographed property is a well-photographed property. It is not evidence about what living there was like, and Livd never treats the two as the same kind of information.',
+      },
+    ],
+
+    /* --- Owners -------------------------------------------------------- */
+    ownersTitle: 'If you own or manage the property',
+    ownersLead:
+      'Livd is not built against property owners. A well-run building has nothing to fear from residents describing it, and an owner who fixed something deserves to be able to say so.',
+    ownersCan: [
+      'Claim the property once ownership or management is verified.',
+      'Correct factual details about the building.',
+      'Reply publicly to any review, once each.',
+      'Mark an issue as resolved, and explain what changed.',
+    ],
+    ownersCannot: [
+      'Edit, hide or remove a resident review.',
+      'Learn who wrote one.',
+      'Pay for a better score or a higher position.',
+    ],
+    ownersCanTitle: 'What an owner can do',
+    ownersCannotTitle: 'What an owner cannot do',
+    ownersCta: 'For property owners',
+
+    /* --- Recency and history ------------------------------------------- */
+    historyTitle: 'A property has a history, and things change',
+    historyLead:
+      'Management changes. Neighbours move. A boiler gets replaced, or stops getting fixed. Rent moves. A review from five years ago and a review from last month are not the same claim about the same building, and Livd does not average them as though they were.',
+    historyBody:
+      'So a property page is a record over time rather than a single verdict: who is living there now, who wrote recently, what earlier residents said, and whether recent experience is better or worse than what came before. Over enough time that becomes the useful thing — not a rating, but an account of what it has actually been like to live somewhere.',
+
+    /* --- Global -------------------------------------------------------- */
+    globalTitle: 'The same question, everywhere',
+    globalBody:
+      'Lagos, London, New York, Toronto, Sydney, Berlin, Dublin. The details differ — what an address looks like, which utilities are worth asking about, what a lease is called — and Livd adapts the questions to the market. The question underneath does not change anywhere: what is it really like to live there?',
+
+    /* --- How it works, briefly ----------------------------------------- */
+    howTitle: 'How you use it',
+    howSteps: [
+      { title: 'Search', body: 'A property, an address, a building or a neighbourhood.' },
+      { title: 'Read', body: 'What residents said, category by category, with the evidence behind it.' },
+      { title: 'Investigate', body: 'Look for repetition, recency, and why people left.' },
+      { title: 'Decide', body: 'Take the weak points to the viewing as questions.' },
+      { title: 'Contribute', body: 'When you have lived somewhere, pass on what you learned.' },
+    ],
+    howCta: 'How Livd works in detail',
+
+    /* --- The loop ------------------------------------------------------ */
+    loopTitle: 'How this holds together',
+    loopLead:
+      'Livd only works as a loop. Each step exists because somebody completed the one before it.',
+    loopSteps: [
+      'Somebody is deciding where to live.',
+      'They read what residents wrote about it.',
+      'They ask better questions, and decide with more than a viewing.',
+      'They move in, and find out what it is actually like.',
+      'They move on — and write down what they learned.',
+      'The next person deciding reads it.',
+    ],
+    loopClose:
+      'Nothing here is generated. Every property page is somebody having taken four minutes on their way out.',
+
+    /* --- Close --------------------------------------------------------- */
+    closeTitle: 'The next place you live deserves more than an hour',
+    closeBody:
+      'Read what the people who lived there said before you commit to a year of it.',
+    closeContributeAside: 'Lived somewhere already?',
   },
 
   search: {

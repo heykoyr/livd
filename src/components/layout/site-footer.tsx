@@ -16,6 +16,7 @@ const COLUMNS = [
   {
     heading: copy.footer.company,
     links: [
+      { href: '/why-livd', label: copy.nav.whyLivd },
       { href: '/how-it-works', label: copy.nav.howItWorks },
       { href: '/trust', label: copy.nav.trust },
       { href: '/for-owners', label: copy.footer.forOwners },
