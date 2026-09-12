@@ -1739,6 +1739,27 @@ export class SupabaseRepository implements LivdRepository {
     });
   }
 
+  async unlocatablePropertyCount(countryCode?: string | null): Promise<number> {
+    const supabase = this.publicClient();
+
+    // `head: true` — a count, with no rows returned. Nothing about which
+    // properties they are travels anywhere.
+    let query = supabase
+      .from('properties')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'active')
+      // A gap in fabricated data is not a gap in Livd's coverage.
+      .eq('is_demo', false)
+      .or('latitude.is.null,longitude.is.null');
+
+    if (countryCode) query = query.eq('country_code', countryCode.toUpperCase());
+
+    const { count, error } = await query;
+    if (error) throw new Error(`unlocatablePropertyCount: ${error.message}`);
+
+    return count ?? 0;
+  }
+
   async propertiesNear(input: {
     latitude: number;
     longitude: number;
@@ -1750,11 +1771,28 @@ export class SupabaseRepository implements LivdRepository {
     // to a position.
     const supabase = this.publicClient();
 
+    const limit = input.limit ?? 12;
+    const demoAllowed = showDemoData();
+
+    /**
+     * The demo flag is the database's decision, not a filter applied after.
+     *
+     * `livd_properties_near` had no idea `is_demo` existed — it predates the
+     * flag — so this path was the one read in the application that did not
+     * honour it, and a seeded building could be presented as something near
+     * you. Migration 0049 gave the function the parameter, so the exclusion
+     * now happens before the limit is applied and `result_limit` means what it
+     * says again.
+     *
+     * The same value that governs every other read governs this one. One rule,
+     * not a special case for proximity.
+     */
     const { data, error } = await supabase.rpc('livd_properties_near', {
       origin_latitude: input.latitude,
       origin_longitude: input.longitude,
       radius_meters: input.radiusMeters,
-      result_limit: input.limit ?? 12,
+      result_limit: limit,
+      include_demo: demoAllowed,
     });
 
     if (error) throw new Error(`propertiesNear: ${error.message}`);
@@ -1762,7 +1800,7 @@ export class SupabaseRepository implements LivdRepository {
     const rows = (data ?? []) as Array<{ property_id: string; distance_meters: number }>;
     if (rows.length === 0) return [];
 
-    const { data: properties } = await supabase
+    let propertiesQuery = supabase
       .from('properties')
       .select(PROPERTY_SELECT)
       .in(
@@ -1770,12 +1808,19 @@ export class SupabaseRepository implements LivdRepository {
         rows.map((row) => row.property_id),
       );
 
+    // Asserted again on the way back. The function already excluded them, so
+    // this removes nothing — it is here so that a drift between the two can
+    // only ever show less, never more.
+    if (!demoAllowed) propertiesQuery = propertiesQuery.eq('is_demo', false);
+
+    const { data: properties } = await propertiesQuery;
+
     const summaries = await this.summarise(
       ((properties ?? []) as unknown as PropertyRow[]).map(toProperty),
     );
     const byId = new Map(summaries.map((summary) => [summary.property.id, summary]));
 
-    return rows.flatMap((row) => {
+    const nearby = rows.flatMap((row) => {
       const summary = byId.get(row.property_id);
       return summary
         ? [
@@ -1788,6 +1833,10 @@ export class SupabaseRepository implements LivdRepository {
           ]
         : [];
     });
+
+    // Sliced after the demo exclusion, so the caller gets the number of real
+    // properties it asked for rather than that number minus the seeded ones.
+    return nearby.slice(0, limit);
   }
 
   /* ---------------------------------------------------------------------

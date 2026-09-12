@@ -659,6 +659,19 @@ export interface LivdRepository {
    * For the opt-in "near you" surface. The position is used for one query and
    * discarded; no row anywhere records that this visitor was here.
    */
+  /**
+   * Active, non-demo properties Livd cannot place on a map.
+   *
+   * Exists so an empty proximity result can tell the truth. A property with no
+   * coordinate is invisible to `propertiesNear` — correctly, because a null
+   * coordinate cannot be measured against anything — and the visitor saw
+   * "nothing near you", which is a different claim and sometimes a false one.
+   * This is the number that distinguishes the two.
+   *
+   * A count and nothing else: no ids, no addresses, no positions.
+   */
+  unlocatablePropertyCount(countryCode?: string | null): Promise<number>;
+
   propertiesNear(input: {
     latitude: number;
     longitude: number;

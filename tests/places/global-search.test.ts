@@ -33,6 +33,11 @@ const SOURCE_ROOT = join(process.cwd(), 'src');
 const DISCOVERY_SURFACES = [
   'app/places/page.tsx',
   'app/search/page.tsx',
+  // Scopes the count of properties Livd cannot place, so an empty proximity
+  // result can say whether the area is empty or Livd's data is. It reads the
+  // coarse header only — never a session — and the country never reaches the
+  // proximity query itself, which takes a position and a radius.
+  'server/actions/property-verification.ts',
   'server/geo/viewer-country.ts',
 ];
 

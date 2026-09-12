@@ -620,6 +620,50 @@ export const copy = {
       'We could not look up properties near you just now. Search by address instead.',
     nearbyDistance: (label: string) => `${label} away`,
 
+    /* --- The five states a location request can end in --------------------
+       These were one state, and that was the defect. "No Livd properties
+       nearby" was shown for a denied permission, a timeout, a genuinely empty
+       area, and an area whose properties Livd cannot place — four different
+       facts, three of them not what the sentence said. */
+
+    /** A — not asked yet. */
+    nearbyIdle: 'Uses your location once to find nearby properties. Nothing is stored and nothing is shared.',
+
+    /** B — the browser refused, or the person did. */
+    nearbyDeniedTitle: 'Location access is off',
+    nearbyDeniedBody:
+      'Livd cannot see where you are unless your browser allows it. Turn location on for this site in your browser settings, or search by address instead.',
+
+    /** C — located, and the area really is empty. */
+    nearbyNoneTitle: (radius: string) => `No Livd properties within ${radius}`,
+    nearbyNoneBody:
+      'Nobody has reviewed a property around here yet. You could be the first.',
+
+    /** C′ — located, empty, and Livd is holding properties it cannot place. */
+    nearbyUnlocatableTitle: (radius: string) => `Nothing found within ${radius}`,
+    nearbyUnlocatableBody: (n: number) =>
+      n === 1
+        ? 'One property on Livd has no location recorded yet, so it cannot appear here even if it is next door. Searching its address will find it.'
+        : `${n} properties on Livd have no location recorded yet, so they cannot appear here even if one is next door. Searching an address will find them.`,
+
+    /** D — found. Says which radius it settled on, because it widens. */
+    nearbyFoundWithin: (radius: string) => `Within ${radius} of you`,
+    nearbyWidened: (radius: string) =>
+      `Nothing was within 500 m, so this is everything within ${radius}.`,
+
+    /** E — the lookup itself failed. */
+    nearbyRetry: 'Try again',
+    nearbyTimedOutTitle: 'Location is taking too long',
+    nearbyTimedOutBody:
+      'Your device did not return a position in time. This is common indoors — moving near a window or trying again usually works.',
+    nearbyUnsupportedTitle: 'This browser cannot share a location',
+    nearbyUnsupportedBody: 'Search by address instead — it works everywhere.',
+
+    /** Shown while the request is in flight, so an empty state never is. */
+    nearbyLoading: 'Finding properties near you',
+
+    searchByAddress: 'Search by address',
+
     /* --- Account --- */
     historyTitle: 'Property verifications',
     historyLead:

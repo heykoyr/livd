@@ -1500,6 +1500,21 @@ export class LocalRepository implements LivdRepository {
       });
   }
 
+  async unlocatablePropertyCount(countryCode?: string | null): Promise<number> {
+    const database = await getDatabase();
+
+    return visibleProperties(database).filter((property) => {
+      // Demo properties all carry seeded coordinates, and a gap in fabricated
+      // data is not a gap in Livd's coverage. Excluded so the number means
+      // what it says.
+      if (property.isDemo) return false;
+      if (countryCode && property.address.countryCode !== countryCode.toUpperCase()) {
+        return false;
+      }
+      return !property.coordinates || !isValidCoordinates(property.coordinates);
+    }).length;
+  }
+
   async propertiesNear(input: {
     latitude: number;
     longitude: number;

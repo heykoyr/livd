@@ -32,6 +32,20 @@ import { initialNearbyState, type NearbyState } from '@/server/actions/action-st
  *
  * Search itself never needs any of this. Somebody who declines, or never
  * presses the button, uses the whole of Livd unimpeded.
+ *
+ * ── On the states ─────────────────────────────────────────────────────────
+ *
+ * This used to collapse every outcome into "No Livd properties within a short
+ * walk": a denied permission, a timeout, an unsupported browser, an empty
+ * area, and an area whose properties Livd holds without coordinates all
+ * produced the same sentence. Four of those five were being told something
+ * untrue, and the one real bug hid behind the wording for exactly that reason —
+ * somebody stood inside a property they had reviewed and was told there was
+ * nothing near them, because that property had no coordinates and the
+ * proximity query could not consider it.
+ *
+ * So each outcome now says what actually happened, and each one that a person
+ * can act on says what to do.
  */
 export function NearbyProperties() {
   const geo = useGeolocation();
@@ -44,6 +58,9 @@ export function NearbyProperties() {
 
     try {
       const reading = await geo.request();
+      // A null reading means the hook has set an error of its own — a denial,
+      // a timeout, an unsupported browser. Rendering is driven off that rather
+      // than off an empty result list.
       if (!reading) return;
 
       const formData = new FormData();
@@ -58,8 +75,8 @@ export function NearbyProperties() {
     }
   }, [geo]);
 
-  const denied = geo.error === 'permission_denied';
   const busy = working || geo.status === 'requesting';
+  const radiusLabel = (meters: number): string => formatDistance(meters);
 
   return (
     <section aria-labelledby="nearby-heading" className="mt-10">
@@ -73,14 +90,16 @@ export function NearbyProperties() {
               {copy.verification.nearbyTitle}
             </h2>
             <p className="mt-1.5 max-w-prose text-label text-ink-muted">
-              {copy.verification.nearbyLead}
+              {state.outcome === 'found' && state.radiusMeters !== null
+                ? copy.verification.nearbyFoundWithin(radiusLabel(state.radiusMeters))
+                : copy.verification.nearbyIdle}
             </p>
           </div>
 
           <Button
             onClick={run}
             loading={busy}
-            loadingLabel={copy.verification.nearbyWorking}
+            loadingLabel={copy.verification.nearbyLoading}
             variant="secondary"
             className="shrink-0"
           >
@@ -88,53 +107,208 @@ export function NearbyProperties() {
           </Button>
         </div>
 
-        {(denied || geo.error || state.error) && (
-          <p role="status" aria-live="polite" className="mt-4 text-label text-ink-muted">
-            {denied
-              ? copy.verification.errors.permissionDeniedBody
-              : (state.error ?? copy.verification.errors.unavailableBody)}
-          </p>
-        )}
+        {/* One live region for every outcome, so a screen reader hears the
+            result of the press rather than nothing. */}
+        <div role="status" aria-live="polite">
+          {busy && (
+            <p className="mt-4 text-label text-ink-muted">
+              {copy.verification.nearbyLoading}…
+            </p>
+          )}
 
-        {state.status === 'ready' && state.items.length === 0 && (
-          <p role="status" aria-live="polite" className="mt-4 text-label text-ink-muted">
-            {copy.verification.nearbyEmpty}
-          </p>
-        )}
+          {!busy && <Outcome geo={geo} state={state} onRetry={run} />}
+        </div>
 
-        {state.items.length > 0 && (
-          <ul className="mt-5 flex flex-col gap-2" aria-live="polite">
-            {state.items.map((item) => (
-              <li key={item.slug}>
-                <Link
-                  href={`/property/${item.slug}`}
-                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-md border border-border px-4 py-3 transition-colors duration-fast hover:border-border-strong hover:bg-surface-sunken/40"
-                >
-                  <span className="min-w-0">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="truncate font-medium text-ink">{item.name}</span>
-                      {item.isDemo && <Badge tone="accent">{copy.property.demoBadge}</Badge>}
+        {!busy && state.items.length > 0 && (
+          <>
+            {/* Said out loud whenever the search widened past the first stage.
+                "Near you" about a three-kilometre radius is not true unless the
+                page says that is what it means. */}
+            {state.radiusMeters !== null && state.radiusMeters > 500 && (
+              <p className="mt-4 text-label text-ink-subtle">
+                {copy.verification.nearbyWidened(radiusLabel(state.radiusMeters))}
+              </p>
+            )}
+
+            <ul className="mt-5 flex flex-col gap-2">
+              {state.items.map((item) => (
+                <li key={item.slug}>
+                  <Link
+                    href={`/property/${item.slug}`}
+                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-md border border-border px-4 py-3 transition-colors duration-fast hover:border-border-strong hover:bg-surface-sunken/40"
+                  >
+                    <span className="min-w-0">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="truncate font-medium text-ink">{item.name}</span>
+                        {item.isDemo && <Badge tone="accent">{copy.property.demoBadge}</Badge>}
+                      </span>
+                      <span className="mt-0.5 block truncate text-label text-ink-muted">
+                        {item.context} · {copy.property.reviewCount(item.reviewCount)}
+                        {item.verifiedCount > 0 && `, ${item.verifiedCount} verified`}
+                        {item.lastReviewAt &&
+                          ` · reviewed ${formatRelativeTime(item.lastReviewAt, item.countryCode)}`}
+                      </span>
                     </span>
-                    <span className="mt-0.5 block truncate text-label text-ink-muted">
-                      {item.context} ·{' '}
-                      {copy.property.reviewCount(item.reviewCount)}
-                      {item.verifiedCount > 0 && `, ${item.verifiedCount} verified`}
-                      {item.lastReviewAt &&
-                        ` · reviewed ${formatRelativeTime(item.lastReviewAt, item.countryCode)}`}
-                    </span>
-                  </span>
 
-                  <span className="shrink-0 text-label tabular text-ink-subtle">
-                    {copy.verification.nearbyDistance(
-                      formatDistance(item.distanceMeters, item.countryCode),
-                    )}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                    <span className="shrink-0 text-label tabular text-ink-subtle">
+                      {copy.verification.nearbyDistance(
+                        formatDistance(item.distanceMeters, item.countryCode),
+                      )}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </Card>
     </section>
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * The five outcomes
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Which of the five states to render, decided in one place.
+ *
+ * The browser's failure modes come first, because they are not results: a
+ * denied permission is not an empty neighbourhood, and conflating the two is
+ * what this component was rewritten to stop doing.
+ */
+function Outcome({
+  geo,
+  state,
+  onRetry,
+}: {
+  geo: ReturnType<typeof useGeolocation>;
+  state: NearbyState;
+  onRetry: () => void;
+}) {
+  /* B — the browser or the person refused. Not retryable in-page: the switch
+     is in browser settings, so pressing the button again would just fail. */
+  if (geo.error === 'permission_denied') {
+    return (
+      <Note
+        title={copy.verification.nearbyDeniedTitle}
+        body={copy.verification.nearbyDeniedBody}
+        action={<SearchInstead />}
+      />
+    );
+  }
+
+  /* E — no geolocation at all. Offering a retry would be dishonest. */
+  if (geo.error === 'unsupported') {
+    return (
+      <Note
+        title={copy.verification.nearbyUnsupportedTitle}
+        body={copy.verification.nearbyUnsupportedBody}
+        action={<SearchInstead />}
+      />
+    );
+  }
+
+  /* E — a timeout or a transient device failure. Genuinely worth retrying. */
+  if (geo.error === 'timeout' || geo.error === 'unavailable') {
+    return (
+      <Note
+        title={copy.verification.nearbyTimedOutTitle}
+        body={copy.verification.nearbyTimedOutBody}
+        action={
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-sm text-label font-medium text-brand underline underline-offset-4 hover:text-brand-hover"
+          >
+            {copy.verification.nearbyRetry}
+          </button>
+        }
+      />
+    );
+  }
+
+  /* E — the lookup reached the server and failed there. */
+  if (state.status === 'error' && state.error) {
+    return (
+      <Note
+        title={copy.verification.nearbyTimedOutTitle}
+        body={state.error}
+        action={
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-sm text-label font-medium text-brand underline underline-offset-4 hover:text-brand-hover"
+          >
+            {copy.verification.nearbyRetry}
+          </button>
+        }
+      />
+    );
+  }
+
+  const radius =
+    state.radiusMeters !== null ? formatDistance(state.radiusMeters) : formatDistance(3000);
+
+  /* C′ — located, nothing found, and Livd is holding properties it cannot
+     place. The one state that explains the bug rather than hiding it. */
+  if (state.outcome === 'none_locatable') {
+    return (
+      <Note
+        title={copy.verification.nearbyUnlocatableTitle(radius)}
+        body={copy.verification.nearbyUnlocatableBody(state.unlocatableCount)}
+        action={<SearchInstead />}
+      />
+    );
+  }
+
+  /* C — located, and the area genuinely has nothing. */
+  if (state.outcome === 'none_nearby') {
+    return (
+      <Note
+        title={copy.verification.nearbyNoneTitle(radius)}
+        body={copy.verification.nearbyNoneBody}
+        action={
+          <Link
+            href="/review"
+            className="rounded-sm text-label font-medium text-brand underline underline-offset-4 hover:text-brand-hover"
+          >
+            {copy.nav.writeReview}
+          </Link>
+        }
+      />
+    );
+  }
+
+  /* A — not asked yet, or D — found, which the list below renders. */
+  return null;
+}
+
+function Note({
+  title,
+  body,
+  action,
+}: {
+  title: string;
+  body: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="mt-4 rounded-md border border-dashed border-border-strong bg-surface-sunken/40 p-4">
+      <p className="text-label font-medium text-ink">{title}</p>
+      <p className="mt-1 max-w-prose text-label text-ink-muted">{body}</p>
+      {action && <div className="mt-2.5">{action}</div>}
+    </div>
+  );
+}
+
+function SearchInstead() {
+  return (
+    <Link
+      href="/search"
+      className="rounded-sm text-label font-medium text-brand underline underline-offset-4 hover:text-brand-hover"
+    >
+      {copy.verification.searchByAddress}
+    </Link>
   );
 }

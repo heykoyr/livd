@@ -256,13 +256,57 @@ export interface NearbyPropertySummary {
   isDemo: boolean;
 }
 
+/**
+ * Why a nearby lookup produced nothing, when it produced nothing.
+ *
+ * The reason this is a union rather than an empty list is the defect it was
+ * written for. "No Livd properties nearby" was shown to somebody standing
+ * inside a property they had themselves reviewed — because that property had
+ * no coordinates, so the proximity query could not consider it. The honest
+ * answer and the wrong answer looked identical, which is how the bug survived.
+ */
+export type NearbyOutcome =
+  /** The lookup ran and found properties. */
+  | 'found'
+  /** It ran, and there is genuinely nothing within the widest radius tried. */
+  | 'none_nearby'
+  /**
+   * It ran, found nothing, and Livd holds properties in this country that have
+   * no coordinates yet — so the absence may be Livd's gap rather than the
+   * area's. Said plainly instead of implied.
+   */
+  | 'none_locatable';
+
 export interface NearbyState {
   status: 'idle' | 'ready' | 'error';
+  outcome: NearbyOutcome | null;
   items: NearbyPropertySummary[];
+  /**
+   * The radius the returned results actually came from, in metres.
+   *
+   * Carried back because the search widens when the first pass finds nothing,
+   * and a page that says "near you" about a three-kilometre radius without
+   * saying so is lying quietly.
+   */
+  radiusMeters: number | null;
+  /**
+   * Active, non-demo properties in the viewer's country with no coordinates.
+   *
+   * The only number that explains an empty result to the person seeing it. Not
+   * a distance and not a position: a count of what Livd cannot place.
+   */
+  unlocatableCount: number;
   error: string | null;
 }
 
-export const initialNearbyState: NearbyState = { status: 'idle', items: [], error: null };
+export const initialNearbyState: NearbyState = {
+  status: 'idle',
+  outcome: null,
+  items: [],
+  radiusMeters: null,
+  unlocatableCount: 0,
+  error: null,
+};
 
 /**
  * A verification submission.
