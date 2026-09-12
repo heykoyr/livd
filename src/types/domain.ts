@@ -864,6 +864,15 @@ export type SearchSort =
   | 'reviews_desc'
   | 'recent';
 
+/**
+ * What the searcher asked for.
+ *
+ * Every field here *narrows*: it is read from the URL, so it is the searcher's
+ * own stated intent, and a result it excludes was excluded because they said
+ * so. Nothing derived from where a visitor happens to be may ever appear in
+ * this shape — see `SearchRanking` for why that distinction has a type of its
+ * own rather than a comment.
+ */
 export interface SearchFilters {
   query: string;
   countryCode: CountryCode | null;
@@ -874,6 +883,32 @@ export interface SearchFilters {
   verifiedOnly: boolean;
   sort: SearchSort;
   page: number;
+}
+
+/**
+ * What the searcher did not ask for, and which may only reorder.
+ *
+ * Livd is for people who are moving, so a search must reach the whole world:
+ * somebody in Lagos looking at a flat in London is the product working, not an
+ * edge case. But of two equally good matches, the one in their own country is
+ * usually the one they meant — "Cardinal Court" typed in Lagos should lead
+ * with the Lagos one.
+ *
+ * Those two requirements pull in opposite directions, and the way they get
+ * confused is a country arriving as a filter. So the preference is a separate
+ * type, passed as a separate argument, and it carries a hard rule: it may
+ * change the *order* of results and never the *set*. A search with a
+ * preference returns exactly the same properties as one without it.
+ *
+ * `tests/search/global-reach.test.ts` holds both adapters to that.
+ */
+export interface SearchRanking {
+  /**
+   * Ranked above equally-relevant matches elsewhere. Never excludes anything,
+   * and never applies when the searcher named a country themselves — at that
+   * point their filter is the answer and a guess about them is noise.
+   */
+  preferCountryCode: CountryCode | null;
 }
 
 export interface SearchResults {

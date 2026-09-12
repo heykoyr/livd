@@ -1,15 +1,46 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
+
 import { PropertyCard } from '@/components/property/property-card';
 import { SearchCombobox } from '@/components/search/search-combobox';
 import { NearbyProperties } from '@/components/search/nearby-properties';
 import { SearchFilters } from '@/components/search/search-filters';
+import { SearchStart } from '@/components/search/search-start';
 import { ButtonLink } from '@/components/ui/button';
 import { Pagination } from '@/components/ui/pagination';
 import { EmptyState } from '@/components/ui/primitives';
+import { getMarket } from '@/config/markets';
 import { copy } from '@/content/copy';
-import { buildSearchHref, parseSearchFilters } from '@/lib/validation/search';
+import {
+  buildSearchHref,
+  hasSearchIntent,
+  parseSearchFilters,
+} from '@/lib/validation/search';
 import { saltedHash } from '@/lib/safety/rate-limit';
+import { getCurrentUser } from '@/server/auth/session';
 import { getRepository } from '@/server/data';
+import { viewerCountry } from '@/server/geo/viewer-country';
+
+/**
+ * Search.
+ *
+ * Search answers "I know what I want to investigate". Explore answers "I am
+ * working out where I might live". They share the data layer and share their
+ * components, and they are not the same page: this one is query-driven and
+ * utilitarian, and it renders nothing until it has been asked something.
+ *
+ * That last part is the fix for what this page used to do. An empty query
+ * matched every property, so a bare `/search` returned the whole database
+ * ordered by review count — a page headed "18 properties" listing buildings in
+ * Brooklyn, Berlin, Sydney and Lagos, related to each other and to the visitor
+ * by nothing at all. A filter is still intent, so a city link from Explore
+ * keeps working; a bare visit gets a starting state instead.
+ *
+ * On reach: search is global, always. The visitor's country is passed as a
+ * ranking preference and never as a filter — `SearchRanking` explains why that
+ * distinction has a type rather than a comment, and
+ * `tests/search/global-reach.test.ts` holds the adapters to it.
+ */
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +56,7 @@ export async function generateMetadata({
     title: query ? `${query} — ${copy.search.title}` : copy.search.heading,
     description: query
       ? `Resident reviews and property intelligence for “${query}” on Livd.`
-      : copy.search.heading,
+      : copy.search.startLead,
     // Result pages should not compete with property pages in an index.
     robots: { index: false, follow: true },
   };
@@ -39,8 +70,17 @@ export default async function SearchPage({
   const params = await searchParams;
   const filters = parseSearchFilters(params);
 
+  // Resolved for both branches: the starting state offers local context, and a
+  // query uses it to order equally-relevant matches. Never to narrow either.
+  const user = await getCurrentUser();
+  const preferCountryCode = await viewerCountry(user);
+
+  if (!hasSearchIntent(filters)) {
+    return <SearchStart preferCountryCode={preferCountryCode} />;
+  }
+
   const repository = await getRepository();
-  const results = await repository.searchProperties(filters);
+  const results = await repository.searchProperties(filters, { preferCountryCode });
 
   // Analytics: a hash and a count, never the raw query attached to a person.
   // What the product needs to know is which places it has no data for.
@@ -60,6 +100,13 @@ export default async function SearchPage({
       })
       .catch(() => undefined);
   }
+
+  // Only worth saying when it could have changed the order: a preference the
+  // searcher overrode with their own country filter changed nothing.
+  const preferredPlace =
+    preferCountryCode && !filters.countryCode && results.total > 1
+      ? getMarket(preferCountryCode).name
+      : null;
 
   return (
     <div className="container-shell py-10 md:py-14">
@@ -86,6 +133,14 @@ export default async function SearchPage({
         </p>
       )}
 
+      {/* Said out loud, because a reordering nobody was told about looks like
+          an arbitrary order. */}
+      {preferredPlace && (
+        <p className="mt-4 text-label text-ink-subtle">
+          {copy.search.preferredNote(preferredPlace)}
+        </p>
+      )}
+
       {results.items.length === 0 ? (
         <EmptyState
           className="mt-10"
@@ -93,7 +148,7 @@ export default async function SearchPage({
           description={copy.search.noResultsBody}
           action={
             <div className="flex flex-wrap justify-center gap-3">
-              <ButtonLink href="/review/property/new">{copy.search.addProperty}</ButtonLink>
+              <ButtonLink href="/review/new-property">{copy.search.addProperty}</ButtonLink>
               <ButtonLink href="/places" variant="secondary">
                 {copy.nav.explore}
               </ButtonLink>
@@ -129,6 +184,13 @@ export default async function SearchPage({
           here. Search is the primary way to use Livd and must not look as
           though it needs a location to work — because it does not. */}
       <NearbyProperties />
+
+      <p className="mt-8 text-micro text-ink-subtle">
+        {copy.search.globalNote}{' '}
+        <Link href="/places" className="rounded-sm underline underline-offset-2 hover:text-ink">
+          {copy.nav.explore}
+        </Link>
+      </p>
     </div>
   );
 }

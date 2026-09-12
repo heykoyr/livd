@@ -84,6 +84,26 @@ export function parseSearchFilters(
   };
 }
 
+/**
+ * Whether this URL actually asks for anything.
+ *
+ * Search used to run a query no matter what, and an empty query matched every
+ * property — so `/search` with nothing typed returned the entire database,
+ * ordered by review count. What that produced was a page headed "18
+ * properties" listing buildings in Brooklyn, Berlin, Sydney and Lagos with no
+ * relationship to each other or to the visitor: a catalogue of Livd's
+ * contents, offered to somebody who had not asked a question yet.
+ *
+ * A query is intent. So is a filter — arriving from a city link on Explore
+ * with `?country=NG&locality=Lagos` is a deliberate request to browse that
+ * place, and must keep working. What is *not* intent is a bare `/search`, and
+ * that is the only case this excludes: the page shows a starting state and
+ * runs no property query at all.
+ */
+export function hasSearchIntent(filters: SearchFilters): boolean {
+  return filters.query.trim().length > 0 || hasActiveFilters(filters);
+}
+
 /** Rebuilds the search URL, dropping defaults so links stay readable. */
 export function buildSearchHref(filters: SearchFilters, overrides: Partial<SearchFilters> = {}): string {
   const merged = { ...filters, ...overrides };

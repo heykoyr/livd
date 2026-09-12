@@ -21,9 +21,18 @@ import { buildSearchHref, parseSearchFilters } from '@/lib/validation/search';
 
 const SOURCE_ROOT = join(process.cwd(), 'src');
 
-/** Where a viewer-derived country is legitimately read. */
+/**
+ * Where a viewer-derived country is legitimately read.
+ *
+ * The search page is on this list deliberately. It resolves a country and
+ * passes it as `SearchRanking.preferCountryCode`, which may reorder equally
+ * relevant matches and may never change which matches there are. The rules
+ * below hold it to that; `tests/search/global-reach.test.ts` proves the
+ * behaviour against the adapters.
+ */
 const DISCOVERY_SURFACES = [
   'app/places/page.tsx',
+  'app/search/page.tsx',
   'server/geo/viewer-country.ts',
 ];
 
@@ -43,14 +52,14 @@ function posix(path: string): string {
   return relative(SOURCE_ROOT, path).split(/[\\/]/).join('/');
 }
 
-describe('the country resolver reaches only discovery', () => {
+describe('the country resolver reaches only where it may', () => {
   const files = sourceFiles(SOURCE_ROOT);
 
   it('finds the sources to check', () => {
     expect(files.length).toBeGreaterThan(80);
   });
 
-  it('is imported by the discovery surfaces and nothing else', () => {
+  it('is imported only by the surfaces allowed to read it', () => {
     const importers = files
       .filter((file) => /from '@\/server\/geo\/viewer-country'/.test(readFileSync(file, 'utf8')))
       .map(posix);
@@ -60,14 +69,38 @@ describe('the country resolver reaches only discovery', () => {
     );
   });
 
-  it('is not reachable from the search page, the suggest endpoint or search parsing', () => {
-    // These three are the whole of the search path. A country resolved from a
-    // header or a profile must never narrow any of them.
-    for (const path of ['app/search/page.tsx', 'app/api/suggest/route.ts', 'lib/validation/search.ts']) {
+  it('is not reachable from search parsing or the suggest endpoint', () => {
+    // These two decide which properties a query matches at all. A country
+    // resolved from a header or a profile must never narrow either of them.
+    for (const path of ['lib/validation/search.ts', 'app/api/suggest/route.ts']) {
       const source = readFileSync(join(SOURCE_ROOT, path), 'utf8');
       expect(source, path).not.toMatch(/viewer-country|viewerCountry|edgeCountry/);
       expect(source, path).not.toMatch(/x-vercel-ip-country|cf-ipcountry/);
     }
+  });
+
+  it('reaches the search page only as a ranking preference', () => {
+    const source = readFileSync(join(SOURCE_ROOT, 'app', 'search', 'page.tsx'), 'utf8');
+
+    // It must arrive as a preference...
+    expect(source).toMatch(/preferCountryCode/);
+
+    // ...and never be assigned into the filter shape, which is the one line
+    // that would turn a local default into a geographic restriction.
+    expect(source).not.toMatch(/countryCode:\s*preferCountryCode/);
+    expect(source).not.toMatch(/countryCode:\s*await\s+viewerCountry/);
+  });
+
+  it('never lets a resolved country reach the search RPC as a filter', () => {
+    // `filter_country` decides which properties exist for a query. Only the
+    // searcher's own filter may set it.
+    const adapter = readFileSync(
+      join(SOURCE_ROOT, 'server', 'data', 'supabase', 'index.ts'),
+      'utf8',
+    );
+
+    expect(adapter).toMatch(/filter_country:\s*filters\.countryCode\s*\?\?\s*null/);
+    expect(adapter).not.toMatch(/filter_country:\s*[^,]*prefer/i);
   });
 });
 

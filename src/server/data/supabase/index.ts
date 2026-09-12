@@ -60,6 +60,7 @@ import type {
   ReviewStatus,
   SavedProperty,
   SearchFilters,
+  SearchRanking,
   SearchResults,
   SearchSuggestion,
   UserProfile,
@@ -452,6 +453,32 @@ interface AdminUserReportRow {
   total_count: number | string;
 }
 
+/**
+ * How many matches a relevance-ordered search considers.
+ *
+ * The search RPC returns this many ids at most, ranked best-first, and the
+ * relevance page is assembled from them — so this is simultaneously the cap on
+ * how much a single search reads and the depth beyond which a result is not
+ * reachable by paging. Twelve results a page makes that sixteen pages, which is
+ * far past where anybody refines the query instead.
+ */
+const RELEVANCE_MATCH_CAP = 200;
+
+/**
+ * The only thing `relevancePage` does with the query it is handed.
+ *
+ * Structural rather than imported: the Supabase client's builder type is
+ * generic over the schema, the table and the selected shape, and naming it here
+ * would tie this signature to internals that change between client releases.
+ * This says exactly what is used and nothing else.
+ */
+interface LimitableQuery {
+  limit(count: number): PromiseLike<{
+    data: unknown[] | null;
+    error: { message: string } | null;
+  }>;
+}
+
 export class SupabaseRepository implements LivdRepository {
   /**
    * Request-scoped client, carrying the caller's session.
@@ -618,21 +645,32 @@ export class SupabaseRepository implements LivdRepository {
    * Search & discovery
    * ------------------------------------------------------------------ */
 
-  async searchProperties(filters: SearchFilters): Promise<SearchResults> {
+  async searchProperties(
+    filters: SearchFilters,
+    ranking: SearchRanking = { preferCountryCode: null },
+  ): Promise<SearchResults> {
     const supabase = this.publicClient();
     const pageSize = LIMITS.searchPageSize;
     const page = Math.max(1, filters.page);
 
     let propertyIds: string[] | null = null;
+    /** The RPC's relevance order, as a rank per property. */
+    let rankById: Map<string, number> | null = null;
     let allFuzzy = false;
 
     if (filters.query.trim().length > 0) {
       // `livd_property_search` combines tsvector rank with pg_trgm similarity,
-      // so a misspelling still finds the property.
+      // so a misspelling still finds the property. It matches on building
+      // name, street, neighbourhood, locality and the property's aliases.
+      //
+      // `filter_country` is the searcher's own filter and nothing else. A
+      // preferred country never reaches it: this call is what decides which
+      // properties exist for this query, and narrowing it by where somebody
+      // happens to be is precisely how a global product stops being one.
       const { data, error } = await supabase.rpc('livd_property_search', {
         search_query: filters.query.trim(),
         filter_country: filters.countryCode ?? null,
-        result_limit: 200,
+        result_limit: RELEVANCE_MATCH_CAP,
         result_offset: 0,
       });
 
@@ -640,6 +678,9 @@ export class SupabaseRepository implements LivdRepository {
 
       const matches = (data ?? []) as Array<{ property_id: string; is_fuzzy: boolean }>;
       propertyIds = matches.map((m) => m.property_id);
+      // The RPC returns them best-first. Captured here because the outer query
+      // below cannot order by it.
+      rankById = new Map(matches.map((match, index) => [match.property_id, index]));
       allFuzzy = matches.length > 0 && matches.every((m) => m.is_fuzzy);
 
       if (propertyIds.length === 0) {
@@ -661,8 +702,29 @@ export class SupabaseRepository implements LivdRepository {
     if (filters.minReviews !== null) query = query.gte('property_stats.review_count', filters.minReviews);
     if (filters.verifiedOnly) query = query.gt('property_stats.verified_review_count', 0);
 
-    // Ordering uses the denormalised rollup, so a page of results never loads
-    // every review just to sort them.
+    /**
+     * Relevance is ordered here rather than in the database.
+     *
+     * This branch used to fall through to `review_count desc`, which threw
+     * away the ranking the RPC had just computed: the search found the right
+     * properties and then sorted them by popularity, so an exact match for
+     * "Cardinal Court" sat below anything with more reviews. Postgres cannot
+     * order by the RPC's rank once the result has been joined back to
+     * `properties`, so the page is assembled from the ranked id list instead.
+     *
+     * Bounded by `RELEVANCE_MATCH_CAP`: the RPC returns at most that many
+     * matches, so this fetches at most that many rows once, not the table.
+     */
+    if (filters.sort === 'relevance' && rankById) {
+      return this.relevancePage(query, filters, ranking, rankById, {
+        page,
+        pageSize,
+        allFuzzy,
+      });
+    }
+
+    // Every other sort is a column the rollup already holds, so the database
+    // does the ordering and the page never loads a review to sort by.
     switch (filters.sort) {
       case 'score_desc':
         query = query.order('overall_score', {
@@ -705,6 +767,59 @@ export class SupabaseRepository implements LivdRepository {
       page,
       pageSize,
       correctedFrom: allFuzzy && items.length > 0 ? filters.query : null,
+    };
+  }
+
+  /**
+   * A page of relevance-ordered results.
+   *
+   * Applies the searcher's filters in the database, then orders what survives
+   * by the RPC's rank — with the preferred country as a tie-break between
+   * equally relevant matches, never as a filter. The set of properties is
+   * whatever the filters allowed; only their order changes.
+   */
+  private async relevancePage(
+    query: LimitableQuery,
+    filters: SearchFilters,
+    ranking: SearchRanking,
+    rankById: Map<string, number>,
+    view: { page: number; pageSize: number; allFuzzy: boolean },
+  ): Promise<SearchResults> {
+    const { data, error } = await query.limit(RELEVANCE_MATCH_CAP);
+    if (error) throw new Error(`searchProperties: ${error.message}`);
+
+    const properties = (data ?? []).map((row) => toProperty(row as unknown as PropertyRow));
+
+    // Ignored when the searcher named a country themselves: their filter is
+    // already the answer.
+    const prefer = filters.countryCode
+      ? null
+      : (ranking.preferCountryCode?.toUpperCase() ?? null);
+
+    properties.sort((a, b) => {
+      const byRelevance =
+        (rankById.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+        (rankById.get(b.id) ?? Number.MAX_SAFE_INTEGER);
+      if (byRelevance !== 0) return byRelevance;
+
+      if (prefer) {
+        const aLocal = a.address.countryCode.toUpperCase() === prefer;
+        const bLocal = b.address.countryCode.toUpperCase() === prefer;
+        if (aLocal !== bLocal) return aLocal ? -1 : 1;
+      }
+
+      return 0;
+    });
+
+    const start = (view.page - 1) * view.pageSize;
+    const items = await this.summarise(properties.slice(start, start + view.pageSize));
+
+    return {
+      items,
+      total: properties.length,
+      page: view.page,
+      pageSize: view.pageSize,
+      correctedFrom: view.allFuzzy && items.length > 0 ? filters.query : null,
     };
   }
 

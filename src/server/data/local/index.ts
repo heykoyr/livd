@@ -55,6 +55,7 @@ import type {
   ReviewVerificationEntry,
   SavedProperty,
   SearchFilters,
+  SearchRanking,
   SearchResults,
   SearchSuggestion,
   UserProfile,
@@ -623,7 +624,10 @@ export class LocalRepository implements LivdRepository {
    * Search & discovery
    * ------------------------------------------------------------------ */
 
-  async searchProperties(filters: SearchFilters): Promise<SearchResults> {
+  async searchProperties(
+    filters: SearchFilters,
+    ranking: SearchRanking = { preferCountryCode: null },
+  ): Promise<SearchResults> {
     const database = await getDatabase();
     const pageSize = LIMITS.searchPageSize;
 
@@ -676,7 +680,9 @@ export class LocalRepository implements LivdRepository {
       summaries = summaries.filter((s) => s.intelligence.verifiedReviewCount > 0);
     }
 
-    summaries.sort((a, b) => compareForSort(a, b, filters.sort, scoreByProperty));
+    summaries.sort((a, b) =>
+      compareForSort(a, b, filters.sort, scoreByProperty, preferredCountry(filters, ranking)),
+    );
 
     const total = summaries.length;
     const page = Math.max(1, filters.page);
@@ -4481,11 +4487,27 @@ function toPublicVerification(record: StoredVerification): VerificationRecord {
  * Helpers
  * ---------------------------------------------------------------------- */
 
+/**
+ * The country to lead with, or null.
+ *
+ * Ignored the moment the searcher names a country themselves: at that point
+ * their filter already answers the question, and a guess about where they are
+ * standing would only reorder results they have deliberately narrowed.
+ */
+function preferredCountry(
+  filters: SearchFilters,
+  ranking: SearchRanking,
+): string | null {
+  if (filters.countryCode) return null;
+  return ranking.preferCountryCode?.toUpperCase() ?? null;
+}
+
 function compareForSort(
   a: PropertySummary,
   b: PropertySummary,
   sort: SearchFilters['sort'],
   scores: Map<string, number>,
+  preferCountryCode: string | null = null,
 ): number {
   switch (sort) {
     case 'score_desc':
@@ -4502,9 +4524,24 @@ function compareForSort(
     case 'recent':
       return (b.intelligence.lastReviewAt ?? '').localeCompare(a.intelligence.lastReviewAt ?? '');
     default: {
+      // Textual relevance first, and by a clear margin. A property with a
+      // hundred reviews must not outrank an exact match for the name somebody
+      // typed — that is the difference between a search and a popularity
+      // chart.
       const delta =
         (scores.get(b.property.id) ?? 0) - (scores.get(a.property.id) ?? 0);
       if (delta !== 0) return delta;
+
+      // Then the searcher's own country, among matches that are equally good.
+      // "Cardinal Court" typed in Lagos should lead with the Lagos one — and
+      // still list the others, which is why this is a tie-break and not a
+      // filter.
+      if (preferCountryCode) {
+        const aLocal = a.property.address.countryCode.toUpperCase() === preferCountryCode;
+        const bLocal = b.property.address.countryCode.toUpperCase() === preferCountryCode;
+        if (aLocal !== bLocal) return aLocal ? -1 : 1;
+      }
+
       // Ties break toward the better-evidenced property.
       return b.intelligence.reviewCount - a.intelligence.reviewCount;
     }

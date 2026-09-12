@@ -102,6 +102,26 @@ export const copy = {
     resultCount: (n: number) =>
       n === 1 ? '1 property' : `${new Intl.NumberFormat().format(n)} properties`,
     correctedFrom: (original: string) => `Showing results for a close match to “${original}”.`,
+    /* --- The starting state: Search opened with nothing asked for --- */
+    startTitle: 'Search properties',
+    startLead:
+      'An address, a building name, a street or a neighbourhood — anywhere in the world.',
+    startHint: 'Search for somewhere you are considering.',
+    startExamplesLabel: 'For example',
+    startExploreTitle: 'Not sure where to look yet?',
+    startExploreLead:
+      'Explore leads with what residents have written recently, and the neighbourhoods and cities behind it.',
+    startExploreCta: 'Go to Explore',
+
+    /* --- Relevance --- */
+    globalNote: 'Search covers every country on Livd.',
+    preferredNote: (place: string) =>
+      `Matches in ${place} are listed first. Results elsewhere are still shown.`,
+
+    error: 'We couldn’t complete that search',
+    errorBody: 'Something went wrong on our side. Try again in a moment.',
+    retry: 'Try again',
+
     noResultsTitle: 'No properties match that search',
     noResultsBody:
       'Try a shorter search — a street name or neighbourhood usually works better than a full address. If the property is not on Livd yet, you can add it.',

@@ -41,6 +41,7 @@ import type {
   SanctionReason,
   SavedProperty,
   SearchFilters,
+  SearchRanking,
   SearchResults,
   SearchSuggestion,
   UserProfile,
@@ -488,7 +489,12 @@ export interface LivdRepository {
 
   /* ---- Search & discovery ---- */
 
-  searchProperties(filters: SearchFilters): Promise<SearchResults>;
+  /**
+   * `ranking` may reorder results and must never change which results there
+   * are. See `SearchRanking` — the separation is what keeps a local default
+   * from quietly becoming a geographic restriction.
+   */
+  searchProperties(filters: SearchFilters, ranking?: SearchRanking): Promise<SearchResults>;
   suggest(query: string, limit: number): Promise<SearchSuggestion[]>;
   recentlyReviewed(options?: DiscoveryOptions): Promise<PropertySummary[]>;
   mostReviewed(options?: DiscoveryOptions): Promise<PropertySummary[]>;
