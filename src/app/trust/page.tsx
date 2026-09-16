@@ -5,13 +5,13 @@ import { ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/primitives';
 import { DEPARTURE_DISCLOSURE_THRESHOLD } from '@/config/departure-reasons';
 import { SCORING } from '@/lib/intelligence/scoring';
-import { SITE } from '@/config/site';
+import { absoluteUrl } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'Trust & safety',
   description:
     'How Livd protects the people who write reviews, what property owners can and cannot do, and why some numbers are withheld.',
-  alternates: { canonical: `${SITE.url}/trust` },
+  alternates: { canonical: absoluteUrl('/trust') },
 };
 
 /**

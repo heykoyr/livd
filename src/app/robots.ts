@@ -28,6 +28,10 @@ export default function robots(): MetadataRoute.Robots {
           '/review/',
           '/sign-in',
           '/search',
+          // The magic-link landing route. It has nothing to index — every
+          // request either exchanges a one-time code or redirects to
+          // /sign-in — and a crawler spending budget on it is pure waste.
+          '/auth/',
         ],
       },
     ],

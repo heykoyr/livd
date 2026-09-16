@@ -7,7 +7,7 @@ import { PropertyCard } from '@/components/property/property-card';
 import { ButtonLink } from '@/components/ui/button';
 import { EmptyState, Stat } from '@/components/ui/primitives';
 import { getMarket } from '@/config/markets';
-import { SITE } from '@/config/site';
+import { absoluteUrl } from '@/config/site';
 import { copy } from '@/content/copy';
 import { formatPercent } from '@/lib/format';
 import { countryHref, decodePlaceSegment, localityHref, neighbourhoodHref } from '@/lib/places';
@@ -75,7 +75,7 @@ export async function generateMetadata({
       reviewCount === 1 ? 'review' : 'reviews'
     } on Livd. Read what people who lived there say about the area before you commit.`,
     alternates: {
-      canonical: `${SITE.url}${neighbourhoodHref(countryCode, address.locality, name)}`,
+      canonical: absoluteUrl(neighbourhoodHref(countryCode, address.locality, name)),
     },
   };
 }

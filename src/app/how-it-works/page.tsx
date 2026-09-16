@@ -3,14 +3,14 @@ import type { Metadata } from 'next';
 import { ProsePage, ProseSection } from '@/components/layout/prose-page';
 import { ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/primitives';
-import { SITE } from '@/config/site';
+import { absoluteUrl } from '@/config/site';
 import { copy } from '@/content/copy';
 
 export const metadata: Metadata = {
   title: 'How it works',
   description:
     'How Livd turns individual resident reviews into something you can actually make a decision with.',
-  alternates: { canonical: `${SITE.url}/how-it-works` },
+  alternates: { canonical: absoluteUrl('/how-it-works') },
 };
 
 export default function HowItWorksPage() {

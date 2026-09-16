@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
 
 import { ProseList, ProsePage, ProseSection } from '@/components/layout/prose-page';
-import { SITE } from '@/config/site';
+import { absoluteUrl } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'Terms',
   description: 'The terms on which Livd may be used.',
-  alternates: { canonical: `${SITE.url}/legal/terms` },
+  alternates: { canonical: absoluteUrl('/legal/terms') },
 };
 
 /**

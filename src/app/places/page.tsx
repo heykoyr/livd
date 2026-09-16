@@ -11,7 +11,7 @@ import { SearchCombobox } from '@/components/search/search-combobox';
 import { ButtonLink } from '@/components/ui/button';
 import { Card, EmptyState, Eyebrow, Section } from '@/components/ui/primitives';
 import { getMarket } from '@/config/markets';
-import { SITE } from '@/config/site';
+import { absoluteUrl } from '@/config/site';
 import { copy } from '@/content/copy';
 import { getCurrentUser } from '@/server/auth/session';
 import {
@@ -58,7 +58,7 @@ const LIMITS = {
 export const metadata: Metadata = {
   title: copy.explore.title,
   description: copy.explore.metaDescription,
-  alternates: { canonical: `${SITE.url}/places` },
+  alternates: { canonical: absoluteUrl('/places') },
 };
 
 export default async function ExplorePage() {

@@ -9,7 +9,7 @@ import { ButtonLink } from '@/components/ui/button';
 import { EmptyState, Section, Stat } from '@/components/ui/primitives';
 import { SearchCombobox } from '@/components/search/search-combobox';
 import { MARKETS, getMarket } from '@/config/markets';
-import { SITE } from '@/config/site';
+import { absoluteUrl } from '@/config/site';
 import { copy } from '@/content/copy';
 import { countryHref } from '@/lib/places';
 import {
@@ -79,7 +79,7 @@ export async function generateMetadata({
     } in ${market.name}, with ${reviewCount} resident ${
       reviewCount === 1 ? 'review' : 'reviews'
     } on Livd. Read what people who lived there say before you commit.`,
-    alternates: { canonical: `${SITE.url}${countryHref(countryCode)}` },
+    alternates: { canonical: absoluteUrl(countryHref(countryCode)) },
   };
 }
 

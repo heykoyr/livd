@@ -5,7 +5,7 @@ import { PlaceGrid, PlaceTile } from '@/components/places/place-tile';
 import { EmptyState } from '@/components/ui/primitives';
 import { ButtonLink } from '@/components/ui/button';
 import { getMarket } from '@/config/markets';
-import { SITE } from '@/config/site';
+import { absoluteUrl } from '@/config/site';
 import { copy } from '@/content/copy';
 import { countryHref } from '@/lib/places';
 import { groupBy } from '@/lib/utils';
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   title: copy.explore.directoryTitle,
   description:
     'Every city and neighbourhood where residents have reviewed a property on Livd, country by country.',
-  alternates: { canonical: `${SITE.url}/places/all` },
+  alternates: { canonical: absoluteUrl('/places/all') },
 };
 
 export default async function PlacesDirectoryPage() {

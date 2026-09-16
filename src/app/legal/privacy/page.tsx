@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
 
 import { ProseList, ProsePage, ProseSection } from '@/components/layout/prose-page';
-import { SITE } from '@/config/site';
+import { absoluteUrl } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'Privacy',
   description: 'What Livd collects, what it deliberately does not, and why.',
-  alternates: { canonical: `${SITE.url}/legal/privacy` },
+  alternates: { canonical: absoluteUrl('/legal/privacy') },
 };
 
 /**

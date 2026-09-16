@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
 
 import { ProseList, ProsePage, ProseSection } from '@/components/layout/prose-page';
-import { SITE, LIMITS } from '@/config/site';
+import { absoluteUrl, LIMITS } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'Content policy',
   description: 'What may and may not be published on Livd, and how those rules are enforced.',
-  alternates: { canonical: `${SITE.url}/legal/content-policy` },
+  alternates: { canonical: absoluteUrl('/legal/content-policy') },
 };
 
 export default function ContentPolicyPage() {

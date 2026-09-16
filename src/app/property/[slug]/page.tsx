@@ -17,7 +17,7 @@ import { ReviewFilters, type ReviewViewOptions } from '@/components/property/rev
 import { ButtonLink } from '@/components/ui/button';
 import { Pagination } from '@/components/ui/pagination';
 import { Card, EmptyState, Section } from '@/components/ui/primitives';
-import { LIMITS, SITE } from '@/config/site';
+import { absoluteUrl, LIMITS } from '@/config/site';
 import { copy } from '@/content/copy';
 import { propertyContextLine, propertyDisplayName } from '@/lib/format';
 import { buildPreVisitChecks, generateVerdict } from '@/lib/intelligence/verdict';
@@ -59,7 +59,7 @@ export async function generateMetadata({
         }. Read what people who lived there say, including why they left.`
       : `${name}, ${context}. No resident reviews yet on Livd — be the first to share what it is like to live here.`;
 
-  const canonical = `${SITE.url}/property/${property.slug}`;
+  const canonical = absoluteUrl(`/property/${property.slug}`);
 
   return {
     title: `${name}, ${property.address.locality}`,
@@ -455,7 +455,7 @@ function PropertyJsonLd({
     '@context': 'https://schema.org',
     '@type': 'Residence',
     name: propertyDisplayName(property.address),
-    url: `${SITE.url}/property/${property.slug}`,
+    url: absoluteUrl(`/property/${property.slug}`),
     address: {
       '@type': 'PostalAddress',
       streetAddress: property.address.streetAddress ?? undefined,

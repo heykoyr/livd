@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { ButtonLink } from '@/components/ui/button';
 import { Badge, Card, Eyebrow, Meter } from '@/components/ui/primitives';
 import { ConfidenceChip, ScoreDial, TrendPill } from '@/components/property/score';
-import { SITE } from '@/config/site';
+import { absoluteUrl, SITE } from '@/config/site';
 import { copy } from '@/content/copy';
 import { scoreBand } from '@/lib/intelligence/scoring';
 
@@ -32,7 +32,7 @@ import { scoreBand } from '@/lib/intelligence/scoring';
  * confidence cannot itself present invented figures as a real property.
  */
 
-const CANONICAL = `${SITE.url}/why-livd`;
+const CANONICAL = absoluteUrl('/why-livd');
 
 export const metadata: Metadata = {
   title: 'Why Livd',

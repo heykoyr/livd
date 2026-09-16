@@ -7,7 +7,7 @@ import { PropertyCard } from '@/components/property/property-card';
 import { ButtonLink } from '@/components/ui/button';
 import { EmptyState, Stat } from '@/components/ui/primitives';
 import { getMarket } from '@/config/markets';
-import { SITE } from '@/config/site';
+import { absoluteUrl } from '@/config/site';
 import { copy } from '@/content/copy';
 import { formatPercent } from '@/lib/format';
 import {
@@ -69,7 +69,7 @@ export async function generateMetadata({
       reviewCount === 1 ? 'review' : 'reviews'
     } on Livd. Read what people who lived there say before you commit.`,
     alternates: {
-      canonical: `${SITE.url}${localityHref(countryCode, name)}`,
+      canonical: absoluteUrl(localityHref(countryCode, name)),
     },
   };
 }

@@ -3,13 +3,13 @@ import type { Metadata } from 'next';
 import { ProseList, ProsePage, ProseSection } from '@/components/layout/prose-page';
 import { ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/primitives';
-import { SITE } from '@/config/site';
+import { absoluteUrl } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'For property owners',
   description:
     'What owners and managing agents can do on Livd, what they cannot, and why the second list is the point.',
-  alternates: { canonical: `${SITE.url}/for-owners` },
+  alternates: { canonical: absoluteUrl('/for-owners') },
 };
 
 /**
