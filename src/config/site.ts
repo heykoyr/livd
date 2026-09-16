@@ -6,6 +6,15 @@
  * scattered through it.
  */
 
+/**
+ * Livd's canonical production origin, written down exactly once.
+ *
+ * Everything public resolves against it: canonical tags, Open Graph, the
+ * sitemap, `robots.txt`, every link inside an email, and the `emailRedirectTo`
+ * on a magic link. Nowhere else in the codebase should contain the string.
+ */
+export const CANONICAL_ORIGIN = 'https://livd.site';
+
 export const SITE = {
   name: 'Livd',
   /** The product's one-line promise. Kept here so it is stated identically everywhere. */
@@ -16,24 +25,62 @@ export const SITE = {
   locale: 'en',
 } as const;
 
+/** Trailing slashes are a difference that no consumer of an origin wants. */
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
 /**
  * The origin this deployment is actually reachable at.
  *
- * `NEXT_PUBLIC_SITE_URL` wins wherever it is set: it is the only value that
- * survives a custom domain. A Vercel preview has no custom domain and gets a
- * generated hostname instead, so `VERCEL_URL` is how it learns its own — with
- * no fallback, every canonical link, the OpenGraph URL and the whole sitemap
- * on a preview would point somewhere else entirely. Only ever consumed on the
- * server, in metadata, `robots.txt` and `sitemap.xml`.
+ * Four rules, in the order a wrong answer would cost most:
+ *
+ *   1. `NEXT_PUBLIC_SITE_URL` wins wherever it is set. It is the override, and
+ *      the only thing that can name an origin the platform does not know about.
+ *   2. A Vercel *production* build is the canonical site, whatever else is set.
+ *      This is the belt to the environment variable's braces: production is
+ *      also the one place where the `VERCEL_URL` fallback below would be
+ *      actively harmful, because that variable holds the immutable deployment
+ *      hostname — `livd-ff8anczd3-koyrstudio.vercel.app` — not the alias the
+ *      domain resolves to. A production deployment that lost its environment
+ *      variable would otherwise put that hostname in every canonical tag and
+ *      every sign-in email. It now cannot.
+ *   3. A preview has no custom domain, so `VERCEL_URL` is how it learns its
+ *      own hostname. Without it every canonical link and the whole sitemap on
+ *      a preview would point at production, and sign-in would leave the
+ *      preview entirely.
+ *   4. Otherwise, local development.
+ *
+ * Consumed on the server only — metadata, `robots.txt`, `sitemap.xml` and the
+ * email layer. `VERCEL_ENV` and `VERCEL_URL` are not `NEXT_PUBLIC_`, so they
+ * are not inlined into a client bundle; no client component reads `SITE.url`.
  */
 function resolveSiteUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL;
-  if (explicit) return explicit.replace(/\/+$/, '');
+  if (explicit) return trimTrailingSlash(explicit);
+
+  if (process.env.VERCEL_ENV === 'production') return CANONICAL_ORIGIN;
 
   const vercel = process.env.VERCEL_URL;
-  if (vercel) return `https://${vercel.replace(/\/+$/, '')}`;
+  if (vercel) return `https://${trimTrailingSlash(vercel)}`;
 
   return 'http://localhost:3000';
+}
+
+/**
+ * An absolute URL for a path on this site.
+ *
+ * The one way to build a public link. Scattering `${SITE.url}${path}` is how a
+ * domain migration comes to need a repository-wide search — and how one link
+ * in one email template gets missed. Everything that has to survive leaving
+ * the browser — an email, the sitemap, a canonical tag — goes through here.
+ *
+ * `path` is a path on this site, beginning with `/`. It is not a redirect
+ * target and does no validation: user-supplied destinations go through
+ * `safeNextPath` first, and nothing here should ever be given one.
+ */
+export function absoluteUrl(path = '/'): string {
+  return `${SITE.url}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 export type DataBackend = 'local' | 'supabase';

@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { SITE } from '@/config/site';
+import { absoluteUrl } from '@/config/site';
 import { renderEmail } from './shell';
 
 /**
@@ -56,9 +56,16 @@ export interface RenderedNotification {
   category: NotificationCategory;
 }
 
-function url(path: string): string {
-  return `${SITE.url}${path}`;
-}
+/**
+ * Every link in every Livd email.
+ *
+ * Aliased to the shared helper rather than reimplemented, so a link in an
+ * email cannot point somewhere a canonical tag does not. An email outlives the
+ * request that sent it and is read on a device that has never visited the
+ * site, so a relative or stale URL here is unrecoverable in a way that a
+ * wrong link on a page is not.
+ */
+const url = absoluteUrl;
 
 /**
  * Which preference governs which message.

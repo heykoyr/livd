@@ -61,13 +61,36 @@ export function hasMailProvider(): boolean {
  * identity, never the provider's — an email that arrives as "Supabase Auth"
  * or "onboarding@resend.dev" tells the reader they are inside somebody's
  * plumbing.
+ *
+ * The default is on `livd.site`, the domain Livd actually owns. It previously
+ * read `livd.app`, which Livd has never held: a deployment that set
+ * `RESEND_API_KEY` and forgot `LIVD_EMAIL_FROM` would have had every send
+ * refused with a 403 naming a stranger's domain.
  */
+const DEFAULT_FROM = 'Livd <notifications@livd.site>';
+
+/**
+ * Where a reply goes, and why it has a default at all.
+ *
+ * Two messages in the catalogue — a removed review and a rejected claim —
+ * say "reply to this email and a person will look at it again". That is a
+ * promise, and it is kept by a monitored address rather than by the From
+ * identity, which is a send-only notification mailbox nobody reads.
+ *
+ * So the default is `support@livd.site` and not null. It is the one address
+ * the product tells people to write to, which makes it the one address that
+ * must have a real destination behind it — see `docs/email.md`.
+ */
+const DEFAULT_REPLY_TO = 'support@livd.site';
+
 function fromAddress(): string {
-  return process.env.LIVD_EMAIL_FROM ?? 'Livd <notifications@livd.app>';
+  return process.env.LIVD_EMAIL_FROM ?? DEFAULT_FROM;
 }
 
 function replyTo(): string | null {
-  return process.env.LIVD_EMAIL_REPLY_TO ?? null;
+  const configured = process.env.LIVD_EMAIL_REPLY_TO;
+  if (configured === '') return null;
+  return configured ?? DEFAULT_REPLY_TO;
 }
 
 /** The domain only. What is safe to put in a log — see the note in `notify`. */

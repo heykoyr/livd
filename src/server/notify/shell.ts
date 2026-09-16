@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { SITE } from '@/config/site';
+import { SITE, absoluteUrl } from '@/config/site';
 
 /**
  * The Livd email.
@@ -59,7 +59,7 @@ export function escapeHtml(value: string): string {
 }
 
 export function preferencesUrl(): string {
-  return `${SITE.url}/account/notifications`;
+  return absoluteUrl('/account/notifications');
 }
 
 export function renderEmail(input: EmailShellInput): { html: string; text: string } {
