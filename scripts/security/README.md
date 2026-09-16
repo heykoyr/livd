@@ -18,6 +18,20 @@ its own fixtures and needs no ids set. The finding it was written after is in
 `docs/security-testing.md` under "Phase 21" — three columns of `reviews` that
 were writable by their author because the update guard was a blocklist.
 
+`role-escalation-matrix.sql` is the one that has to be run as somebody. The
+other suites hold the anon key, which is the right instrument for "what can an
+outsider reach" and the wrong one for the escalation bug 0020 closed — that
+attacker was a moderator Livd had deliberately given an account to, and no
+amount of anonymous probing finds them. This simulates the session instead of
+holding one: `set local role authenticated` plus a `request.jwt.claims` naming
+the actor, which is exactly what PostgREST does per request, so the attacks meet
+the same grants, policies and triggers a real moderator would. Nine cases —
+self-promotion, lateral promotion, the privileged RPC, forging the
+`livd.privileged_write` GUC the trigger reads, a trust admin reaching for super
+admin, resident and owner self-edits, re-inserting your own profile row as an
+admin, and a control asserting the legitimate write still works. It picks its
+own accounts and needs no ids set.
+
 `owner-response-matrix.sql` runs beside them, in the SQL editor or through
 `supabase db query`. Seventeen cases against the live database, as
 `authenticated` and as `anon`: who may post a property response, who may not,

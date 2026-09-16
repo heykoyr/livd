@@ -1584,3 +1584,54 @@ literal` case in Phase 21, found the same way.
 `scripts/security/review-edit-matrix.sql` carries the seven authorisation cases,
 the column-level attacks with the rating assertion inverted, an out-of-range
 rating, and the four child-table cases above.
+
+---
+
+## Privilege escalation, re-verified as each role — 16 September 2026
+
+The escalation `0020` closed was re-tested against the live project, this time
+from inside a session rather than over anonymous HTTP. Nine cases, run through
+`scripts/security/role-escalation-matrix.sql`; nothing committed.
+
+| Attack | Acting as | Result |
+| --- | --- | --- |
+| `UPDATE profiles SET role='admin'` on self | moderator | permission denied for table profiles |
+| `UPDATE profiles SET role='admin'` on another account | moderator | permission denied for table profiles |
+| `livd_set_user_role(victim, 'admin')` | moderator | Only an administrator may change a role |
+| `set_config('livd.privileged_write','on')` then write | moderator | permission denied for table profiles |
+| `livd_set_user_role(self, 'admin')` | trust admin | Only an administrator may change a role |
+| `UPDATE profiles SET role='admin'` on self | resident | permission denied for table profiles |
+| `UPDATE profiles SET role='admin'` on self | owner | permission denied for table profiles |
+| `INSERT` own profile row with `role='admin'` | resident | violates row-level security policy |
+| **Control:** edit own email preferences | resident | allowed |
+
+### Three layers, and the first one is the reason
+
+"Permission denied for table profiles" is not RLS. `authenticated` holds
+`UPDATE` on exactly five columns — `country_code`, `preferred_locale` and the
+three `email_*` flags — and `role` and `status` are not among them. The write is
+refused by a column grant before any policy is consulted, which is why the
+control passes in the same breath: the same role updating the same row through a
+column it *is* granted succeeds.
+
+Behind that sit `profiles_update_own`'s `WITH CHECK (id = auth.uid())` and the
+`profiles_guard_privileged_columns` trigger, which refuses any change to `role`
+or `status` unless `livd.privileged_write` is on. Forging that GUC was tested
+directly rather than reasoned about — a gate whose key the caller can cut is
+decorative — and it never gets far enough to matter, because the column grant
+refuses first.
+
+`INSERT` is the one that rests on a policy alone: `authenticated` *is* granted
+INSERT on `role`, so the only thing standing between a user and an admin profile
+row is the absence of an INSERT policy on `profiles`, which denies by default.
+It holds, and it is now tested rather than assumed.
+
+### What this adds over `http-postgrest.mjs`
+
+That suite fires the headline attack — `PATCH /rest/v1/profiles {"role":"admin"}`
+— over real HTTP, and it is the better test for an outsider because it crosses
+the same wire. But it holds the anon key, so every request it makes is
+anonymous. The attacker 0020 existed for was signed in. Both are now covered.
+
+Run on 16 September 2026: **66 passed, 0 failed** (`http-postgrest.mjs`) and
+nine of nine expected (`role-escalation-matrix.sql`).
