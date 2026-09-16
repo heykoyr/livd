@@ -64,7 +64,7 @@ are unchanged; only the navigation label became "Explore".
 Supabase project provisioned, the eight migrations that existed at the time
 applied, and the demonstration data loaded into it — 16 properties, 222 reviews and 3,558 child rows, every
 one marked `is_demo`. Deployed to Vercel at
-<https://livd-koyrstudio.vercel.app>, rebuilding on every push to `main`.
+<https://livd.site>, rebuilding on every push to `main`.
 Verified against the live site: every public route 200, every authenticated
 route redirecting to sign-in, canonical and OpenGraph URLs on the real origin,
 no seeded property in the sitemap and every one of them `noindex`, and zero

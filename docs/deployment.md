@@ -38,16 +38,16 @@ NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...      # Settings > API keys > anon
 SUPABASE_SERVICE_ROLE_KEY=...          # Settings > API keys > service_role
 LIVD_SESSION_SECRET=...                # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-NEXT_PUBLIC_SITE_URL=https://...       # the origin this deployment is actually served from
+NEXT_PUBLIC_SITE_URL=https://livd.site # the origin this deployment is served from
 ```
 
 Two optional groups turn on features rather than enabling the application.
 Livd runs correctly with neither, and says so rather than pretending:
 
 ```
-RESEND_API_KEY=...                     # resend.com > API Keys
-LIVD_EMAIL_FROM="Livd <notifications@your-domain>"   # must be a verified domain
-LIVD_EMAIL_REPLY_TO=...                # optional; an address a person reads
+RESEND_API_KEY=...                     # resend.com > API Keys. Production only
+LIVD_EMAIL_FROM=                       # defaults to Livd <notifications@livd.site>
+LIVD_EMAIL_REPLY_TO=                   # defaults to support@livd.site
 
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=...     # dash.cloudflare.com > Turnstile
 TURNSTILE_SECRET_KEY=...
@@ -56,8 +56,13 @@ TURNSTILE_SECRET_KEY=...
 **Email.** Without `RESEND_API_KEY` the transport logs the subject and the
 recipient's domain to the server console and reports success, so every flow
 works end to end and nothing fails because a notification could not be sent.
-`LIVD_EMAIL_FROM` must be on a domain verified with the provider or every
-send is refused with a 403 naming the domain.
+That is also the control that stops development and preview builds mailing
+real people: the key is set on Production only.
+
+`LIVD_EMAIL_FROM` must be on a domain verified with the provider or every send
+is refused with a 403 naming the domain. It defaults to
+`Livd <notifications@livd.site>`. The full architecture — addresses, SPF, DKIM,
+DMARC, and why the sending domain is the apex — is in [`email.md`](email.md).
 
 **Bot protection.** Both halves or neither. The server decides whether a
 token is required from `TURNSTILE_SECRET_KEY` alone — never from anything the
@@ -79,15 +84,26 @@ public read and every review submission goes through RLS as the `anon` or
 `authenticated` role. Moderation does not: `/admin` needs the key to act on the
 queue.
 
-**On `NEXT_PUBLIC_SITE_URL`.** In production this must be the origin the site is
-actually served from. It drives canonical URLs, Open Graph tags, the sitemap —
-and the `emailRedirectTo` on every magic link, which is the one that bites. If
-it is wrong or unset, Supabase discards the redirect Livd asks for and falls back
-to the Site URL in its own dashboard. Both have to agree; see
-[`supabase/templates/README.md`](../supabase/templates/README.md).
+**On `NEXT_PUBLIC_SITE_URL`.** Production is `https://livd.site`. It drives
+canonical URLs, Open Graph tags, the sitemap — and the `emailRedirectTo` on
+every magic link, which is the one that bites. If it disagrees with Supabase's
+own Site URL, Supabase does not error: it silently substitutes its own, and
+people sign in on the wrong origin. Both have to agree; see
+[`domain.md`](domain.md) for the order they have to change in, and
+[`supabase/templates/README.md`](../supabase/templates/README.md) for the
+dashboard half.
 
-Unset on a Vercel preview, the app falls back to `VERCEL_URL`, so previews are
-self-consistent without anyone configuring them.
+A production build resolves `https://livd.site` on its own when the variable is
+missing, so a lost environment variable cannot put a deployment hostname into a
+canonical tag. Unset on a Vercel *preview*, the app falls back to `VERCEL_URL`,
+so previews stay self-consistent without anyone configuring them.
+
+```bash
+npm run domain:check
+```
+
+Asks DNS, Vercel, Supabase and Resend from outside and prints what is actually
+true. Run it after any change to the domain, the auth URLs or the mail records.
 
 ---
 
@@ -188,7 +204,9 @@ have not been exercised against their live APIs, which needs paid keys.
 
 ## 5. Hosting
 
-Livd is deployed on Vercel and rebuilds on every push to `main`.
+Livd is deployed on Vercel at **<https://livd.site>** and rebuilds on every
+push to `main`. The domain, DNS, `www` behaviour and SSL are documented
+separately in [`domain.md`](domain.md).
 
 Environment variables to set on the project:
 
@@ -198,7 +216,8 @@ Environment variables to set on the project:
 | `NEXT_PUBLIC_SUPABASE_URL` | Production, Preview | |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | All three | Public by design — RLS is the protection |
 | `SUPABASE_SERVICE_ROLE_KEY` | Production | Secret. Moderation does not work without it |
-| `NEXT_PUBLIC_SITE_URL` | Production | Previews fall back to `VERCEL_URL` |
+| `NEXT_PUBLIC_SITE_URL` | Production | `https://livd.site`. Previews fall back to `VERCEL_URL` |
+| `RESEND_API_KEY` | Production **only** | Secret. Unset elsewhere is what stops previews mailing real users |
 | `LIVD_SESSION_SECRET` | Production, Preview | |
 | `LIVD_SHOW_DEMO_DATA` | Production, Preview | `true` only while seeded data is the content |
 | `LIVD_GEOCODER` | Production, Preview | **Required for proximity search and location verification to work at all.** See below |

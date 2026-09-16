@@ -3,9 +3,15 @@
  *
  * Same question as the PostgREST suite, one layer up: what does an anonymous
  * visitor get from the origin the public actually types in.
+ *
+ * That origin is now `https://livd.site`, and pointing this at the canonical
+ * domain rather than at a Vercel alias is the point: a security suite that
+ * tests a hostname the public does not use is testing a different set of
+ * response headers, a different certificate and a different redirect chain
+ * from the one anybody is actually served.
  */
 
-const BASE = process.env.LIVD_BASE_URL ?? 'https://livd-psi.vercel.app';
+const BASE = process.env.LIVD_BASE_URL ?? 'https://livd.site';
 
 let pass = 0;
 let fail = 0;

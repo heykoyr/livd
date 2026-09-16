@@ -6,7 +6,7 @@ Livd is a property intelligence platform. It collects what people who actually
 lived at a property say about it — including why they left — and turns that into
 something a prospective renter can make a decision with.
 
-**[Live demo](https://livd-koyrstudio.vercel.app)** · [Product spec](docs/product-spec.md) · [Architecture](docs/architecture.md) · [Design system](docs/design-system.md)
+**[Live site](https://livd.site)** · [Product spec](docs/product-spec.md) · [Architecture](docs/architecture.md) · [Design system](docs/design-system.md)
 
 > The deployed site runs on seeded demonstration data. Every seeded property is
 > labelled **Sample data** wherever it appears, excluded from the sitemap, and

@@ -21,20 +21,35 @@ exchanges the code, `src/middleware.ts` keeps the session alive, and
 
 **Authentication → URL Configuration**
 
-| Field | Set to | Status |
-| --- | --- | --- |
-| Site URL | `https://livd-psi.vercel.app` | **done** — verified 7 September 2026 |
-| Redirect URLs | `http://localhost:3000/**` | outstanding, and now needed |
+Probed from outside on 16 September 2026 with `npm run domain:check`, which
+reports the live values rather than what anybody remembers setting:
+
+| Field | Currently | Must become | Status |
+| --- | --- | --- | --- |
+| Site URL | `https://livd-koyrstudio.vercel.app` | `https://livd.site` | **outstanding** |
+| Redirect URLs | `http://localhost:3000/**` | keep, and add `https://livd.site/**` and `https://www.livd.site/**` | **outstanding** |
+
+An earlier version of this file recorded the Site URL as
+`https://livd-psi.vercel.app`. It is not, and has not been for some time —
+both are aliases of the same deployment, which is exactly why nobody noticed.
+Do not trust this table; run the check.
 
 Sub-paths of the Site URL are allow-listed implicitly — probing GoTrue with a
-throwaway token shows `https://livd-psi.vercel.app/auth/callback?next=%2Freview`
-honoured in full while `https://evil.example/steal` falls back. So production
-needed only the Site URL.
+throwaway token shows `https://livd-koyrstudio.vercel.app/auth/callback?next=%2Freview`
+honoured in full while `https://not-allowed.example/x` falls back. So
+production has needed only the Site URL so far.
 
-The consequence is that **localhost is no longer an allowed redirect**. That
-does not affect ordinary local development, which runs `LIVD_DATA_BACKEND=local`
-and never touches Supabase Auth — but running the Supabase backend locally now
-needs `http://localhost:3000/**` on the Redirect URLs list.
+**Order matters, and getting it wrong is silent.** Add the two `livd.site`
+entries to the Redirect URLs list *first*: that step is purely additive and
+breaks nothing while the old host is still the Site URL. Only then change the
+Site URL and `NEXT_PUBLIC_SITE_URL` in Vercel, which are one change in two
+places. Doing the Vercel half alone produces sign-in links that work and land
+the person on the old origin, signed out, with nothing logged. See
+[`docs/domain.md`](../../docs/domain.md).
+
+Local development must keep working: `http://localhost:3000/**` stays on the
+list. Removing it to tidy up would be a regression, and `npm run domain:check`
+asserts it is still there.
 
 Add `https://*-koyrstudio.vercel.app/**` too if preview deployments should be
 able to sign anyone in.
@@ -56,7 +71,8 @@ link in the email pointed at. Fixing the application alone would not have
 fixed the email.
 
 When a custom domain replaces the Vercel one, both the Site URL here and
-`NEXT_PUBLIC_SITE_URL` in Vercel have to change together.
+`NEXT_PUBLIC_SITE_URL` in Vercel have to change together. That is happening
+now: the domain is `livd.site`.
 
 ---
 
@@ -95,16 +111,28 @@ Two things follow from that, and they are the same thing:
 
 | Field | Value |
 | --- | --- |
-| Sender email | an address at a domain Livd controls and has verified |
+| Host | `smtp.resend.com` |
+| Port | `465` |
+| Username | `resend` |
+| Password | a Resend API key with sending permission |
+| Sender email | `notifications@livd.site` |
 | Sender name | `Livd` |
 
-Do not put a made-up address here. It must be a domain with SPF and DKIM
-records that the provider has verified, or the mail will land in spam — which
-is a worse outcome than saying "Supabase Auth".
+Resend is already Livd's transactional provider, so pointing Supabase's SMTP
+at it means one verified domain, one reputation and one place to read a
+delivery log — rather than a second provider existing solely to send the one
+email Supabase owns.
 
-Until that domain exists, none of it changes: recipients see "Supabase Auth"
-and Supabase's own default wording. The template in §3 is written and waiting;
-it cannot be applied first.
+**Use a separate API key from the application's.** Same account, same verified
+domain, different key. Supabase stores it in its own dashboard, and a key that
+lives in two services cannot be rotated in one of them.
+
+The domain has to be verified in Resend first — `notifications@livd.site` will
+be refused with a 403 until it is. See [`docs/email.md`](../../docs/email.md).
+
+Until then, none of it changes: recipients see "Supabase Auth" and Supabase's
+own default wording. The template in §3 is written and waiting; it cannot be
+applied first.
 
 ---
 
