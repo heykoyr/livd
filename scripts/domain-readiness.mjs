@@ -213,8 +213,91 @@ async function checkDns() {
  * 2. Email authentication
  * ------------------------------------------------------------------ */
 
+/**
+ * The zone's own nameservers, as a resolver.
+ *
+ * Whether a record *exists* is a question for the servers that publish it, not
+ * for a cache. Learned the expensive way: Google Public DNS is anycast, and
+ * some of its nodes went on answering NXDOMAIN for `send.livd.site` long after
+ * the record was published — a negative answer cached from a lookup made
+ * before it existed. Asked through `8.8.8.8`, this check flapped between pass
+ * and fail on consecutive runs and called a correctly configured domain
+ * "not verified yet".
+ *
+ * So existence is judged here, and what public resolvers still believe is
+ * reported separately, as the propagation fact it is.
+ */
+async function authoritativeResolver() {
+  const ns = await resolver.resolveNs(APEX);
+  const addresses = (
+    await Promise.all(ns.map((host) => resolver.resolve4(host).catch(() => [])))
+  ).flat();
+
+  if (addresses.length === 0) throw new Error(`no address for ${ns.join(', ')}`);
+
+  const authoritative = new Resolver();
+  authoritative.setServers(addresses);
+  return authoritative;
+}
+
+const PUBLIC_RESOLVERS = ['1.1.1.1', '9.9.9.9', '8.8.8.8'];
+
+/**
+ * The first answer any one of several resolvers gives, each asked on its own.
+ *
+ * A `Resolver` given several servers does not try the next one after a
+ * negative answer — NXDOMAIN is an answer, not a failure — so one stale cache
+ * in the list is enough to fail a lookup every other server would satisfy.
+ */
+async function firstAnswer(query) {
+  let lastError;
+  for (const server of PUBLIC_RESOLVERS) {
+    const single = new Resolver();
+    single.setServers([server]);
+    try {
+      return await query(single);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+/** Which public resolvers still cannot see a record the zone publishes. */
+async function stalePublicCaches(query) {
+  const stale = [];
+  for (const server of PUBLIC_RESOLVERS) {
+    const single = new Resolver();
+    single.setServers([server]);
+    // Three tries: an anycast address is many caches behind one IP, and one
+    // lucky answer would hide the ones that are still wrong.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await query(single);
+      } catch {
+        stale.push(server);
+        break;
+      }
+    }
+  }
+  return stale;
+}
+
 async function checkEmailDns() {
-  const txt = await tryResolve(() => resolver.resolveTxt(APEX));
+  let auth;
+  try {
+    auth = await authoritativeResolver();
+  } catch (error) {
+    fail('Email · authoritative DNS', `could not reach the zone's nameservers (${error.message})`);
+    return;
+  }
+
+  const soa = await tryResolve(() => auth.resolveSoa(APEX));
+  const negativeTtl = soa.error ? null : soa.minttl;
+
+  /* ---- The apex SPF belongs to the forwarder, and must stay single ---- */
+
+  const txt = await tryResolve(() => auth.resolveTxt(APEX));
   const flat = txt.error ? [] : txt.map((chunks) => chunks.join(''));
   const spf = flat.filter((value) => value.startsWith('v=spf1'));
 
@@ -224,22 +307,89 @@ async function checkEmailDns() {
   else if (spf.length > 1) fail('Email · apex SPF', `${spf.length} SPF records — must be merged into one`);
   else pass('Email · apex SPF', spf[0]);
 
-  // Resend signs with the sending subdomain's own SPF, so the apex record
-  // above belongs to the forwarder and the two never collide.
-  const sendSpf = await tryResolve(() => resolver.resolveTxt(`send.${APEX}`));
-  if (sendSpf.error) warn('Email · Resend return-path', `no TXT on send.${APEX} — Resend domain not verified yet`);
-  else pass('Email · Resend return-path', sendSpf.map((c) => c.join('')).join(' | '));
+  /* ---- Return-path ----------------------------------------------------
+   * Whatever shape the provider asks for. Resend issued `send` as a CNAME to a
+   * host of its own that carries the MX and the SPF — not the MX-and-TXT pair
+   * on `send` itself that an earlier version of this check, and of
+   * docs/email.md, assumed without asking. The requirement is the same in
+   * either shape: bounces need somewhere to go, and the envelope sender must
+   * pass SPF. So check for exactly that, following the delegation to wherever
+   * it is published. */
 
-  const dkim = await tryResolve(() => resolver.resolveTxt(`resend._domainkey.${APEX}`));
-  if (dkim.error) warn('Email · DKIM', `no key at resend._domainkey.${APEX}`);
-  else pass('Email · DKIM', `published (${dkim.map((c) => c.join('')).join('').length} chars)`);
+  const send = `send.${APEX}`;
+  const delegated = await tryResolve(() => auth.resolveCname(send));
+  const target = delegated.error ? null : delegated[0];
 
-  const dmarc = await tryResolve(() => resolver.resolveTxt(`_dmarc.${APEX}`));
+  // A delegated name lives in somebody else's zone, which our nameservers
+  // cannot answer for; an undelegated one is ours to ask directly.
+  const ask = (fn) =>
+    tryResolve(() => (target ? firstAnswer((r) => fn(r, target)) : fn(auth, send)));
+
+  const mx = await ask((r, name) => r.resolveMx(name));
+  const sendTxt = await ask((r, name) => r.resolveTxt(name));
+  const sendSpf = sendTxt.error
+    ? null
+    : sendTxt.map((chunks) => chunks.join('')).find((value) => value.startsWith('v=spf1'));
+
+  const via = target ? `${send} → ${target}` : send;
+
+  if (mx.error && !sendSpf) {
+    warn('Email · return-path', `nothing published at ${via} — add the records Resend gives you`);
+  } else if (mx.error) {
+    fail('Email · return-path', `${via} has SPF but no MX — bounces have nowhere to go`);
+  } else if (!sendSpf) {
+    fail('Email · return-path', `${via} has an MX but no SPF — the envelope sender will not authenticate`);
+  } else {
+    pass('Email · return-path', `${via} · MX ${mx.map((m) => m.exchange).join(', ')} · SPF present`);
+
+    const stale = await stalePublicCaches((r) => r.resolveTxt(send));
+    if (stale.length > 0) {
+      warn(
+        'Email · return-path propagation',
+        `published, but ${stale.join(', ')} still answer${stale.length === 1 ? 's' : ''} from a cache made before it existed` +
+          (negativeTtl ? ` — clears within ${negativeTtl}s` : ''),
+      );
+    }
+  }
+
+  /* ---- DKIM ----------------------------------------------------------- */
+
+  const dkim = await tryResolve(() => auth.resolveTxt(`resend._domainkey.${APEX}`));
+  if (dkim.error) {
+    warn('Email · DKIM', `no key at resend._domainkey.${APEX}`);
+  } else {
+    const value = dkim.map((chunks) => chunks.join('')).join('');
+    const key = value.match(/(?:^|;\s*)p=([A-Za-z0-9+/=]+)/)?.[1];
+    // A pasted value that lost characters publishes happily and fails every
+    // signature, so the length is worth a look and not just the presence.
+    if (!key) fail('Email · DKIM', `resend._domainkey.${APEX} has no p= public key`);
+    else if (key.length < 200) fail('Email · DKIM', `public key is ${key.length} chars — likely truncated`);
+    else pass('Email · DKIM', `public key published (${key.length} chars)`);
+  }
+
+  /* ---- DMARC ---------------------------------------------------------- */
+
+  const dmarc = await tryResolve(() => auth.resolveTxt(`_dmarc.${APEX}`));
   if (dmarc.error) {
     warn('Email · DMARC', `no policy at _dmarc.${APEX}`);
   } else {
-    const policy = dmarc.map((c) => c.join('')).join('');
-    pass('Email · DMARC', policy);
+    const records = dmarc.map((chunks) => chunks.join('')).filter((v) => v.startsWith('v=DMARC1'));
+    const policy = records[0] ?? '';
+    const p = policy.match(/(?:^|;\s*)p=(none|quarantine|reject)/)?.[1];
+
+    if (records.length > 1) {
+      fail('Email · DMARC', `${records.length} DMARC records — receivers ignore all of them`);
+    } else if (!p) {
+      fail('Email · DMARC', `"${policy}" has no valid p= tag`);
+    } else {
+      pass('Email · DMARC', policy);
+      // Not wrong, and harmless. But p=none exists to gather evidence before
+      // enforcing, and without rua the evidence goes nowhere — so there is
+      // never a basis on which to move off p=none.
+      if (!/(?:^|;\s*)rua=mailto:/.test(policy)) {
+        warn('Email · DMARC reports', `p=${p} with no rua= — monitoring that reports to nobody`);
+      }
+    }
   }
 }
 
@@ -361,7 +511,10 @@ async function checkAuth() {
 async function checkResend() {
   const key = env('RESEND_API_KEY');
   if (!key) {
-    warn('Resend · domain verified', 'no RESEND_API_KEY here — cannot ask; check resend.com/domains');
+    warn(
+      'Resend · domain verified',
+      'no RESEND_API_KEY here — pass one inline to ask Resend, or see resend.com/domains',
+    );
     return;
   }
 
@@ -370,7 +523,18 @@ async function checkResend() {
       headers: { authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(15_000),
     });
-    const body = await response.json();
+    const body = await response.json().catch(() => ({}));
+
+    // A sending-only key cannot list domains, and a sending-only key is the
+    // right kind to deploy. Refusing here is the key doing its job.
+    if (response.status === 401 || response.status === 403) {
+      warn(
+        'Resend · domain verified',
+        `this key cannot read domains (${body.name ?? response.status}) — expected of a sending-only key`,
+      );
+      return;
+    }
+
     const domain = (body.data ?? []).find((entry) => entry.name === APEX);
 
     if (!domain) fail('Resend · domain verified', `${APEX} is not on the account`);
