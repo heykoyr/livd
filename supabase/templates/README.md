@@ -21,13 +21,16 @@ exchanges the code, `src/middleware.ts` keeps the session alive, and
 
 **Authentication → URL Configuration**
 
-Probed from outside on 16 September 2026 with `npm run domain:check`, which
-reports the live values rather than what anybody remembers setting:
+Probed from outside with `npm run domain:check`, which reports the live values
+rather than what anybody remembers setting:
 
-| Field | Currently | Must become | Status |
-| --- | --- | --- | --- |
-| Site URL | `https://livd-koyrstudio.vercel.app` | `https://livd.site` | **outstanding** |
-| Redirect URLs | `http://localhost:3000/**` | keep, and add `https://livd.site/**` and `https://www.livd.site/**` | **outstanding** |
+| Field | Value | Status |
+| --- | --- | --- |
+| Site URL | `https://livd.site` | **done** — verified 17 September 2026 |
+| Redirect URLs | `https://livd.site/**`, `https://www.livd.site/**`, `http://localhost:3000/**` | **done** — production callback honoured, localhost still honoured |
+
+Confirmed end to end the same day by a real sign-in email: its link was
+`…/auth/v1/verify?…&redirect_to=https://livd.site/auth/callback?next=/`.
 
 An earlier version of this file recorded the Site URL as
 `https://livd-psi.vercel.app`. It is not, and has not been for some time —
@@ -107,7 +110,16 @@ Two things follow from that, and they are the same thing:
   the limit itself only lifts with custom SMTP.
 - Custom SMTP is what changes the sender name.
 
-**When SMTP is configured, set:**
+**Status on 17 September 2026: not configured.** A real sign-in email
+requested that day arrived as `Supabase Auth <noreply@mail.app.supabase.io>`,
+through Supabase's shared Postmark pool, with Supabase's default wording and a
+"powered by Supabase" footer. Its link was correct; its sender was not. Nothing
+in the repository or in Vercel can change that — only this setting can.
+
+The domain is ready for it: DKIM, the return-path and DMARC for `livd.site` are
+published and `npm run domain:check` passes them.
+
+**Set:**
 
 | Field | Value |
 | --- | --- |
@@ -118,6 +130,14 @@ Two things follow from that, and they are the same thing:
 | Sender email | `notifications@livd.site` |
 | Sender name | `Livd` |
 
+Those four connection values are Resend's SMTP settings as shown at
+resend.com → Settings → SMTP; the page is the authority if they ever differ.
+Resend's Supabase integration (resend.com → Integrations → Supabase) fills the
+same fields in one step and is an equally good way to do it.
+
+After saving, open **Authentication → Rate Limits** — custom SMTP starts at a
+conservative sends-per-hour figure that is worth reading rather than assuming.
+
 Resend is already Livd's transactional provider, so pointing Supabase's SMTP
 at it means one verified domain, one reputation and one place to read a
 delivery log — rather than a second provider existing solely to send the one
@@ -127,12 +147,19 @@ email Supabase owns.
 domain, different key. Supabase stores it in its own dashboard, and a key that
 lives in two services cannot be rotated in one of them.
 
-The domain has to be verified in Resend first — `notifications@livd.site` will
-be refused with a 403 until it is. See [`docs/email.md`](../../docs/email.md).
+The domain has to show **Verified** at resend.com/domains first —
+`notifications@livd.site` is refused with a 403 until it does. See
+[`docs/email.md`](../../docs/email.md).
 
 Until then, none of it changes: recipients see "Supabase Auth" and Supabase's
 own default wording. The template in §3 is written and waiting; it cannot be
 applied first.
+
+**How to confirm it worked.** Request a sign-in link to an inbox you can read
+and open the original message. `From` should read `Livd <notifications@livd.site>`,
+and `Authentication-Results` should show `dkim=pass header.i=@livd.site` and
+`dmarc=pass header.from=livd.site`. Before this change the same header reads
+`dmarc=pass header.from=supabase.io` — which passes, and is exactly the problem.
 
 ---
 
@@ -142,8 +169,9 @@ applied first.
 
 *Both fields are disabled until custom SMTP is configured — see §2.*
 
-- **Subject:** `Your sign-in link` (which is also Supabase's default, so the
-  subject line already reads correctly today)
+- **Subject:** `Your Livd sign-in link`. Supabase's default is `Your sign-in
+  link`, which names nothing; in an inbox sorted by sender that line is the
+  only thing saying which service the link belongs to.
 - **Body:** the contents of [`magic-link.html`](./magic-link.html)
 
 That file is the source of truth. The dashboard has no API, so the two can

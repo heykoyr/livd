@@ -18,7 +18,7 @@ is branded by Supabase until custom SMTP is configured in its dashboard. See
 
 ## 1. Addresses
 
-Four, and no more. Every one of them has a reason to exist and a destination.
+Five, and no more. Every one of them has a reason to exist and a destination.
 
 | Address | Used for | Receives mail? |
 | --- | --- | --- |
@@ -26,6 +26,7 @@ Four, and no more. Every one of them has a reason to exist and a destination.
 | `support@livd.site` | `Reply-To` on every notification; the address the product tells people to write to | **Yes** — must forward to a person |
 | `hello@livd.site` | General and press contact, shown on the site | **Yes** — must forward to a person |
 | `trust@livd.site` | Trust & Safety and authority contact | **Yes** — must forward to a person |
+| `dmarc@livd.site` | Where receivers send DMARC aggregate reports | **Yes** — forward, and filter |
 
 Deliberately absent: a `no-reply@`. Two messages in the catalogue — a removed
 review and a rejected claim — say *"reply to this email and a person will look
@@ -40,7 +41,7 @@ makes both harder to read.
 
 ### The mailboxes are Namecheap email forwarding
 
-`support@`, `hello@` and `trust@` are aliases on Namecheap's free email
+`support@`, `hello@`, `trust@` and `dmarc@` are aliases on Namecheap's free email
 forwarding, which is already live — the five `eforward*.registrar-servers.com`
 MX records on the apex predate this migration. They forward to the founder's
 real inbox. There is no mailbox to log into and no IMAP.
@@ -58,16 +59,27 @@ subdomain, and this is the opposite of what Resend's own reputation-isolation
 advice suggests at first reading. The reason is that Resend already does the
 isolation itself, in the right place.
 
-When a domain is added to Resend, the records it asks for are:
+What is published for Resend, read from the live zone on 17 September 2026 —
+the values Resend's dashboard issued for this domain, not a template of what
+Resend usually asks for:
 
-| Type | Host | Purpose |
-| --- | --- | --- |
-| MX | `send.livd.site` | Return-Path / bounce handling |
-| TXT | `send.livd.site` | `v=spf1 include:amazonses.com ~all` |
-| TXT | `resend._domainkey.livd.site` | DKIM public key |
+| Type | Host | Value | Purpose |
+| --- | --- | --- | --- |
+| TXT | `resend._domainkey` | `p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQ…` (216-char key) | DKIM public key |
+| CNAME | `send` | `send.forge.rmta.net` | Return-Path: that host carries the MX (`feedback.forge.rmta.net`) and the SPF |
+| TXT | `_dmarc` | `v=DMARC1; p=none;` | DMARC — see §3 |
 
-**SPF is published on `send.livd.site`, not on the apex.** SPF authenticates
-the envelope sender (the Return-Path), and Resend puts that on the subdomain.
+**An earlier version of this table was wrong, and it is worth saying how.** It
+listed an MX and a TXT on `send` carrying `include:amazonses.com` — the shape
+Resend was commonly documented as asking for, written down without asking the
+provider. Resend issued a single CNAME instead, delegating the return-path to a
+host it controls. The readiness check had the same assumption built in and
+reported a correctly configured domain as unverified. Both now ask what is
+actually published. Take values from resend.com/domains, never from here.
+
+**SPF is published under `send.livd.site`, not on the apex.** SPF authenticates
+the envelope sender (the Return-Path), and Resend puts that on the subdomain —
+here by delegating the whole name to its own host with a CNAME.
 So the apex SPF record that Namecheap's forwarding already owns —
 `v=spf1 include:spf.efwd.registrar-servers.com ~all` — is never touched, never
 merged, and never duplicated. The single most likely way to break this domain's
@@ -92,31 +104,41 @@ with the mail the domain already handles.
 
 ## 3. DMARC
 
-Start at **`p=none`**:
+**Published now:** `v=DMARC1; p=none;`
+
+**Should be:**
 
 | Type | Host | Value |
 | --- | --- | --- |
-| TXT | `_dmarc.livd.site` | `v=DMARC1; p=none; rua=mailto:trust@livd.site; fo=1; adkim=r; aspf=r` |
+| TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:dmarc@livd.site;` |
 
-`p=none` is monitoring, not enforcement. It asks receivers to report what they
-saw and to act on nothing.
+Edit the existing `_dmarc` record rather than adding a second — with two DMARC
+records on one name, receivers ignore both.
 
-That is the right starting policy here and not timidity, because this domain
-has **two** independent mail streams — Resend and Namecheap's forwarder — and a
-forwarder is precisely the thing DMARC breaks first. Forwarding rewrites
-envelope senders and can invalidate a signature, so a `p=reject` published
-before anyone has looked at a report is a policy that silently destroys
-legitimate mail nobody was watching.
+`p=none` is monitoring, not enforcement. It asks receivers to act on nothing,
+and that is the right starting policy: this domain has **two** independent mail
+streams — Resend and Namecheap's forwarder — and forwarding is the first thing
+DMARC breaks. A `p=reject` published before anybody has read a report is a
+policy that silently destroys legitimate mail nobody was watching.
 
-Relaxed alignment (`adkim=r`, `aspf=r`) for the same reason: the envelope
-domain is `send.livd.site` while the From domain is `livd.site`, which is an
-organisational match but not a strict one.
+But `p=none` with no `rua` is monitoring that reports to nobody. The point of
+starting at `none` is to gather the evidence that makes tightening safe, and
+without `rua` there is never any — so the domain stays at `none` forever by
+default rather than by decision. `npm run domain:check` flags exactly this.
 
-Tighten to `p=quarantine`, then `p=reject`, once a few weeks of `rua` reports
-show both streams authenticating. Record the date here when it moves.
+**Why `dmarc@` and not `trust@`.** Aggregate reports are daily XML attachments
+from every large receiver. `trust@` is where an authority request arrives, and
+whoever reads that should not wade through zip files to find it. A dedicated
+alias forwards to the same inbox and filters out of sight with one rule. Reports
+to an address on the domain being reported need no extra authorisation record.
 
-**Status: `p=none`, pending. Not yet published** — see the manual actions in
-[`domain.md`](domain.md).
+No `adkim`/`aspf` tags: relaxed alignment is the default, and relaxed is what
+is needed — the envelope domain is `send.livd.site` while the From domain is
+`livd.site`, an organisational match rather than a strict one. DKIM signs as
+`livd.site` itself, so DKIM alignment is exact.
+
+Tighten to `p=quarantine`, then `p=reject`, once a few weeks of reports show
+both streams authenticating. Record the date here when it moves.
 
 ---
 
@@ -127,8 +149,13 @@ show both streams authenticating. Record the date here when it moves.
 build error rather than a runtime leak if it is ever pulled into a client
 bundle. It is never prefixed `NEXT_PUBLIC_`.
 
-It belongs in **Vercel → Production** only. Sending permission is sufficient;
-the key needs no domain or account access.
+It is in **Vercel → Production** only — added 17 September 2026, marked
+sensitive, and live from deployment `f80022a` onwards. Sending permission is
+sufficient; the key needs no domain or account access.
+
+A sending-only key cannot list domains, so `npm run domain:check` run with one
+reports that it cannot ask rather than that the domain is unverified. That is
+the key being correctly scoped.
 
 **It does not belong in Supabase.** Livd has no Edge Functions — `supabase/`
 contains migrations and an email template and nothing else — so there is no
@@ -192,7 +219,60 @@ this migration can produce a duplicate.
 npm run domain:check
 ```
 
-Reports SPF, DKIM, DMARC, whether the forwarder's MX records survived, and —
-if `RESEND_API_KEY` is present locally — whether Resend considers the domain
-verified. Receiving a test email is not evidence that authentication passes;
-this is.
+Reports the apex SPF, the return-path, DKIM, DMARC, whether the forwarder's MX
+records survived, and — given a key that can read domains — whether Resend
+considers the domain verified.
+
+Existence is judged against the zone's **own nameservers**, not a public
+resolver. Some of Google Public DNS's anycast nodes went on answering NXDOMAIN
+for `send.livd.site` after the record was published, and a check asked through
+it flapped between pass and fail. What public resolvers still believe is
+reported separately, as propagation.
+
+Receiving a test email is not evidence that authentication passes, and DNS
+being correct is not evidence that mail is sent. Both are needed — see §8.
+
+---
+
+## 8. The delivery check
+
+**/admin/email**, administrators only.
+
+Shows what the running deployment will send as — provider, From, Reply-To and
+the origin links resolve against — then sends every message in the catalogue to
+the signed-in administrator through the production renderer and transport.
+Subjects gain a `[Test]` prefix; everything else is exactly what a real
+notification carries. Results come back per message, with Resend's message id.
+
+It exists because the alternative is posting reviews and owner responses on
+the live site, which has no delete path, to make production send the emails
+those events trigger.
+
+It takes no recipient, so it cannot mail anybody but the person pressing it; it
+runs three times an hour; it claims no notification dedupe key, so it can never
+suppress a real send; and it is recorded in the audit trail as
+`email_delivery_tested`, with the recipient's domain and never the address.
+
+**What to check in what arrives.** Open the original message:
+
+- `From: Livd <notifications@livd.site>` and `Reply-To: support@livd.site`
+- `Authentication-Results`: `dkim=pass header.i=@livd.site`, `spf=pass`, and
+  `dmarc=pass header.from=livd.site`
+- every link, including the one behind the wordmark, on `https://livd.site`
+
+The page cannot test sign-in email. Supabase sends that itself — see
+[`supabase/templates/README.md`](../supabase/templates/README.md).
+
+---
+
+## 9. Status — 17 September 2026
+
+| | State | Evidence |
+| --- | --- | --- |
+| DKIM | published | `resend._domainkey.livd.site`, 216-char key, read from the authoritative servers |
+| Return-path | published | `send` → `send.forge.rmta.net`; MX and SPF resolve |
+| DMARC | published, reports to nobody | `v=DMARC1; p=none;` — add `rua` (§3) |
+| Apex SPF | intact, single | the forwarder's record, untouched |
+| `RESEND_API_KEY` | Vercel Production only | live from deployment `f80022a` |
+| Notifications through Resend | **not yet sent** | the ledger's only row ever is a console-transport send from 12 September |
+| Sign-in email sender | **Supabase Auth** | a real link requested 17 September arrived from `noreply@mail.app.supabase.io`; its redirect to `https://livd.site/auth/callback` was correct |
