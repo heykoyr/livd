@@ -27,6 +27,7 @@
 
 import { readFileSync } from 'node:fs';
 import { Resolver } from 'node:dns/promises';
+import { request as httpRequest } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -95,6 +96,73 @@ function env(key) {
   }
 }
 
+/**
+ * Who is answering on an address that should have been Vercel's.
+ *
+ * Written after a full day was lost to a DNS record that looked, in the
+ * Namecheap UI, exactly as it was supposed to. `www` had published correctly;
+ * the apex had not, and the reason was invisible from the DNS layer — a URL
+ * Redirect service that had been deleted in the interface but never torn down
+ * behind it, still holding the apex and still answering on it.
+ *
+ * Two signals name the holder, and neither is in DNS:
+ *
+ *   - the `Server` header. Vercel says `Vercel`. Namecheap's redirect gateway
+ *     says `APISIX`, and an `openresty`/`APISIX` pair on a domain that is
+ *     supposed to be on Vercel is that service and nothing else.
+ *   - a redirect whose `Location` is the request's own URL. Nothing
+ *     legitimate does that. It is the fingerprint of a redirect record whose
+ *     destination has been cleared while the record itself still exists, and
+ *     it is why the domain served an infinite loop rather than an obvious
+ *     parking page that somebody would have recognised on sight.
+ *
+ * Best effort. A holder that refuses to answer is reported as unreachable
+ * rather than guessed at, and this never throws — a diagnosis that crashes
+ * is worse than one that says "could not tell".
+ */
+async function identifyHolder(ip) {
+  try {
+    // `node:http` rather than `fetch`, because the address has to be chosen
+    // rather than resolved: the point is to interrogate the specific host DNS
+    // just named, not whatever the name resolves to on a second lookup. fetch
+    // has no way to express that — `Host` is a forbidden header there, and
+    // undici ignores a `lookup` option — so this opens the socket at the IP
+    // and sets the header by hand, which is the only honest way to ask "who
+    // is answering at *this* address for this domain".
+    const { headers, server } = await new Promise((resolve, reject) => {
+      const request = httpRequest(
+        { host: ip, port: 80, path: '/', method: 'GET', headers: { Host: APEX }, timeout: 10_000 },
+        (res) => {
+          res.resume(); // drain, so the socket closes
+          resolve({ headers: res.headers, server: res.headers.server ?? 'unknown' });
+        },
+      );
+      request.on('timeout', () => request.destroy(new Error('timeout')));
+      request.on('error', reject);
+      request.end();
+    });
+
+    const location = headers.location ?? '';
+
+    const selfReferential =
+      location === `https://${APEX}/` || location === `http://${APEX}/`;
+
+    if (/apisix|openresty/i.test(server)) {
+      return selfReferential
+        ? `held by Namecheap's URL Redirect service (Server: ${server}), redirecting to itself — the record was deleted in the UI but never deprovisioned`
+        : `held by Namecheap's URL Redirect service (Server: ${server} → ${location || 'no redirect'})`;
+    }
+
+    if (selfReferential) {
+      return `redirecting to itself (Server: ${server}) — a redirect record with no destination still owns this name`;
+    }
+
+    return `answered by "${server}"${location ? ` → ${location}` : ''}, not Vercel`;
+  } catch {
+    return 'not a Vercel address, and it did not answer HTTP';
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * 1. DNS — does the domain point at Vercel, without losing the mail?
  * ------------------------------------------------------------------ */
@@ -109,8 +177,16 @@ async function checkDns() {
     const matches = VERCEL_APEX_IPS.some(
       (set) => set.length === got.length && [...set].sort().every((ip, i) => ip === got[i]),
     );
-    if (matches) pass('DNS · apex A record', `${APEX} → ${got.join(', ')}`);
-    else fail('DNS · apex A record', `${APEX} → ${got.join(', ')} — not a Vercel address`);
+    if (matches) {
+      pass('DNS · apex A record', `${APEX} → ${got.join(', ')}`);
+    } else {
+      // "Not a Vercel address" is true and useless. Whoever is holding the
+      // apex will answer an HTTP request and name themselves, so ask them —
+      // the difference between a parking page, a stale redirect service and
+      // somebody else's server is the whole of the diagnosis.
+      const holder = await identifyHolder(got[0]);
+      fail('DNS · apex A record', `${APEX} → ${got.join(', ')} — ${holder}`);
+    }
   }
 
   const cname = await tryResolve(() => resolver.resolveCname(WWW));

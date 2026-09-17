@@ -172,3 +172,59 @@ serve themselves, exactly as before.
 Local development is unchanged and must stay that way. `localhost:3000` is
 still on Supabase's Redirect URLs list and `npm run domain:check` asserts it —
 removing it to make production work would be a regression, not a cleanup.
+
+---
+
+## 7. The apex was held by a deleted redirect — 17 September 2026
+
+For a day `livd.site` resolved to `159.198.67.201` while the Namecheap
+Advanced DNS page showed the two Vercel A records, correctly entered. It was
+not propagation, and it was not a mistake in the records.
+
+### What the evidence was
+
+| Question | Answer |
+| --- | --- |
+| Do both authoritative servers agree? | Yes — `dns1`/`dns2.registrar-servers.com` both return `159.198.67.201` |
+| Is the zone stale or frozen? | No. The SOA serial moved `1789527043 → 1789645214` across the edits |
+| Do UI edits reach the zone at all? | **Yes** — `www.livd.site` CNAME → `d2a7240fb63a4b15.vercel-dns-017.com` was live |
+| Was it the classic host-field mistake? | No — `livd.site.livd.site` is NXDOMAIN |
+| A conflicting CNAME, AAAA or wildcard at the apex? | None |
+| What is `159.198.67.201`? | rDNS `poleward-expiratory.rdns.hosting.namecheap.net` |
+| What does it serve? | `Server: APISIX`, cert `CN=livd.site` issued by SSL.com |
+| Where does it redirect? | `308 → https://livd.site/` — **to itself** |
+
+The `www` row is the one that settles it. The same UI, the same zone, the same
+save: one record published and the other did not. So the interface is not out
+of sync with the backend — the apex specifically is owned by something else.
+
+`APISIX` is the gateway behind **Namecheap's URL Redirect service**, and the
+SSL.com certificate is the one that service provisions (Vercel issues Let's
+Encrypt — `www` has exactly that). A redirect whose `Location` is its own URL
+is a redirect record whose destination has been cleared while the record
+itself still exists. Deleting the row in Advanced DNS removed it from the
+display and from the zone's *visible* records; it did not deprovision the
+service, which still holds the apex and still answers on it.
+
+That is also why it was hard to see: a parking page would have been obvious on
+sight. An infinite 308 loop looks like a misconfigured site.
+
+### What it was not
+
+The hosting package is a red herring. `server146.web-hosting.com` resolves to
+`162.213.255.39`, which is not the address the apex points at — the cPanel
+account is not what is holding the name, even though it shares Namecheap's
+`hosting.namecheap.net` rDNS space.
+
+### Everything downstream was already correct
+
+`www.livd.site` served from Vercel throughout, with a valid Let's Encrypt
+certificate and the 308 to the apex working exactly as configured. Supabase's
+Site URL and redirect allow list are correct. The only broken thing was the
+apex A record, and every other failing check was a consequence of it.
+
+`identifyHolder()` in `scripts/domain-readiness.mjs` now performs this
+diagnosis automatically: when the apex is not Vercel's it opens a socket at
+the address DNS returned, sets the `Host` header by hand, and names whoever
+answers — rather than reporting the useless truth that it is "not a Vercel
+address".
