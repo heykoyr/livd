@@ -70,8 +70,17 @@ literally ask at the viewing. Every question states the evidence it came from.
 </tr>
 </table>
 
+![Explore](docs/images/explore.png)
+
+Explore is the surface for people who do not yet have an address in mind. It
+orders by where the reader is without limiting what they can reach, and says so
+in as many words: *"Search is worldwide. Nothing here is limited to where you
+are."* Below it, neighbourhood-level discovery, and a nearby control that asks
+for a location only once somebody presses it.
+
 More screens in [`docs/images/`](docs/images) — the resident verdict, category
-scores, the freshness panel, the timeline, and the empty states.
+scores, the freshness panel, the timeline, the empty states, the Trust & Safety
+console, and the audit trail.
 
 ---
 
@@ -153,6 +162,49 @@ request could change — the capability does not exist.
 Moderation is on the record too: a review is never deleted, only restatused, and
 every decision is written to an append-only log no role can edit.
 
+### A report opens a decision. It does not make one.
+
+A reader's report becomes a **case** — one investigation, however many reports it
+gathers — with its own priority, category, assignee and notes.
+
+![The Trust &amp; Safety case list](docs/images/trust-safety-cases.png)
+
+The sentence at the top of that screen is the whole design: *"Opening a case does
+nothing to the review it concerns — hiding or removing anything is a separate
+decision, with its own reason."* Investigating and acting are deliberately not
+the same gesture, because a console where looking into something and taking it
+down are one click apart will eventually take down the thing somebody only
+looked into.
+
+Around it: evidence preservation holds that stop material being deleted while a
+case is open, sanctions against accounts rather than only content, authority
+requests logged as disclosure records, and a privileged identity reveal that is
+itself audited — who looked at whose information, not only what they decided.
+
+*Enforced across [migrations 0019–0050](supabase/migrations), and attacked as each one landed — see [`docs/security-testing.md`](docs/security-testing.md).*
+
+### Standing is the strongest thing Livd can do to you, so it is said out loud
+
+An account is `active`, `restricted`, `suspended` or `banned`, and the sanction
+that changes it is a first-class record with a category, a reason and an expiry
+— not a flag somebody flips. Deleting an account severs its writing from it
+rather than erasing it: the reviews, owner replies and moderation record survive
+unattributed, while the shortlist, notifications, location checks and residency
+documents are destroyed.
+
+And the account is told. Two messages ignore the email preferences entirely:
+
+![Email preferences](docs/images/notification-preferences.png)
+
+> A decision that removes something you wrote or changes your account's standing
+> — a platform that can take your writing down and is under no obligation to
+> mention it is not one worth writing for.
+
+There is no newsletter, no digest and no marketing list, so there is nothing on
+that page to turn off that nobody asked for.
+
+*Enforced in [`supabase/migrations/0050_standing_and_the_record.sql`](supabase/migrations/0050_standing_and_the_record.sql) and `src/server/notify/`.*
+
 ### Global from the first commit
 
 Address structure, currency, property-type vocabulary and which review
@@ -178,15 +230,21 @@ rather than merely displays. Written up in [`docs/product-spec.md`](docs/product
 
 **Design.** The design system — tokens, type scale, palette, motion, responsive
 strategy, voice — specified in [`docs/design-system.md`](docs/design-system.md)
-and implemented as 65 components. No component library: a bought design system
+and implemented as 75 components. No component library: a bought design system
 is the fastest route to looking like a template. Every user-facing string lives
 in one typed file so a second locale is a sibling object rather than a
 component change.
 
 **Engineering.** The full application: Next.js App Router, the two-adapter data
 layer, the PostgreSQL schema with its RLS policies and database functions, the
-trust and safety pipeline, the verification architecture, the test suite, and
-the deployment.
+verification architecture, the Trust & Safety case system, the notification
+catalogue and its delivery path, the test suite, and the deployment — domain,
+DNS and mail authentication included.
+
+**Adversarial testing.** I attacked the deployed database as each role and wrote
+down what it refused, including the two occasions it refused nothing. That log
+is [`docs/security-testing.md`](docs/security-testing.md), and the findings in
+it are mine to have made and mine to have found.
 
 **What this is not.** There is no team here, so there is no evidence of
 collaboration, and no real users, so there is no adoption data. The seeded
@@ -230,8 +288,8 @@ library, no analytics SDK, no AI at runtime. The Content-Security-Policy permits
 `'self'` and the Supabase origin and nothing else; fonts are self-hosted, so
 rendering a page contacts no third party.
 
-`41` tables · `63` RLS policies · `100` database functions · `48` migrations ·
-`37` routes · `193` source files · `42` test files.
+`41` tables · `75` RLS policies · `105` database functions · `50` migrations ·
+`40` routes · `212` source files · `58` test files.
 
 Full detail in [`docs/architecture.md`](docs/architecture.md) and
 [`docs/database-schema.md`](docs/database-schema.md).
@@ -240,10 +298,23 @@ Full detail in [`docs/architecture.md`](docs/architecture.md) and
 
 ## Evidence
 
-- **427 tests** across 20 files (`npm test`), weighted toward the highest-risk
+- **953 tests** across 58 files (`npm test`), weighted toward the highest-risk
   code: scoring, the safety linter, rate limiting, burst detection, the
-  verification and account-deletion pipelines, the colour palette and the
-  international layer.
+  verification, sanction and account-deletion pipelines, the notification
+  catalogue, the colour palette and the international layer.
+- **90 recorded attacks against the live database**, in
+  [`docs/security-testing.md`](docs/security-testing.md). Each one impersonates
+  a signed-in browser session by setting the Postgres role and the JWT claims
+  PostgREST would set, and runs inside a transaction that is deliberately
+  aborted, so no production row is created or changed. It is a log rather than a
+  certificate: **two of the runs found real defects**, and both are written up
+  under the word they deserve. A moderator could rewrite `profiles.role` on any
+  account — *"PERMITTED — 1 row. The escalation was real"* — unexploited only
+  because no moderator had been appointed yet. And `reviews.author_id` was
+  readable by `anon`, returning a stable author key for all 222 published
+  reviews; a UUID is not a name, but a stable per-author key on a public row
+  still lets someone group everything one person has written. Both fixed, both
+  re-attacked afterwards to prove the fix.
 - **Zero axe-core violations** across 13 pages in a production build. The one
   violation axe still reports is a disabled pagination control, which WCAG 1.4.3
   exempts as an inactive component and which is `aria-hidden` besides.
@@ -275,10 +346,19 @@ Full detail in [`docs/architecture.md`](docs/architecture.md) and
 
 ## Status
 
-Deployed and working end to end. Not launched — there are no real reviews, and
-three things stand between the current build and a public launch: an email
-provider for magic links, error monitoring, and counsel's review of the three
-policy pages in each market.
+Deployed at [livd.site](https://livd.site) and working end to end. Not launched —
+there are no real reviews yet.
+
+Signing in works, through Google. Notifications are built and delivering:
+Livd sends its own mail through Resend from `notifications@livd.site`, SPF, DKIM
+and DMARC all pass, and `/admin/email` sends the whole catalogue through the
+production path so delivery can be checked without inventing content to trigger
+it. What is still missing is custom SMTP on Supabase's own sender, which is what
+the *sign-in link* goes through — until that is configured the link is single-use
+and Gmail's scanner spends it about fifteen seconds after delivery.
+
+The other two pre-launch items are unchanged: error monitoring, and a legal
+entity with counsel's review of the three policy pages in each market.
 
 **Deliberately not built.** Maps, because a pin on a residential building is a
 liability before it is a feature and the privacy design has to come first. Also
@@ -297,6 +377,9 @@ AI-generated prose. `docs/roadmap.md` has the reasoning and what comes next.
 | [`docs/brand-mark.md`](docs/brand-mark.md) | The standalone symbol, the favicon and app-icon system, and how to use them |
 | [`docs/database-schema.md`](docs/database-schema.md) | Every table and the reasoning behind it |
 | [`docs/deployment.md`](docs/deployment.md) | Supabase, Vercel, seeding, geocoding, environment |
+| [`docs/security-testing.md`](docs/security-testing.md) | 90 attacks against the live database, what each control refused, and the two findings that were real |
+| [`docs/domain.md`](docs/domain.md) | livd.site, the DNS records, and what must survive every edit |
+| [`docs/email.md`](docs/email.md) | The two mail paths, the five addresses, and why there is no `no-reply@` |
 | [`docs/legal-review.md`](docs/legal-review.md) | The briefing pack for counsel, and what the product does with personal data |
 | [`docs/roadmap.md`](docs/roadmap.md) | What shipped, known limitations, what is next |
 
