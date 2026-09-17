@@ -59,6 +59,10 @@ const SECTION_GROUPS: AdminNavGroup[] = [
       { href: '/admin/sanctions', label: copy.admin.sanctions },
     ],
   },
+  {
+    label: 'Operations',
+    items: [{ href: '/admin/email', label: copy.admin.emailDelivery }],
+  },
 ];
 
 /**

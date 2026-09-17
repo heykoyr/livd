@@ -47,6 +47,8 @@ export const ACTION_LABELS: Record<AdminAuditAction, string> = {
   authority_request_updated: 'Updated an authority request',
   disclosure_recorded: 'Recorded a disclosure',
 
+  email_delivery_tested: 'Sent the email delivery check',
+
   audit_log_read: 'Read the audit trail',
 };
 

@@ -1066,6 +1066,7 @@ export const copy = {
     actionReason: 'Reason for this decision',
     actionReasonHint: 'Recorded in the audit log. Not shown to the reviewer.',
     auditTrail: 'Audit trail',
+    emailDelivery: 'Email delivery',
   },
 
   common: {

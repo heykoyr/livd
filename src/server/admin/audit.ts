@@ -80,6 +80,9 @@ export type AdminAuditAction =
   | 'authority_request_updated'
   | 'disclosure_recorded'
 
+  /* Operations */
+  | 'email_delivery_tested'
+
   /* The trail itself */
   | 'audit_log_read';
 

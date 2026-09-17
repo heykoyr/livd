@@ -93,6 +93,16 @@ function replyTo(): string | null {
   return configured ?? DEFAULT_REPLY_TO;
 }
 
+/**
+ * Who a message is from and where a reply goes, as this deployment will send.
+ *
+ * For display on the delivery check, so an administrator can see the identity
+ * the provider will be asked to use before anything is sent. Never the key.
+ */
+export function senderIdentity(): { from: string; replyTo: string | null } {
+  return { from: fromAddress(), replyTo: replyTo() };
+}
+
 /** The domain only. What is safe to put in a log — see the note in `notify`. */
 export function recipientDomain(address: string): string {
   const at = address.lastIndexOf('@');

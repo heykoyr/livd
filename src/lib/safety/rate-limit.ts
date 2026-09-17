@@ -82,6 +82,13 @@ export const RATE_LIMITS = {
    */
   locationVerify: { limit: 12, windowSeconds: 3600 },
   /**
+   * The email delivery check. Each run sends every message in the catalogue to
+   * the administrator who asked, so it is a dozen real sends against the
+   * provider's quota and the sending domain's reputation. Three an hour is
+   * enough to fix something and try again; it is not enough to be a relay.
+   */
+  emailDeliveryTest: { limit: 3, windowSeconds: 3600 },
+  /**
    * "Properties near me". Needs no account, so it is limited by origin alone
    * and set generously — a real person may reasonably press it a few times
    * while walking.

@@ -1,3 +1,4 @@
+import type { DeliveryTestReport } from '@/server/admin/email';
 import type { AccountDeletionSummary } from '@/server/data/repository';
 import type {
   PropertyVerificationFailureReason,
@@ -145,6 +146,17 @@ export interface ModerationActionState {
 }
 
 export const initialModerationState: ModerationActionState = { error: null, message: null };
+
+/* -------------------------------------------------------------------------
+ * Email delivery check
+ * ---------------------------------------------------------------------- */
+
+export interface EmailDeliveryTestState {
+  error: string | null;
+  report: DeliveryTestReport | null;
+}
+
+export const initialEmailDeliveryTestState: EmailDeliveryTestState = { error: null, report: null };
 
 /* -------------------------------------------------------------------------
  * Claims and owner responses

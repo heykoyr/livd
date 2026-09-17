@@ -91,3 +91,9 @@ export {
   readUserDirectory,
   readUserDetail,
 } from './users';
+export {
+  sendDeliveryTest,
+  DELIVERY_TEST_KINDS,
+  type DeliveryTestReport,
+  type DeliveryTestResult,
+} from './email';
