@@ -445,7 +445,8 @@ strongest sanction returns the account to the next one still running, not
 straight to active.
 
 Row 10 gives the person on the receiving end the category, the written reason
-and the dates — and not who applied it. Naming the individual moderator to
+and the dates — and not who applied it. (Since 0050, not the written reason
+either: it is a note for colleagues. See "The Trust & Safety audit" below.) Naming the individual moderator to
 somebody they just sanctioned is how moderators get harassed, and the
 accountability that matters here is Livd's rather than any one person's.
 
@@ -1635,3 +1636,127 @@ anonymous. The attacker 0020 existed for was signed in. Both are now covered.
 
 Run on 16 September 2026: **66 passed, 0 failed** (`http-postgrest.mjs`) and
 nine of nine expected (`role-escalation-matrix.sql`).
+
+---
+
+## The Trust & Safety audit — 17 September 2026
+
+A read-only audit of the whole administrative layer, 0019 to 0049, before any
+change. Most of it held: server-side route protection, the role ladder, the
+masked directory, the audited identity reveal, cases, evidence versioning,
+authority requests, the atomic moderation trail and the audit feed. No IDOR,
+no anonymous path to an email address, nothing an ordinary account could read
+about somebody else. What it found was concentrated in one place — the
+distance between recording a decision about an account and honouring it — plus
+a collision between two promises the record makes.
+
+Every finding was reproduced against the live database before a line of the
+fix was written, with `scripts/security/sanctions-matrix.sql`. The same file was
+then run as a dry run with migration 0050 prepended — one statement batch, one
+transaction, aborted by the matrix's final `raise` — and only after that passed
+was 0050 applied. Nothing the matrix did was committed at any point; row counts
+in `user_sanctions`, `admin_audit_log` and `moderation_actions` were checked
+unchanged afterwards.
+
+### The matrix, before and after
+
+| # | Case | Before 0050 | After 0050 |
+| --- | --- | --- | --- |
+| 1 | Moderator bans through `livd_set_user_status` | **BUG** — account banned | refused — `Only an administrator may ban an account or lift a ban` |
+| 2 | Moderator un-bans through `livd_set_user_status` | **BUG** — standing now `active` | refused, still banned |
+| 3 | Moderator restricts a banned account | **BUG** — restriction replaced the ban | recorded, account still banned |
+| 4 | Banned author calls `livd_correct_review` | **BUG** — rewrote the review | refused — `This account cannot change its reviews while a restriction is in place` |
+| 5 | Banned author `UPDATE reviews SET body` | **BUG** — patched | refused, same message |
+| 6 | Suspended author inserts onto their review's child table | **BUG** — inserted | refused by RLS |
+| 7 | Correction to the category ratings alone | **BUG** — original rating gone, no snapshot | published ratings preserved |
+| 8 | Delete an account the append-only record refers to | **BUG** — `moderation_actions is append-only` | deleted; snapshot and sanction survive, unattributed |
+| 9 | Resident records a `succeeded` `identity_revealed` | **BUG** — written | refused — `Only staff may record a completed administrative action` |
+| 10 | Moderator records a `user_sanctioned` with no sanction | **BUG** — written | refused — `That action is recorded by the operation that performs it` |
+| 11 | Sanctioned account reads `livd_my_sanctions` | **BUG** — moderator's note returned | category and dates only |
+| 12 | `livd_notification_recipient` for a banned account | **BUG** — no row, so a ban could never be explained | row returned |
+| 13 | Control: moderator restricts and restores | allowed | allowed |
+| 14 | Control: lift a ban with a restriction still running | back to `restricted` | back to `restricted` |
+| 15 | Control: active author corrects their review | allowed | allowed |
+
+`role-escalation-matrix.sql` was re-run after 0050 and was unchanged, nine of
+nine — including the case that deletes a profile row, which is the path 0050's
+severance rule touches.
+
+### The ladder had two side doors
+
+0032 built restrict → moderator, suspend → Trust & Safety, ban → administrator,
+in both directions. `livd_set_user_status` predates `banned` and only checked
+for `suspended`, and it is still granted to `authenticated` although nothing in
+the console calls it. And `livd_apply_sanction` set the standing to whatever
+was just applied, so a moderator's seven-day restriction on a banned account
+ended the ban. Neither needed anything but a moderator session and the
+publishable key.
+
+Now the bare path requires the higher of the current and the new standing's
+tier, and applying a sanction sets the strongest one still running.
+
+### Banned was enforced less than suspended
+
+`getCurrentUser` treated `suspended` as signed out and had never heard of
+`banned`, which arrived later. RLS refused a banned account's inserts, but the
+correction path — `reviews_update_own`, `livd_correct_review` and the child-table
+predicate from 0048 — asks whether a review is yours, published and inside its
+window, and never whether you are in good standing. Fixed in both layers: the
+session signs a banned account out, and `reviews_guard_author_standing` plus
+`livd_review_is_open_for_me` refuse an author who is not active.
+
+### Two promises the record made collided
+
+0017 made account deletion sever rather than destroy: `SET NULL` on every actor
+column. 0020 onwards made those tables append-only, refusing every UPDATE. A
+foreign key performing `SET NULL` is an UPDATE — the lesson of 0018, relearnt —
+so nine columns could not be severed, and anybody who had corrected a review,
+been sanctioned, or been refused an admin action could not delete their account.
+The catalogue query that found all nine is summarised in the 0050 header.
+
+The append-only trigger now permits exactly one transition: a named account
+column going to null because that account no longer exists, with nothing else
+changing. That the parent row is already invisible inside the child's trigger
+during the cascade was tested on scratch tables before it was relied on, and so
+was the converse — a direct severing update while the account still exists is
+refused.
+
+### A test that passed for nothing
+
+`tests/safety/standing-enforcement.test.ts` signs a session cookie to check that
+a banned account is signed out. The first version signed it with the development
+secret, while `tests/setup.ts` sets a different one — so every cookie was
+invalid, every account was "signed out", and the banned and suspended cases
+passed for the wrong reason. The positive control beside them, an active account
+that must stay signed in, is what failed and gave it away. With the right key,
+the banned case was then run against the pre-fix session code and failed, which
+is the only evidence that it tests anything.
+
+### Also fixed in the application
+
+- The review-removal form said the reason was "Never shown to the reviewer". The
+  removal email quotes it to them. The label now says so, and warns against
+  describing who reported the review. The claim form says the same of a
+  rejection reason.
+- A sanction and its lifting are emailed to the account, carrying the category's
+  public description rather than the moderator's note. `review_removed` and
+  `review_restored` now ignore the preference switch, as the preferences page
+  has always claimed. See `docs/email.md` §6.
+- The user directory can filter by `banned`.
+
+### What this does not claim
+
+- `livd_expire_sanctions` still writes no audit entry when a sanction lapses,
+  sends no email, and recomputes the standing of every account that has ever
+  had a timed sanction end. A status set through `livd_set_user_status` on such
+  an account would be overwritten by the next hourly run. Nothing in the console
+  uses that path any more; it is recorded rather than fixed.
+- Whether a person under an active sanction may delete their account is a
+  policy question for counsel, not an engineering one. Today a restricted,
+  suspended or banned account cannot reach the deletion action.
+- The new emails were rendered and dispatched in tests and added to the
+  `/admin/email` delivery check, but have not yet been sent through Resend in
+  production. That needs an administrator to run the check after this deploys.
+- Security advisor, after 0050: no new finding. The SECURITY DEFINER warnings
+  are the same deliberate set 0021 and 0042 explain; the two new trigger
+  functions are not executable by any client role.

@@ -234,9 +234,14 @@ describe('audit', () => {
     const { runAdminAction, repository, actor } = await actingAs('trust_admin');
     const { z } = await import('zod');
 
+    // An action whose success this layer records. It used to be
+    // `identity_revealed`, which in the product never is: the reveal writes its
+    // own entry in the transaction that discloses the address, and since 0050 a
+    // succeeded `identity_revealed` written through the audit function is
+    // refused as a forgery. What this test pins is the wrapper, not the action.
     await runAdminAction(
       {
-        action: 'identity_revealed',
+        action: 'verification_evidence_accessed',
         requires: 'trust_admin',
         schema: z.object({ userId: z.string(), reason: z.string() }),
         subject: (input) => ({ type: 'user', id: input.userId }),
@@ -250,7 +255,7 @@ describe('audit', () => {
     const log = await repository.listAdminAudit();
     const entry = log.items[0];
 
-    expect(entry?.action).toBe('identity_revealed');
+    expect(entry?.action).toBe('verification_evidence_accessed');
     expect(entry?.outcome).toBe('succeeded');
     expect(entry?.actorId).toBe(actor.id);
     expect(entry?.actorRole).toBe('trust_admin');

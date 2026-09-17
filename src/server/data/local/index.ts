@@ -310,6 +310,27 @@ const SANCTION_REASONS: SanctionReason[] = [
  * `livd_is_super_admin`; this is the same three questions as one number, so a
  * severity check reads as a comparison rather than three branches.
  */
+/**
+ * Audit actions whose success is recorded by the operation itself, in the same
+ * transaction. Mirrors the list in `livd_record_admin_audit` (0050); a success
+ * written separately would describe something that did not happen.
+ */
+const RECORDED_BY_THE_OPERATION: ReadonlySet<string> = new Set([
+  'identity_revealed',
+  'user_sanctioned',
+  'user_sanction_lifted',
+  'user_role_changed',
+  'user_status_changed',
+  'authority_request_created',
+  'authority_request_updated',
+  'disclosure_recorded',
+  'review_status_changed',
+  'review_verification_changed',
+  'report_resolved',
+  'property_claim_decided',
+  'verification_decided',
+]);
+
 function adminRank(actor: UserProfile | undefined): number {
   if (!actor || actor.status !== 'active') return 0;
   if (actor.role === 'admin') return 3;
@@ -1043,6 +1064,14 @@ export class LocalRepository implements LivdRepository {
       const review = database.reviews.find((r) => r.id === id);
       if (!review || review.authorId !== authorId) {
         throw new Error('You do not have permission to edit this review');
+      }
+
+      // Standing binds the correction path, as `reviews_guard_author_standing`
+      // does in Postgres since 0050. A banned author does not get to spend the
+      // rest of the window rewriting what they were banned for.
+      const author = database.users.find((u) => u.id === authorId);
+      if (author && author.status !== 'active') {
+        throw new Error('This account cannot change its reviews while a restriction is in place');
       }
 
       if (!isCorrectableStatus(review.status)) {
@@ -2322,7 +2351,10 @@ export class LocalRepository implements LivdRepository {
         createdAt: nowIso(),
       });
 
-      target.status = input.action;
+      // The strongest sanction still standing, which includes this one. A
+      // restriction applied to a banned account is recorded, and the account
+      // stays banned — the same rule as `livd_apply_sanction` since 0050.
+      target.status = strongestStanding(database, input.userId);
 
       database.adminAudit.push({
         id: `audit-${shortId(12)}`,
@@ -2394,7 +2426,9 @@ export class LocalRepository implements LivdRepository {
       }
 
       const target = database.users.find((u) => u.id === sanction.userId);
-      if (target) target.status = strongestStanding(database, sanction.userId);
+      if (target && sanction.userId) {
+        target.status = strongestStanding(database, sanction.userId);
+      }
 
       database.adminAudit.push({
         id: `audit-${shortId(12)}`,
@@ -3252,6 +3286,14 @@ export class LocalRepository implements LivdRepository {
     await mutate((database) => {
       const actor = database.users.find((u) => u.id === entry.actorId);
 
+      // The two rules `livd_record_admin_audit` enforces since 0050.
+      if (entry.outcome === 'succeeded' && adminRank(actor) === 0) {
+        throw new Error('Only staff may record a completed administrative action');
+      }
+      if (entry.outcome === 'succeeded' && RECORDED_BY_THE_OPERATION.has(entry.action)) {
+        throw new Error('That action is recorded by the operation that performs it');
+      }
+
       database.adminAudit.push({
         id: `audit-${shortId(12)}`,
         actorId: actor?.id ?? null,
@@ -3829,12 +3871,15 @@ export class LocalRepository implements LivdRepository {
   async notificationRecipient(userId: string): Promise<NotificationRecipient | null> {
     const database = await getDatabase();
     const user = database.users.find((candidate) => candidate.id === userId);
-    if (!user || user.status === 'banned') return null;
+    // A banned account is returned, as 0050 made `livd_notification_recipient`
+    // return it: the dispatcher decides it receives only standing decisions.
+    if (!user) return null;
 
     return {
       userId: user.id,
       email: user.email,
       locale: user.preferredLocale,
+      status: user.status,
       preferences: preferencesOf(user),
     };
   }
@@ -3850,6 +3895,7 @@ export class LocalRepository implements LivdRepository {
         userId: user.id,
         email: user.email,
         locale: user.preferredLocale,
+        status: user.status,
         preferences: preferencesOf(user),
       }));
   }
@@ -4243,7 +4289,19 @@ export class LocalRepository implements LivdRepository {
         throw new Error('Only an administrator may act on a privileged account');
       }
 
-      if (status === 'suspended' && actor.role !== 'trust_admin' && actor.role !== 'admin') {
+      // The higher of where the account is and where it is going, as in
+      // `livd_set_user_status` since 0050: moving a banned account anywhere,
+      // or banning one, is an administrator's; a suspension either way is
+      // Trust & Safety's.
+      const tier = (value: UserProfile['status']) =>
+        value === 'banned' ? 3 : value === 'suspended' ? 2 : 1;
+      const required = Math.max(tier(user.status), tier(status));
+
+      if (required === 3 && actor.role !== 'admin') {
+        throw new Error('Only an administrator may ban an account or lift a ban');
+      }
+
+      if (required === 2 && actor.role !== 'trust_admin' && actor.role !== 'admin') {
         throw new Error('Suspending an account requires Trust and Safety authorisation');
       }
 
@@ -4315,6 +4373,19 @@ export class LocalRepository implements LivdRepository {
       }
       for (const report of db.reports) {
         if (report.reporterId === userId) report.reporterId = null;
+      }
+
+      // The append-only record is severed the same way since 0050, rather than
+      // refusing the deletion: the audit log, the snapshots a person's own
+      // corrections produced, and any sanction applied to the account.
+      for (const entry of db.adminAudit) {
+        if (entry.actorId === userId) entry.actorId = null;
+      }
+      for (const snapshot of db.reviewSnapshots) {
+        if (snapshot.changedBy === userId) snapshot.changedBy = null;
+      }
+      for (const sanction of db.sanctions) {
+        if (sanction.userId === userId) sanction.userId = null;
       }
 
       const locationChecksDestroyed = db.propertyVerifications.filter(

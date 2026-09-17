@@ -244,7 +244,7 @@ export interface LocalDatabase {
    */
   sanctions: Array<{
     id: string;
-    userId: string;
+    userId: string | null;
     action: SanctionAction;
     reasonKey: string;
     reason: string;

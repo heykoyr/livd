@@ -1215,7 +1215,8 @@ export interface SanctionReason {
  */
 export interface Sanction {
   id: string;
-  userId: string;
+  /** Null once the sanctioned account is deleted. The sanction stays, unattributed. */
+  userId: string | null;
   action: SanctionAction;
   reasonKey: string;
   reason: string;

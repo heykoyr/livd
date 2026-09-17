@@ -464,6 +464,12 @@ export interface NotificationRecipient {
   userId: string;
   email: string;
   locale: string;
+  /**
+   * The account's standing. A banned account is still returned, so that a
+   * decision about its own standing can reach it; the dispatcher decides
+   * what else it receives, which is nothing.
+   */
+  status: UserStatus;
   preferences: NotificationPreferences;
 }
 

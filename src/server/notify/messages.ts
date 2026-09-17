@@ -41,6 +41,24 @@ export type NotificationMessage =
   | { kind: 'claim_rejected'; propertyName: string; reason: string }
   | { kind: 'owner_new_review'; propertyName: string; propertySlug: string }
 
+  /* ---- To the account a standing decision is about ------------------ */
+  // The category and its public description, never the moderator's written
+  // reason: that field is a note for the next colleague and may describe what
+  // a report said. `endsAt` is an ISO timestamp, or null for no fixed end.
+  | {
+      kind: 'account_sanctioned';
+      action: 'restricted' | 'suspended' | 'banned';
+      reasonLabel: string;
+      reasonDescription: string;
+      endsAt: string | null;
+    }
+  | {
+      kind: 'account_sanction_lifted';
+      action: 'restricted' | 'suspended' | 'banned';
+      /** Whether another sanction still applies after this one. */
+      stillRestricted: boolean;
+    }
+
   /* ---- To staff ------------------------------------------------------ */
   | { kind: 'staff_report_opened'; propertyName: string; reason: string }
   | { kind: 'staff_case_opened'; reference: string; caseId: string; priority: string; summary: string }
@@ -84,6 +102,8 @@ const CATEGORY: Record<NotificationKind, NotificationCategory> = {
   claim_approved: 'trust_safety',
   claim_rejected: 'trust_safety',
   owner_new_review: 'property_responses',
+  account_sanctioned: 'trust_safety',
+  account_sanction_lifted: 'trust_safety',
   staff_report_opened: 'trust_safety',
   staff_case_opened: 'trust_safety',
   staff_authority_request: 'trust_safety',
@@ -92,6 +112,43 @@ const CATEGORY: Record<NotificationKind, NotificationCategory> = {
 
 export function categoryOf(kind: NotificationKind): NotificationCategory {
   return CATEGORY[kind];
+}
+
+/**
+ * Sent whatever the recipient's switches say.
+ *
+ * The preferences page promises two things are always sent: a sign-in link,
+ * and a decision that removes something a person wrote or changes their
+ * account's standing. Supabase sends the first. These are the second, and the
+ * dispatcher reads this set rather than each template remembering.
+ */
+export const ALWAYS_SENT: ReadonlySet<NotificationKind> = new Set<NotificationKind>([
+  'review_removed',
+  'review_restored',
+  'account_sanctioned',
+  'account_sanction_lifted',
+]);
+
+/**
+ * What a banned account is still written to.
+ *
+ * A ban is the one decision whose subject most needs telling, and the account
+ * receives nothing else afterwards: no confirmations, no replies from a
+ * property, nothing about content on a platform that has removed them.
+ */
+export const SENT_TO_BANNED: ReadonlySet<NotificationKind> = new Set<NotificationKind>([
+  'account_sanctioned',
+  'account_sanction_lifted',
+]);
+
+/** "24 September 2026", in UTC, so the date does not move with the server. */
+function formatDay(iso: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(iso));
 }
 
 export function renderNotification(message: NotificationMessage): RenderedNotification {
@@ -238,6 +295,70 @@ export function renderNotification(message: NotificationMessage): RenderedNotifi
           action: { label: 'Read it and respond', href: url(`/property/${message.propertySlug}#reviews`) },
           why: 'You are getting this because you have an approved claim on this property.',
           managePreferences: true,
+        }),
+      };
+
+    /* ------------------------------------------------------------------
+     * The account a standing decision is about
+     *
+     * Plain and specific: what happened, what it means in practice, until
+     * when, and how to ask for it to be looked at again. Nothing about who
+     * decided it, and nothing about what anybody reported.
+     * --------------------------------------------------------------- */
+
+    case 'account_sanctioned': {
+      const until = message.endsAt ? `until ${formatDay(message.endsAt)}` : 'until it is lifted';
+
+      const effect =
+        message.action === 'restricted'
+          ? `Your Livd account has been restricted ${until}. While it is, you cannot write, correct or report reviews, or change your account settings. You can still read everything on Livd.`
+          : message.action === 'suspended'
+            ? `Your Livd account has been suspended ${until}. While it is, you cannot sign in.`
+            : 'Your Livd account has been closed to contributions permanently, and you can no longer sign in.';
+
+      return {
+        category,
+        subject:
+          message.action === 'banned'
+            ? 'Your Livd account has been closed'
+            : `Your Livd account has been ${message.action}`,
+        ...renderEmail({
+          heading:
+            message.action === 'banned'
+              ? 'Your account has been closed'
+              : `Your account has been ${message.action}`,
+          paragraphs: [
+            effect,
+            `The reason recorded was: ${message.reasonLabel}. ${message.reasonDescription}`,
+            'Reviews you have already published stay on their property pages. This decision is about the account, not about anything in particular that you wrote.',
+            'If you think it is wrong, reply to this email and a person will look at it again.',
+          ],
+          action: { label: 'Content policy', href: url('/legal/content-policy') },
+          why: 'You are getting this because it concerns your Livd account.',
+          managePreferences: false,
+        }),
+      };
+    }
+
+    case 'account_sanction_lifted':
+      return {
+        category,
+        subject: 'A restriction on your Livd account has been lifted',
+        ...renderEmail({
+          heading: 'A restriction has been lifted',
+          paragraphs: [
+            message.action === 'banned'
+              ? 'The closure of your Livd account has been reversed.'
+              : `The ${message.action === 'suspended' ? 'suspension' : 'restriction'} on your Livd account has been lifted.`,
+            message.stillRestricted
+              ? 'Another restriction on the account is still in place, so some things remain unavailable for now.'
+              : 'Your account is back in good standing, and everything you could do before is available again.',
+          ],
+          ...(message.stillRestricted
+            ? {}
+            : { action: { label: 'Go to your account', href: url('/account') } }),
+          why: 'You are getting this because it concerns your Livd account.',
+          managePreferences: false,
         }),
       };
 

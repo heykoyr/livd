@@ -32,6 +32,16 @@ admin, resident and owner self-edits, re-inserting your own profile row as an
 admin, and a control asserting the legitimate write still works. It picks its
 own accounts and needs no ids set.
 
+`sanctions-matrix.sql` runs the account-standing matrix from the Trust &
+Safety audit of 17 September 2026: fifteen cases as `authenticated` — the
+sanction ladder through both of its side doors, a banned author rewriting a
+review, a ratings-only correction leaving no snapshot, deleting an account the
+append-only record refers to, forging audit entries, what the sanctioned person
+can read, and three controls. It picks its own accounts, creates its own fixture
+review, and commits nothing. Before migration 0050 it reported twelve `(BUG)`
+lines; after it, fifteen `(expected)`. The write-up is in
+`docs/security-testing.md`.
+
 `owner-response-matrix.sql` runs beside them, in the SQL editor or through
 `supabase db query`. Seventeen cases against the live database, as
 `authenticated` and as `anon`: who may post a property response, who may not,

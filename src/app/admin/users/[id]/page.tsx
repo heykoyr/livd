@@ -492,7 +492,7 @@ export default async function AdminUserPage({
                 )}
 
                 {sanction.isActive && !isSelf && (
-                  <LiftSanctionControls sanctionId={sanction.id} />
+                  <LiftSanctionControls sanctionId={sanction.id} userId={sanction.userId ?? ''} />
                 )}
               </li>
             ))}

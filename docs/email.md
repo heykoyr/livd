@@ -197,10 +197,32 @@ point `LIVD_EMAIL_FROM` at the same verified domain.
 
 ## 6. What is sent, and once
 
-The catalogue is a closed union in `src/server/notify/messages.ts`: twelve
+The catalogue is a closed union in `src/server/notify/messages.ts`: fourteen
 messages, each with its subject, body, call to action and the preference that
 governs it. Nothing sends mail except through it, so "what does Livd email
 people" is answerable by reading one file.
+
+Two sets in the same file decide what a switch cannot turn off:
+
+- **`ALWAYS_SENT`** — `review_removed`, `review_restored`, `account_sanctioned`
+  and `account_sanction_lifted`. The preferences page promises that a decision
+  removing something a person wrote, or changing their account's standing,
+  reaches them whatever is switched off. Until 17 September 2026 the dispatcher
+  consulted the "Your reviews" switch for a removal anyway, and no email for a
+  change of standing existed at all.
+- **`SENT_TO_BANNED`** — the two standing messages, and nothing else. Since
+  migration 0050 `livd_notification_recipient` returns a banned account, so a
+  ban can be explained to the person banned; the dispatcher then refuses that
+  account everything that is not about its own standing.
+
+A standing message carries the sanction's category and its public description,
+never the moderator's written reason — that field is a note for the next
+colleague and may describe what a report said. A removal message *does* quote
+the moderator's reason, and the removal form now says so.
+
+The delivery check at `/admin/email` sends all fourteen. The production run on
+17 September 2026 recorded below predates the two standing messages, which is
+why it reads twelve.
 
 **Idempotency is a database constraint, not a convention.** `notify()` claims a
 unique `dedupe` key *before* rendering the message, so a retried Server Action,

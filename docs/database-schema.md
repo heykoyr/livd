@@ -241,6 +241,28 @@ review's status.**
 `subject_id`, `action`, `reason`, `previous_status`, `new_status`,
 `metadata` jsonb. No `UPDATE` or `DELETE` grant to any role.
 
+**`user_sanctions`** (0032, 0050) — `user_id`, `action` (`restricted` |
+`suspended` | `banned`), `reason_key`, `reason`, `case_id`, `applied_by`,
+`starts_at`, `ends_at`, `lifted_at`/`lifted_by`/`lifted_reason`. Lifted, never
+deleted. `profiles.status` is the strongest sanction still running, and every
+writer computes it that way — 0050 fixed `livd_apply_sanction`, which set it to
+whatever was just applied. `user_id` is `SET NULL` on account deletion, so the
+sanction outlives the account unattributed. `livd_my_sanctions` gives the
+account its own category, description and dates, never the written reason.
+
+**Append-only, with one exception.** `moderation_actions`, `admin_audit_log`,
+`review_snapshots`, `case_events`, `case_notes` and `disclosure_records` are
+guarded by `livd_forbid_mutation_except_severance(<account columns>)`: every
+UPDATE and DELETE is refused except an account column going to null because the
+account it names no longer exists, with nothing else changing. Without it the
+`SET NULL` foreign keys from 0017 were refused, and account deletion failed for
+anybody the record remembered.
+
+**`review_snapshots`** is written by `livd_snapshot_review` before a review's
+body, status, level, overall rating or recommendation changes — and, since
+0050, before every author correction, because a correction to the category
+ratings alone changes only a child table the trigger cannot see.
+
 **`verification_records`** — `subject_type`, `subject_id`, `method`,
 `evidence_url` (private storage bucket), `outcome`, `reviewed_by`, `notes`,
 `expires_at`. **RLS grants `select` to `service_role` only.** No authenticated

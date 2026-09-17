@@ -2478,6 +2478,8 @@ export class SupabaseRepository implements LivdRepository {
       userId: row.user_id,
       email: row.email,
       locale: 'en',
+      // `livd_notification_staff` returns active accounts only.
+      status: 'active' as const,
       // Staff mail follows the role, so the switches are not consulted. The
       // shape is filled in rather than faked absent, so a caller that does
       // check one is not surprised by undefined.
@@ -2805,7 +2807,7 @@ export class SupabaseRepository implements LivdRepository {
 
     return ((data ?? []) as Array<{
       id: string;
-      user_id: string;
+      user_id: string | null;
       action: SanctionAction;
       reason_key: string;
       reason: string;
@@ -4216,6 +4218,7 @@ function toRecipient(row: NotificationRecipientRow): NotificationRecipient {
     userId: row.user_id,
     email: row.email,
     locale: row.locale ?? 'en',
+    status: row.status as UserProfile['status'],
     preferences: {
       reviewUpdates: row.email_review_updates,
       propertyResponses: row.email_property_responses,

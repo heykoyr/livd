@@ -90,14 +90,18 @@ const SANCTION_COLUMNS: Array<DataColumn<Sanction>> = [
     key: 'account',
     header: 'Account',
     primary: true,
-    cell: (sanction) => (
-      <Link
-        href={`/admin/users/${sanction.userId}`}
-        className="font-mono text-label text-ink underline-offset-4 hover:underline"
-      >
-        {sanction.userId.slice(0, 8)}
-      </Link>
-    ),
+    cell: (sanction) =>
+      sanction.userId ? (
+        <Link
+          href={`/admin/users/${sanction.userId}`}
+          className="font-mono text-label text-ink underline-offset-4 hover:underline"
+        >
+          {sanction.userId.slice(0, 8)}
+        </Link>
+      ) : (
+        // The account was deleted. The sanction outlives it, unattributed.
+        <span className="text-label text-ink-subtle">Account deleted</span>
+      ),
   },
   {
     key: 'sanction',

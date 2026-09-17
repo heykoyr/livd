@@ -49,6 +49,7 @@ const RECOGNISED_DATABASE_REFUSALS = [
   'Only a moderator may change an account standing',
   'Only an administrator may act on a privileged account',
   'Suspending an account requires Trust and Safety authorisation',
+  'Only an administrator may ban an account or lift a ban',
   'You cannot change your own role',
   'You cannot change your own standing',
   'A reason is required, for the audit trail',

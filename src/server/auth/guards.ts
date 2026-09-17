@@ -66,9 +66,11 @@ export function canAccessIdentity(user: UserProfile | null): boolean {
 export async function requireUser(): Promise<UserProfile> {
   const user = await getCurrentUser();
   if (!user) throw new AuthorisationError('You need to be signed in to do this.');
-  if (user.status === 'restricted') {
+  // The session already signs out suspended and banned accounts. Checked again
+  // here so a Server Action does not depend on that staying true.
+  if (user.status !== 'active') {
     throw new AuthorisationError(
-      'Your account is restricted while a moderator reviews recent activity.',
+      'Your account is restricted, so this is not available at the moment.',
     );
   }
   return user;

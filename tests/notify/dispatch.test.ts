@@ -92,6 +92,7 @@ const REVIEWER: NotificationRecipient = {
   userId: 'u1',
   email: 'someone@example.com',
   locale: 'en',
+  status: 'active',
   preferences: ALL_ON,
 };
 
@@ -148,8 +149,8 @@ describe('sending once', () => {
 
   it('claims per recipient on a staff fan-out, so one bounce is not everybody', async () => {
     const staff: NotificationRecipient[] = [
-      { userId: 'm1', email: 'a@livd.test', locale: 'en', preferences: ALL_ON },
-      { userId: 'm2', email: 'b@livd.test', locale: 'en', preferences: ALL_ON },
+      { userId: 'm1', email: 'a@livd.test', locale: 'en', status: 'active', preferences: ALL_ON },
+      { userId: 'm2', email: 'b@livd.test', locale: 'en', status: 'active', preferences: ALL_ON },
     ];
     const fake = fakeRepository({ staff });
     getRepository.mockResolvedValue(fake.repository);
@@ -213,6 +214,7 @@ describe('respecting the switch', () => {
           userId: 'm1',
           email: 'a@livd.test',
           locale: 'en',
+          status: 'active',
           preferences: { reviewUpdates: false, propertyResponses: false, trustSafety: false },
         },
       ],
@@ -236,6 +238,73 @@ describe('respecting the switch', () => {
 
     expect(sent).toHaveLength(0);
     expect(fake.settled[0]).toMatchObject({ status: 'skipped' });
+  });
+});
+
+describe('what is always sent', () => {
+  const EVERYTHING_OFF: NotificationPreferences = {
+    reviewUpdates: false,
+    propertyResponses: false,
+    trustSafety: false,
+  };
+
+  it('sends a removal to somebody who turned every switch off', async () => {
+    // The preferences page promises this, under "Always sent". Until 0050 the
+    // dispatcher consulted the "Your reviews" switch for it anyway.
+    const fake = fakeRepository({ recipient: { ...REVIEWER, preferences: EVERYTHING_OFF } });
+    getRepository.mockResolvedValue(fake.repository);
+
+    await notify({
+      to: 'u1',
+      dedupe: 'review_removed:r1:reason',
+      message: { kind: 'review_removed', propertyName: 'The Franklin', reason: 'Named a person.' },
+    });
+
+    expect(sent).toHaveLength(1);
+  });
+
+  it('sends a standing decision to somebody who turned every switch off', async () => {
+    const fake = fakeRepository({ recipient: { ...REVIEWER, preferences: EVERYTHING_OFF } });
+    getRepository.mockResolvedValue(fake.repository);
+
+    await notify({
+      to: 'u1',
+      dedupe: 'account_sanctioned:s1',
+      message: {
+        kind: 'account_sanctioned',
+        action: 'restricted',
+        reasonLabel: 'Spam',
+        reasonDescription: 'Promotional or automated posting.',
+        endsAt: null,
+      },
+    });
+
+    expect(sent).toHaveLength(1);
+  });
+
+  it('tells a banned account why, and nothing else', async () => {
+    const fake = fakeRepository({ recipient: { ...REVIEWER, status: 'banned' } });
+    getRepository.mockResolvedValue(fake.repository);
+
+    await notify({
+      to: 'u1',
+      dedupe: 'account_sanctioned:s2',
+      message: {
+        kind: 'account_sanctioned',
+        action: 'banned',
+        reasonLabel: 'Threats',
+        reasonDescription: 'Content threatening harm to a person.',
+        endsAt: null,
+      },
+    });
+    await notify({ to: 'u1', dedupe: 'review_published:r7', message: MESSAGE });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.subject).toMatch(/closed/);
+    expect(fake.settled.find((s) => s.dedupeKey === 'review_published:r7')).toMatchObject({
+      status: 'skipped',
+      detail: 'account is banned',
+    });
   });
 });
 

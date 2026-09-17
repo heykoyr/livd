@@ -59,6 +59,18 @@ const SAMPLES: Record<NotificationKind, NotificationMessage> = {
     propertyName: 'The Franklin',
     propertySlug: 'the-franklin-brooklyn',
   },
+  account_sanctioned: {
+    kind: 'account_sanctioned',
+    action: 'suspended',
+    reasonLabel: 'Harassment',
+    reasonDescription: 'Targeted abuse of another person.',
+    endsAt: '2026-09-24T12:00:00.000Z',
+  },
+  account_sanction_lifted: {
+    kind: 'account_sanction_lifted',
+    action: 'suspended',
+    stillRestricted: false,
+  },
   staff_report_opened: {
     kind: 'staff_report_opened',
     propertyName: 'The Franklin',

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ALWAYS_SENT,
   categoryOf,
   renderNotification,
   type NotificationKind,
@@ -59,6 +60,18 @@ const SAMPLES: Record<NotificationKind, NotificationMessage> = {
     kind: 'owner_new_review',
     propertyName: 'The Franklin',
     propertySlug: 'the-franklin-brooklyn',
+  },
+  account_sanctioned: {
+    kind: 'account_sanctioned',
+    action: 'suspended',
+    reasonLabel: 'Harassment',
+    reasonDescription: 'Targeted abuse of another person.',
+    endsAt: '2026-09-24T12:00:00.000Z',
+  },
+  account_sanction_lifted: {
+    kind: 'account_sanction_lifted',
+    action: 'suspended',
+    stillRestricted: false,
   },
   staff_report_opened: {
     kind: 'staff_report_opened',
@@ -151,6 +164,35 @@ describe('the notification catalogue', () => {
         'Choose which emails you get',
       );
     }
+  });
+
+  it('offers no opt-out from anything the dispatcher always sends', () => {
+    for (const kind of ALWAYS_SENT) {
+      expect(renderNotification(SAMPLES[kind]).text, kind).not.toContain(
+        'Choose which emails you get',
+      );
+    }
+  });
+
+  it('tells a sanctioned person the category, the end date and how to ask again', () => {
+    const { subject, text } = renderNotification(SAMPLES.account_sanctioned);
+
+    expect(subject).toBe('Your Livd account has been suspended');
+    expect(text).toContain('Harassment');
+    expect(text).toContain('24 September 2026');
+    expect(text).toMatch(/reply to this email/i);
+    // Their published reviews are not what the decision is about.
+    expect(text).toMatch(/stay on their property pages/);
+  });
+
+  it('never names who applied a sanction, or what anybody reported', () => {
+    // The message type has no field for either. This asserts it stays that way.
+    const { html, text } = renderNotification(SAMPLES.account_sanctioned);
+    const all = `${text}
+${html}`.toLowerCase();
+
+    expect(all).not.toMatch(/moderator [a-z]+ (applied|decided)/);
+    expect(all).not.toMatch(/report(ed|er)/);
   });
 
   it('offers an opt-out from the routine ones', () => {

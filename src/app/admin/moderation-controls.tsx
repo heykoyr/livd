@@ -69,8 +69,16 @@ export function ReviewStatusControls({
           maxLength={500}
           placeholder="Why this decision?"
         />
+        {/*
+          This used to say "Never shown to the reviewer", and the removal email
+          quotes it to them word for word. A moderator who believed the label
+          could have written who reported the review into a message to its
+          author, which is the one disclosure the anonymity model exists to
+          prevent.
+        */}
         <span className="text-micro text-ink-subtle">
-          Recorded in the audit log. Never shown to the reviewer.
+          Recorded in the audit log. If you remove the review, this is quoted to its author in
+          the removal email — do not describe who reported it.
         </span>
       </label>
 
@@ -209,7 +217,8 @@ export function ClaimControls({ claimId }: { claimId: string }) {
 
       <p className="text-micro text-ink-subtle">
         Approving gives this party a public voice on the property page. One approved claim per
-        property — revoking an existing one is a separate decision.
+        property — revoking an existing one is a separate decision. If you reject it, the reason
+        is quoted to the claimant.
       </p>
 
       <Feedback state={state} />

@@ -202,7 +202,8 @@ describe('what it sends', () => {
     const result = await sendDeliveryTest({ kind: 'all' });
 
     expect(result.ok && result.data.results.map((r) => r.kind)).toEqual([...DELIVERY_TEST_KINDS]);
-    expect(sent).toHaveLength(12);
+    // One send per kind in the catalogue, however many that becomes.
+    expect(sent).toHaveLength(DELIVERY_TEST_KINDS.length);
   });
 
   it('marks every message as a test, in the subject and in a header', async () => {

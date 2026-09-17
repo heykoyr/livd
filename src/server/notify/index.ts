@@ -3,7 +3,13 @@ import 'server-only';
 import type { AdminRole } from '@/types/domain';
 import { getRepository } from '@/server/data';
 import type { NotificationRecipient } from '@/server/data/repository';
-import { categoryOf, renderNotification, type NotificationMessage } from './messages';
+import {
+  ALWAYS_SENT,
+  categoryOf,
+  renderNotification,
+  SENT_TO_BANNED,
+  type NotificationMessage,
+} from './messages';
 import { notificationHeaders } from './shell';
 import { recipientDomain, sendEmail } from './transport';
 
@@ -85,6 +91,11 @@ export async function notify(input: NotifyInput): Promise<void> {
     const recipient = await repository.notificationRecipient(input.to);
     if (!recipient) {
       await settle(input.dedupe, 'skipped', 'no deliverable address');
+      return;
+    }
+
+    if (recipient.status === 'banned' && !SENT_TO_BANNED.has(input.message.kind)) {
+      await settle(input.dedupe, 'skipped', 'account is banned');
       return;
     }
 
@@ -191,6 +202,10 @@ async function settle(
 }
 
 function wants(recipient: NotificationRecipient, message: NotificationMessage): boolean {
+  // A decision about somebody's own writing or standing is not something the
+  // preferences page lets them switch off, and it says so.
+  if (ALWAYS_SENT.has(message.kind)) return true;
+
   switch (categoryOf(message.kind)) {
     case 'review_updates':
       return recipient.preferences.reviewUpdates;

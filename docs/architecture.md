@@ -208,6 +208,8 @@ list and search ordering.
 | Review level integrity | `livd_derive_review_verification`, a BEFORE INSERT trigger, derives `verification_level` from the verification a review points at and refuses one belonging to another person or another property |
 | Bot mitigation | `src/server/safety/captcha.ts`, called by the submit action before the schema is parsed. Whether a token is required is read from `TURNSTILE_SECRET_KEY` on the server, so a caller who never rendered the widget meets the same wall. A definite "no" fails the submission; an unreachable Cloudflare does not, for the same reason the rate limiter degrades rather than closing |
 | Right of reply | An approved claimant may post one public response per review of their property. `owner_responses_insert` is the control; the check in the Server Action exists only to produce a better message than a policy refusal can. `scripts/security/owner-response-matrix.sql` runs the whole matrix against the live database and rolls back |
+| Account standing | Sanctions in `user_sanctions`; restrict is a moderator's, suspend Trust & Safety's, ban an administrator's, in both directions, enforced in `livd_apply_sanction`, `livd_lift_sanction` and `livd_set_user_status`. The standing is always the strongest sanction still running. A suspended or banned account is signed out by `getCurrentUser`; any account not `active` is refused by `requireUser`, by every INSERT policy, and — since 0050 — by `reviews_guard_author_standing` on the correction path |
+| Append-only record | `moderation_actions`, `admin_audit_log`, `review_snapshots`, `case_events`, `case_notes`, `disclosure_records` refuse every UPDATE and DELETE by trigger, except the one severance account deletion performs: an account column going to null because that account no longer exists (0050). A sanction outlives its account the same way |
 | Authorisation | `requireUser` / `requireRole` guards; RLS as the second, authoritative layer |
 
 **Defence in depth is the rule.** Every write is checked in the Server Action
@@ -228,6 +230,7 @@ no marketing list. Three audiences, one dispatcher.
 | A claim is approved or refused | The claimant |
 | A review is reported · a claim is submitted | Moderators and above |
 | A high or critical case · an authority request | Trust & Safety and above |
+| An account is sanctioned, or a sanction is lifted | The account — including a banned one |
 
 **Nobody is told they were reported.** A report is not a decision — reporting
 does nothing to a review on its own — so an email about one would tell an
@@ -259,7 +262,10 @@ address, never the user id, never the message.
 
 Recipients choose what reaches them at `/account/notifications`. Two things
 are not optional: a sign-in link, and a decision that removes something they
-wrote or changes their account's standing.
+wrote or changes their account's standing. The second is `ALWAYS_SENT` in
+`src/server/notify/messages.ts`, and the dispatcher reads it — until 0050 the
+page promised it and the dispatcher did not honour it. A banned account receives
+the standing messages and nothing else (`SENT_TO_BANNED`).
 
 ---
 

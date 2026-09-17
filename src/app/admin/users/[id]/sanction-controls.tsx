@@ -242,12 +242,20 @@ export function ApplySanctionControls({
   );
 }
 
-export function LiftSanctionControls({ sanctionId }: { sanctionId: string }) {
+export function LiftSanctionControls({
+  sanctionId,
+  userId,
+}: {
+  sanctionId: string;
+  userId: string;
+}) {
   const [state, formAction, pending] = useActionState(liftSanction, initialModerationState);
 
   return (
     <form action={formAction} className="mt-2.5 flex flex-col gap-2">
       <input type="hidden" name="sanctionId" value={sanctionId} />
+      {/* Used only to find who to tell, and checked against the sanction itself. */}
+      <input type="hidden" name="userId" value={userId} />
 
       <div className="flex flex-wrap items-center gap-2">
         <label className="sr-only" htmlFor={`lift-${sanctionId}`}>

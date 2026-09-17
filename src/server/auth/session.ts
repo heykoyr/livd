@@ -102,9 +102,21 @@ async function getLocalUser(): Promise<UserProfile | null> {
   const repository = await getRepository();
   const user = await repository.getUserById(userId);
 
-  // A suspended account is treated as signed out everywhere, without a special
-  // case at each call site.
-  return user && user.status !== 'suspended' ? user : null;
+  return user && !isLockedOut(user) ? user : null;
+}
+
+/**
+ * Suspended and banned accounts are treated as signed out everywhere, without
+ * a special case at each call site.
+ *
+ * `banned` used to be missing here. It arrived with the sanction system (0031)
+ * after this check was written for `suspended`, so the most severe sanction
+ * left a person signed in while the lighter one signed them out. Row Level
+ * Security still refused their new contributions, but everything that is not
+ * an INSERT — correcting a review inside its window, above all — carried on.
+ */
+function isLockedOut(user: UserProfile): boolean {
+  return user.status === 'suspended' || user.status === 'banned';
 }
 
 async function getSupabaseUser(): Promise<UserProfile | null> {
@@ -121,7 +133,7 @@ async function getSupabaseUser(): Promise<UserProfile | null> {
     (await repository.getUserById(user.id)) ??
     (await repository.upsertUser({ id: user.id, email: user.email }));
 
-  return profile.status === 'suspended' ? null : profile;
+  return isLockedOut(profile) ? null : profile;
 }
 
 /* -------------------------------------------------------------------------

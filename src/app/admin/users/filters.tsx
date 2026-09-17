@@ -85,6 +85,7 @@ export function DirectoryFilters({
           <option value="active">Active</option>
           <option value="restricted">Restricted</option>
           <option value="suspended">Suspended</option>
+          <option value="banned">Banned</option>
         </FilterSelect>
       </div>
 

@@ -67,7 +67,7 @@ export async function changeUserRole(raw: unknown): Promise<AdminResult<null>> {
 
 const statusSchema = z.object({
   userId: z.string().min(1).max(80),
-  status: z.enum(['active', 'restricted', 'suspended']),
+  status: z.enum(['active', 'restricted', 'suspended', 'banned']),
   reason: z.string().trim().min(3, 'Record why, for the audit trail.').max(500),
 });
 
@@ -106,7 +106,7 @@ const directorySchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(25),
   search: z.string().trim().max(320).nullable().default(null),
   role: z.enum(['resident', 'owner', 'moderator', 'trust_admin', 'admin']).nullable().default(null),
-  status: z.enum(['active', 'restricted', 'suspended']).nullable().default(null),
+  status: z.enum(['active', 'restricted', 'suspended', 'banned']).nullable().default(null),
   hasVerifiedReviews: z.boolean().nullable().default(null),
   hasReports: z.boolean().nullable().default(null),
   minReviews: z.number().int().min(1).max(1000).nullable().default(null),

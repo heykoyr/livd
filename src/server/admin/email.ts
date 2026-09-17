@@ -60,6 +60,8 @@ export const DELIVERY_TEST_KINDS = [
   'claim_approved',
   'claim_rejected',
   'owner_new_review',
+  'account_sanctioned',
+  'account_sanction_lifted',
   'staff_report_opened',
   'staff_case_opened',
   'staff_authority_request',
@@ -90,7 +92,7 @@ const schema = z.object({
 
 /**
  * The provider's per-second ceiling, with room. Resend refuses bursts above a
- * few requests a second with a 429, and twelve back-to-back sends would read
+ * few requests a second with a 429, and fourteen back-to-back sends would read
  * as "half the catalogue is broken" when nothing is.
  *
  * Applied only when a provider is actually being called. With no key there is
@@ -173,6 +175,18 @@ function samples(
       reason: 'This is a delivery check. No claim was decided.',
     },
     owner_new_review: { kind: 'owner_new_review', propertyName, propertySlug },
+    account_sanctioned: {
+      kind: 'account_sanctioned',
+      action: 'restricted',
+      reasonLabel: 'Delivery check',
+      reasonDescription: 'This is a delivery check. No account was restricted.',
+      endsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+    },
+    account_sanction_lifted: {
+      kind: 'account_sanction_lifted',
+      action: 'restricted',
+      stillRestricted: false,
+    },
     staff_report_opened: {
       kind: 'staff_report_opened',
       propertyName,
