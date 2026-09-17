@@ -279,6 +279,6 @@ The page cannot test sign-in email. Supabase sends that itself — see
 | DMARC | published, reporting | `v=DMARC1; p=none; rua=mailto:dmarc@livd.site;` |
 | Apex SPF | intact, single | the forwarder's record, untouched |
 | `RESEND_API_KEY` | Vercel Production only | live from deployment `f80022a` |
-| Notifications through Resend | **accepted, 12 of 12** | delivery check at 14:32 UTC, run by an administrator in production: audit entry `email_delivery_tested`, provider `resend`, `sent: 12, failed: 0`. The notification ledger was untouched, as designed |
+| Notifications through Resend | **delivered and authenticated** | delivery check at 14:32 UTC, run by an administrator in production: audit entry `email_delivery_tested`, provider `resend`, `sent: 12, failed: 0`; one message opened in the receiving inbox showed `dmarc=pass` for `livd.site`. The notification ledger was untouched, as designed |
 | Sign-in email | **Livd, authenticated** | a real link requested 17 September 14:26 UTC arrived in four seconds as `Livd <notifications@livd.site>`, subject `Your Livd sign-in link`, Livd's template; Gmail recorded `dkim=pass header.i=@livd.site header.s=resend`, `spf=pass` on `rsend.livd.site`, `dmarc=pass header.from=livd.site`; redirect to `https://livd.site/auth/callback` |
 | Resend domain | verified in effect | Resend accepted and DKIM-signed a send as `@livd.site`, which it refuses for an unverified domain |
