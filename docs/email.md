@@ -66,8 +66,15 @@ Resend usually asks for:
 | Type | Host | Value | Purpose |
 | --- | --- | --- | --- |
 | TXT | `resend._domainkey` | `p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQ…` (216-char key) | DKIM public key |
-| CNAME | `send` | `send.forge.rmta.net` | Return-Path: that host carries the MX (`feedback.forge.rmta.net`) and the SPF |
-| TXT | `_dmarc` | `v=DMARC1; p=none;` | DMARC — see §3 |
+| CNAME | `rsend` | `rsend-euw1.forge.rmta.net` | Return-Path **in use**: carries MX `feedback-smtp.eu-west-1.amazonses.com` and `v=spf1 include:amazonses.com ~all` |
+| CNAME | `send` | `send.forge.rmta.net` | A second return-path Resend issued: MX `feedback.forge.rmta.net` and its SPF |
+| TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:dmarc@livd.site;` | DMARC — see §3 |
+
+**`rsend` is the one real mail uses, and it is the one that looks like a
+duplicate.** A sign-in email sent through Resend on 17 September 2026 carried
+`Return-Path: …@rsend.livd.site` and passed SPF there. Deleting `rsend` as
+untidy would fail SPF on every message while `send` went on resolving
+perfectly, so `npm run domain:check` treats a missing `rsend` as blocking.
 
 **An earlier version of this table was wrong, and it is worth saying how.** It
 listed an MX and a TXT on `send` carrying `include:amazonses.com` — the shape
@@ -104,9 +111,7 @@ with the mail the domain already handles.
 
 ## 3. DMARC
 
-**Published now:** `v=DMARC1; p=none;`
-
-**Should be:**
+**Published** (updated 17 September 2026 — it previously had no `rua`):
 
 | Type | Host | Value |
 | --- | --- | --- |
@@ -270,9 +275,10 @@ The page cannot test sign-in email. Supabase sends that itself — see
 | | State | Evidence |
 | --- | --- | --- |
 | DKIM | published | `resend._domainkey.livd.site`, 216-char key, read from the authoritative servers |
-| Return-path | published | `send` → `send.forge.rmta.net`; MX and SPF resolve |
-| DMARC | published, reports to nobody | `v=DMARC1; p=none;` — add `rua` (§3) |
+| Return-path | published, and passing | `rsend` → `rsend-euw1.forge.rmta.net` carries live mail; `send` also resolves |
+| DMARC | published, reporting | `v=DMARC1; p=none; rua=mailto:dmarc@livd.site;` |
 | Apex SPF | intact, single | the forwarder's record, untouched |
 | `RESEND_API_KEY` | Vercel Production only | live from deployment `f80022a` |
 | Notifications through Resend | **not yet sent** | the ledger's only row ever is a console-transport send from 12 September |
-| Sign-in email sender | **Supabase Auth** | a real link requested 17 September arrived from `noreply@mail.app.supabase.io`; its redirect to `https://livd.site/auth/callback` was correct |
+| Sign-in email | **Livd, authenticated** | a real link requested 17 September 14:26 UTC arrived in four seconds as `Livd <notifications@livd.site>`, subject `Your Livd sign-in link`, Livd's template; Gmail recorded `dkim=pass header.i=@livd.site header.s=resend`, `spf=pass` on `rsend.livd.site`, `dmarc=pass header.from=livd.site`; redirect to `https://livd.site/auth/callback` |
+| Resend domain | verified in effect | Resend accepted and DKIM-signed a send as `@livd.site`, which it refuses for an unverified domain |

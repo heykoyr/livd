@@ -110,11 +110,20 @@ Two things follow from that, and they are the same thing:
   the limit itself only lifts with custom SMTP.
 - Custom SMTP is what changes the sender name.
 
-**Status on 17 September 2026: not configured.** A real sign-in email
-requested that day arrived as `Supabase Auth <noreply@mail.app.supabase.io>`,
-through Supabase's shared Postmark pool, with Supabase's default wording and a
-"powered by Supabase" footer. Its link was correct; its sender was not. Nothing
-in the repository or in Vercel can change that — only this setting can.
+**Status: configured on 17 September 2026, and verified by a real email.**
+
+| | Before (13:58 UTC) | After (14:26 UTC) |
+| --- | --- | --- |
+| From | `Supabase Auth <noreply@mail.app.supabase.io>` | `Livd <notifications@livd.site>` |
+| Subject | `Your sign-in link` | `Your Livd sign-in link` |
+| Body | Supabase default, "powered by Supabase" | `magic-link.html` |
+| Sent through | Supabase's Postmark pool | Resend, via Amazon SES eu-west-1 |
+| DMARC | `pass header.from=supabase.io` | `pass header.from=livd.site` |
+| DKIM | `@mail.app.supabase.io` | `@livd.site`, selector `resend` |
+| Redirect in the link | `https://livd.site/auth/callback` | `https://livd.site/auth/callback` |
+
+The message has no `Reply-To`. That is correct for a sign-in link — it invites
+no reply — and it is why notifications set one and this does not.
 
 The domain is ready for it: DKIM, the return-path and DMARC for `livd.site` are
 published and `npm run domain:check` passes them.

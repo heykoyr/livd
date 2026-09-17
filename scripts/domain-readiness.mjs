@@ -314,41 +314,57 @@ async function checkEmailDns() {
    * docs/email.md, assumed without asking. The requirement is the same in
    * either shape: bounces need somewhere to go, and the envelope sender must
    * pass SPF. So check for exactly that, following the delegation to wherever
-   * it is published. */
+   * it is published.
+   *
+   * There are two, and the second is the one in use. Resend published `rsend`
+   * as well as `send`, and a real sign-in email sent through Resend's SMTP on
+   * 17 September 2026 carried `Return-Path: …@rsend.livd.site` and passed SPF
+   * there. `rsend` looks like a duplicate of `send` in a DNS panel, which is
+   * exactly why it is the one somebody would tidy away — so its absence
+   * blocks, where `send`'s only advises. */
 
-  const send = `send.${APEX}`;
-  const delegated = await tryResolve(() => auth.resolveCname(send));
-  const target = delegated.error ? null : delegated[0];
+  const RETURN_PATHS = [
+    { host: `rsend.${APEX}`, required: true },
+    { host: `send.${APEX}`, required: false },
+  ];
 
-  // A delegated name lives in somebody else's zone, which our nameservers
-  // cannot answer for; an undelegated one is ours to ask directly.
-  const ask = (fn) =>
-    tryResolve(() => (target ? firstAnswer((r) => fn(r, target)) : fn(auth, send)));
+  for (const { host, required } of RETURN_PATHS) {
+    const label = `Email · return-path ${host.split('.')[0]}`;
+    const delegated = await tryResolve(() => auth.resolveCname(host));
+    const target = delegated.error ? null : delegated[0];
 
-  const mx = await ask((r, name) => r.resolveMx(name));
-  const sendTxt = await ask((r, name) => r.resolveTxt(name));
-  const sendSpf = sendTxt.error
-    ? null
-    : sendTxt.map((chunks) => chunks.join('')).find((value) => value.startsWith('v=spf1'));
+    // A delegated name lives in somebody else's zone, which our nameservers
+    // cannot answer for; an undelegated one is ours to ask directly.
+    const ask = (fn) =>
+      tryResolve(() => (target ? firstAnswer((r) => fn(r, target)) : fn(auth, host)));
 
-  const via = target ? `${send} → ${target}` : send;
+    const mx = await ask((r, name) => r.resolveMx(name));
+    const txt = await ask((r, name) => r.resolveTxt(name));
+    const spfRecord = txt.error
+      ? null
+      : txt.map((chunks) => chunks.join('')).find((value) => value.startsWith('v=spf1'));
 
-  if (mx.error && !sendSpf) {
-    warn('Email · return-path', `nothing published at ${via} — add the records Resend gives you`);
-  } else if (mx.error) {
-    fail('Email · return-path', `${via} has SPF but no MX — bounces have nowhere to go`);
-  } else if (!sendSpf) {
-    fail('Email · return-path', `${via} has an MX but no SPF — the envelope sender will not authenticate`);
-  } else {
-    pass('Email · return-path', `${via} · MX ${mx.map((m) => m.exchange).join(', ')} · SPF present`);
+    const via = target ? `${host} → ${target}` : host;
 
-    const stale = await stalePublicCaches((r) => r.resolveTxt(send));
-    if (stale.length > 0) {
-      warn(
-        'Email · return-path propagation',
-        `published, but ${stale.join(', ')} still answer${stale.length === 1 ? 's' : ''} from a cache made before it existed` +
-          (negativeTtl ? ` — clears within ${negativeTtl}s` : ''),
-      );
+    if (mx.error && !spfRecord) {
+      const message = `nothing published at ${via} — add the records Resend gives you`;
+      if (required) fail(label, `${message}; live mail uses this envelope sender`);
+      else warn(label, message);
+    } else if (mx.error) {
+      fail(label, `${via} has SPF but no MX — bounces have nowhere to go`);
+    } else if (!spfRecord) {
+      fail(label, `${via} has an MX but no SPF — the envelope sender will not authenticate`);
+    } else {
+      pass(label, `${via} · MX ${mx.map((m) => m.exchange).join(', ')} · SPF present`);
+
+      const stale = await stalePublicCaches((r) => r.resolveTxt(host));
+      if (stale.length > 0) {
+        warn(
+          `${label} propagation`,
+          `published, but ${stale.join(', ')} still answer${stale.length === 1 ? 's' : ''} from a cache made before it existed` +
+            (negativeTtl ? ` — clears within ${negativeTtl}s` : ''),
+        );
+      }
     }
   }
 
