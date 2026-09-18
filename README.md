@@ -230,7 +230,7 @@ rather than merely displays. Written up in [`docs/product-spec.md`](docs/product
 
 **Design.** The design system — tokens, type scale, palette, motion, responsive
 strategy, voice — specified in [`docs/design-system.md`](docs/design-system.md)
-and implemented as 75 components. No component library: a bought design system
+and implemented as <!--count:components-->75<!--/count--> components. No component library: a bought design system
 is the fastest route to looking like a template. Every user-facing string lives
 in one typed file so a second locale is a sibling object rather than a
 component change.
@@ -288,8 +288,9 @@ library, no analytics SDK, no AI at runtime. The Content-Security-Policy permits
 `'self'` and the Supabase origin and nothing else; fonts are self-hosted, so
 rendering a page contacts no third party.
 
-`41` tables · `75` RLS policies · `105` database functions · `50` migrations ·
-`40` routes · `212` source files · `58` test files.
+**<!--count:tables-->41<!--/count-->** tables · **<!--count:policies-->75<!--/count-->** RLS policies · **<!--count:dbFunctions-->105<!--/count-->** database functions ·
+**<!--count:migrations-->50<!--/count-->** migrations · **<!--count:routes-->40<!--/count-->** routes ·
+**<!--count:sourceFiles-->212<!--/count-->** source files · **<!--count:testFiles-->58<!--/count-->** test files.
 
 Full detail in [`docs/architecture.md`](docs/architecture.md) and
 [`docs/database-schema.md`](docs/database-schema.md).
@@ -298,16 +299,16 @@ Full detail in [`docs/architecture.md`](docs/architecture.md) and
 
 ## Evidence
 
-- **953 tests** across 58 files (`npm test`), weighted toward the highest-risk
+- **<!--count:tests-->953<!--/count--> tests** across <!--count:testFiles-->58<!--/count--> files (`npm test`), weighted toward the highest-risk
   code: scoring, the safety linter, rate limiting, burst detection, the
   verification, sanction and account-deletion pipelines, the notification
   catalogue, the colour palette and the international layer.
-- **90 recorded attacks against the live database**, in
-  [`docs/security-testing.md`](docs/security-testing.md). Each one impersonates
-  a signed-in browser session by setting the Postgres role and the JWT claims
-  PostgREST would set, and runs inside a transaction that is deliberately
-  aborted, so no production row is created or changed. It is a log rather than a
-  certificate: **two of the runs found real defects**, and both are written up
+- **<!--count:securityRuns-->15<!--/count--> recorded runs attacking the live database**, in
+  [`docs/security-testing.md`](docs/security-testing.md). Each attack
+  impersonates a signed-in browser session by setting the Postgres role and the
+  JWT claims PostgREST would set, and runs inside a transaction that is
+  deliberately aborted, so no production row is created or changed. It is a log
+  rather than a certificate: **two of the runs found real defects**, and both are written up
   under the word they deserve. A moderator could rewrite `profiles.role` on any
   account — *"PERMITTED — 1 row. The escalation was real"* — unexploited only
   because no moderator had been appointed yet. And `reviews.author_id` was
@@ -408,8 +409,15 @@ reachable straight away. This adapter refuses to run in production.
 | `npm test` | Test suite |
 | `npm run typecheck` | TypeScript, no emit |
 | `npm run audit:a11y` | axe-core against a running server |
-| `npm run verify` | Typecheck, lint, tests and build together |
+| `npm run docs:counts` | Recounts every figure in this README and rewrites it |
+| `npm run verify` | Typecheck, lint, tests, the count check and build together |
 | `npm run reset` | Clears `.data` and `.next`, reseeding on next run |
+
+> Every number this README states about the size of the project — tables,
+> policies, migrations, routes, tests — is maintained by `npm run docs:counts`
+> and checked by `npm run verify`. They went stale twice in nine days when they
+> were written by hand. A figure nobody can trust is worse than no figure, and
+> this document asks to be checked.
 
 > `npm run reset` clears both on purpose. Property aggregates are cached under
 > `.next` and survive a dev-server restart, so deleting `.data` alone leaves the

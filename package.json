@@ -12,9 +12,9 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --reporter=default --reporter=json --outputFile.json=.vitest-report.json",
     "test:watch": "vitest",
-    "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run docs:counts -- --check && npm run build",
     "reset": "node scripts/reset-local.mjs",
     "domain:check": "node scripts/domain-readiness.mjs",
     "brand:build": "node scripts/build-brand-assets.mjs",
@@ -22,7 +22,8 @@
     "seed:supabase": "esbuild scripts/seed-supabase.mjs --bundle --platform=node --format=esm --alias:@=./src --packages=external --outfile=.seed-sql/seed.mjs --log-level=warning && node .seed-sql/seed.mjs",
     "seed:sql": "esbuild scripts/build-seed-sql.mjs --bundle --platform=node --format=esm --alias:@=./src --outfile=.seed-sql/build.mjs --log-level=warning && node .seed-sql/build.mjs",
     "vercel": "node scripts/vercel.mjs",
-    "geocode:backfill": "esbuild scripts/backfill-coordinates.mjs --bundle --platform=node --format=esm --alias:@=./src --alias:server-only=./tests/stubs/server-only.ts --packages=external --outfile=.seed-sql/backfill.mjs --log-level=warning && node --env-file=.env.local .seed-sql/backfill.mjs"
+    "geocode:backfill": "esbuild scripts/backfill-coordinates.mjs --bundle --platform=node --format=esm --alias:@=./src --alias:server-only=./tests/stubs/server-only.ts --packages=external --outfile=.seed-sql/backfill.mjs --log-level=warning && node --env-file=.env.local .seed-sql/backfill.mjs",
+    "docs:counts": "node scripts/readme-counts.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
