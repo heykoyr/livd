@@ -117,16 +117,21 @@ that stops authors rewriting reviews refused it. Only a live test caught that.
 
 ## Next
 
-**Before launch.** An email provider · error monitoring · a legal entity, a
-contact route and counsel's review of the three policy pages.
+**Before launch.** Error monitoring · a legal entity, a contact route and
+counsel's review of the three policy pages.
 
-The email provider is no longer what blocks people from signing in — Google
-sign-in is live and does not email anything. It is still needed to make the
-email link usable, because the link is single-use and Gmail's scanner spends it
-about fifteen seconds after delivery, and only custom SMTP unlocks the setting
-that would let that email send a typed code instead.
+**Email is done, on both paths.** Resolved 17 September 2026 and recorded in
+[`email.md`](email.md) §9. Notifications send from `livd.site` through Resend,
+custom SMTP is configured on Supabase Auth, and the sign-in link now arrives on
+Livd's own template as `Livd <notifications@livd.site>` with `dkim=pass`,
+`spf=pass` and `dmarc=pass`. A production delivery check from `/admin/email`
+sent the whole catalogue: twelve accepted, none failed.
 
-The other four pre-launch items are done:
+What custom SMTP unlocked but has not yet been switched on is the setting that
+sends a typed code instead of a link. It still matters: the link is single-use,
+and Gmail's scanner spends it about fifteen seconds after delivery.
+
+The other pre-launch items are done:
 
 - **Signing in works.** `thefirstadekoya@gmail.com` is the first account on Livd
   to hold a session, through Google. Every account before it shows email
@@ -153,20 +158,12 @@ them. Two of its findings are engineering work, not legal work: the erasure
 contradiction above, and the fact that several policy promises point at a
 contact route the product does not have.
 
-Still true since the deployment:
+Production configuration worth knowing:
 
-- **`SUPABASE_SERVICE_ROLE_KEY` is not set**, on Vercel or locally. Visitors are
-  unaffected — every public read and every submission goes through RLS as the
-  anon or authenticated role — but `/admin` cannot act on the moderation queue
-  until it is added.
-- **Custom SMTP is the last thing standing between the auth email and the
-  product.** The magic-link flow itself is fixed and live — Site URL, callback,
-  session refresh, all verified on 7 September 2026. But Supabase's built-in
-  sender disables the Subject and Body fields outright, so the branded template
-  in `supabase/templates/magic-link.html` cannot be applied and the sender still
-  reads "Supabase Auth". One setting gates all three, and it needs a domain Livd
-  controls with SPF and DKIM. The built-in sender is also rate-limited to a few
-  emails an hour and is not something to launch on.
+- **`SUPABASE_SERVICE_ROLE_KEY` is set**, on Vercel Production since 9
+  September 2026 and locally, so `/admin` can act on the moderation queue.
+  Visitors never depended on it — every public read and every submission goes
+  through RLS as the anon or authenticated role.
 - **`LIVD_SHOW_DEMO_DATA=true` in production**, which is what makes the seeded
   properties visible at all. It has to be turned off the moment real reviews
   exist, or the two will sit side by side.

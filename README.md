@@ -14,6 +14,15 @@ something a prospective renter can make a decision with.
 
 ![The property page](docs/images/property-page.png)
 
+| | |
+| --- | --- |
+| **What** | A property intelligence platform built on structured accounts from people who have already lived somewhere — including why they left |
+| **For** | Renters deciding where to live, and former residents contributing the record |
+| **My role** | Solo. Product, design system, interface, frontend, database, trust and safety, deployment |
+| **Built with** | Next.js 16 · React 19 · TypeScript · PostgreSQL via Supabase · Tailwind v4 · no ORM, no component library |
+| **Scale** | <!--count:tables-->41<!--/count--> tables · <!--count:policies-->75<!--/count--> RLS policies · <!--count:dbFunctions-->105<!--/count--> database functions · <!--count:tests-->953<!--/count--> tests · 12 markets |
+| **State** | Deployed and working end to end, on seeded data. Not launched — no real reviews yet |
+
 ---
 
 ## The problem
@@ -70,6 +79,16 @@ literally ask at the viewing. Every question states the evidence it came from.
 </tr>
 </table>
 
+![The resident verdict](docs/images/resident-verdict.png)
+
+Prose that reads as though it were written, assembled deterministically from
+aggregates that have already cleared their own disclosure thresholds. It has no
+access to anything but counts and scores, so it cannot state something residents
+did not report — and it says what it rests on: *based on 15 reviews, moderate
+confidence*. [`VerdictGenerator`](src/lib/intelligence/verdict.ts) is the seam
+where a language model could be substituted later, and the reason one would
+still be unable to invent anything.
+
 ![Explore](docs/images/explore.png)
 
 Explore is the surface for people who do not yet have an address in mind. It
@@ -78,9 +97,9 @@ in as many words: *"Search is worldwide. Nothing here is limited to where you
 are."* Below it, neighbourhood-level discovery, and a nearby control that asks
 for a location only once somebody presses it.
 
-More screens in [`docs/images/`](docs/images) — the resident verdict, category
-scores, the freshness panel, the timeline, the empty states, the Trust & Safety
-console, and the audit trail.
+More screens in [`docs/images/`](docs/images) — category scores, the freshness
+panel, the timeline, typo tolerance in search, the empty states, the Trust &
+Safety console, and the audit trail.
 
 ---
 
@@ -144,6 +163,18 @@ lose.
 
 *Decided inside Postgres by `livd_verify_property_location` ([migration 0014](supabase/migrations/0014_property_verification.sql)), so a client can ask for a verdict and never assert one. [`src/lib/geo/proximity.ts`](src/lib/geo/proximity.ts) is the same arithmetic for the local adapter, held to identical constants by [`tests/verification/parity.test.ts`](tests/verification/parity.test.ts).*
 
+### Evidence a machine cannot read is not read by a machine
+
+A resident can also submit a tenancy document for a stronger level. Livd runs no
+OCR over it: the file is hashed, stored in a bucket no client role can read, and
+shown to a moderator through a signed URL that lives five minutes. The automated
+checks work on metadata and on what the database already knows — has this
+document been used before, does the claimed tenancy fit the building, is the
+submitter the landlord — so the human minute is spent on the judgement rather
+than the arithmetic. Nothing in the pipeline grants a level automatically.
+
+*Checks in [`src/lib/safety/verification-checks.ts`](src/lib/safety/verification-checks.ts), adjudicated by a person at `/admin/verification`, schema in [migration 0012](supabase/migrations/0012_verification_pipeline.sql).*
+
 ### Recency is part of the answer, and is derived rather than stored
 
 A five-star review from someone who left in 2019 and one from someone who was in
@@ -187,12 +218,10 @@ itself audited — who looked at whose information, not only what they decided.
 
 An account is `active`, `restricted`, `suspended` or `banned`, and the sanction
 that changes it is a first-class record with a category, a reason and an expiry
-— not a flag somebody flips. Deleting an account severs its writing from it
-rather than erasing it: the reviews, owner replies and moderation record survive
-unattributed, while the shortlist, notifications, location checks and residency
-documents are destroyed.
+— not a flag somebody flips.
 
-And the account is told. Two messages ignore the email preferences entirely:
+And the account is told. Two messages ignore the email preferences entirely — a
+sign-in link, because it is the only way in, and this:
 
 ![Email preferences](docs/images/notification-preferences.png)
 
@@ -204,6 +233,21 @@ There is no newsletter, no digest and no marketing list, so there is nothing on
 that page to turn off that nobody asked for.
 
 *Enforced in [`supabase/migrations/0050_standing_and_the_record.sql`](supabase/migrations/0050_standing_and_the_record.sql) and `src/server/notify/`.*
+
+### Deleting an account severs the record rather than erasing it
+
+All three legal pages say a deleted account leaves its reviews standing,
+permanently unlinked. The schema said the opposite — `reviews.author_id` was
+`on delete cascade`, so deletion would have taken the reviews, their category
+ratings and their departure reasons with them. The contradiction was found by
+writing the legal briefing, not by writing code.
+
+[Migration 0017](supabase/migrations/0017_account_deletion.sql) severs every
+public link instead and destroys everything private with the account — shortlist,
+notifications, location checks, evidence files. 0018 exists because 0017 alone
+made deletion quietly impossible: a foreign key nulling `author_id` is an
+UPDATE, and the trigger that stops authors rewriting reviews refused it. Only a
+live test caught that.
 
 ### Global from the first commit
 
@@ -285,8 +329,10 @@ production needs, never narrowed to what the local store finds easy.
 
 **Deliberately not used:** no ORM, no state management library, no component
 library, no analytics SDK, no AI at runtime. The Content-Security-Policy permits
-`'self'` and the Supabase origin and nothing else; fonts are self-hosted, so
-rendering a page contacts no third party.
+`'self'`, the Supabase origin, and — only when a site key is configured —
+Cloudflare Turnstile on the two endpoints that create content. Fonts are
+self-hosted, so a deployment without bot protection contacts no third party at
+all.
 
 **<!--count:tables-->41<!--/count-->** tables · **<!--count:policies-->75<!--/count-->** RLS policies · **<!--count:dbFunctions-->105<!--/count-->** database functions ·
 **<!--count:migrations-->50<!--/count-->** migrations · **<!--count:routes-->40<!--/count-->** routes ·
@@ -308,17 +354,20 @@ Full detail in [`docs/architecture.md`](docs/architecture.md) and
   impersonates a signed-in browser session by setting the Postgres role and the
   JWT claims PostgREST would set, and runs inside a transaction that is
   deliberately aborted, so no production row is created or changed. It is a log
-  rather than a certificate: **two of the runs found real defects**, and both are written up
-  under the word they deserve. A moderator could rewrite `profiles.role` on any
+  rather than a certificate: **two of the runs found real defects**, and both
+  are written up under the word they deserve. A moderator could rewrite `profiles.role` on any
   account — *"PERMITTED — 1 row. The escalation was real"* — unexploited only
   because no moderator had been appointed yet. And `reviews.author_id` was
   readable by `anon`, returning a stable author key for all 222 published
   reviews; a UUID is not a name, but a stable per-author key on a public row
   still lets someone group everything one person has written. Both fixed, both
   re-attacked afterwards to prove the fix.
-- **Zero axe-core violations** across 13 pages in a production build. The one
-  violation axe still reports is a disabled pagination control, which WCAG 1.4.3
-  exempts as an inactive component and which is `aria-hidden` besides.
+- **No axe-core violations across 36 pages** — every public page signed out,
+  and the account area and the whole admin console signed in as an
+  administrator. The audit skips a gated page rather than passing it when no
+  session is supplied, so the console is not counted clean by accident; it went
+  unaudited for exactly that reason until it was fixed. The pages it visits are
+  listed in [`scripts/audit-a11y.mjs`](scripts/audit-a11y.mjs).
 - **Verification enforcement exercised against the live database** as an
   `authenticated` client, rather than asserted from the policy text: a client
   cannot insert its own verified row, cannot assert `verification_level` on a
@@ -330,7 +379,10 @@ Full detail in [`docs/architecture.md`](docs/architecture.md) and
   device data. None present.
 - **Contrast checked in a real browser**, both themes, and asserted per token
   pair by a test that reads the values out of `globals.css` so it cannot drift
-  from the palette.
+  from the palette. That is a separate check on purpose: the audit above runs
+  axe through jsdom, which cannot evaluate contrast at all. The one contrast
+  finding a browser still reports is a disabled pagination control, which WCAG
+  1.4.3 exempts as an inactive component and which is `aria-hidden` besides.
 - **Geocoder coverage measured, not estimated** — real addresses in eight cities
   across four continents, comparing OpenStreetMap against Google. The table is in
   [`docs/deployment.md`](docs/deployment.md).
@@ -350,16 +402,21 @@ Full detail in [`docs/architecture.md`](docs/architecture.md) and
 Deployed at [livd.site](https://livd.site) and working end to end. Not launched —
 there are no real reviews yet.
 
-Signing in works, through Google. Notifications are built and delivering:
-Livd sends its own mail through Resend from `notifications@livd.site`, SPF, DKIM
-and DMARC all pass, and `/admin/email` sends the whole catalogue through the
-production path so delivery can be checked without inventing content to trigger
-it. What is still missing is custom SMTP on Supabase's own sender, which is what
-the *sign-in link* goes through — until that is configured the link is single-use
-and Gmail's scanner spends it about fifteen seconds after delivery.
+Email works on both paths, which took until 17 September. Livd sends its own
+notifications through Resend from `notifications@livd.site`, and custom SMTP is
+now configured on Supabase Auth, so the sign-in link arrives on Livd's own
+template rather than Supabase's — `dkim=pass`, `spf=pass`, `dmarc=pass`, four
+seconds from request to inbox. `/admin/email` sends the whole catalogue through
+the production path, so delivery can be checked without inventing content to
+trigger it: twelve accepted, none failed. The evidence is in
+[`docs/email.md`](docs/email.md) §9.
 
-The other two pre-launch items are unchanged: error monitoring, and a legal
-entity with counsel's review of the three policy pages in each market.
+What custom SMTP unlocked but has not been switched on is the setting that sends
+a typed code instead of a link. It still matters — the link is single-use, and
+Gmail's scanner spends it about fifteen seconds after delivery.
+
+The two remaining pre-launch items: error monitoring, and a legal entity with
+counsel's review of the three policy pages in each market.
 
 **Deliberately not built.** Maps, because a pin on a residential building is a
 liability before it is a feature and the privacy design has to come first. Also
@@ -378,7 +435,7 @@ AI-generated prose. `docs/roadmap.md` has the reasoning and what comes next.
 | [`docs/brand-mark.md`](docs/brand-mark.md) | The standalone symbol, the favicon and app-icon system, and how to use them |
 | [`docs/database-schema.md`](docs/database-schema.md) | Every table and the reasoning behind it |
 | [`docs/deployment.md`](docs/deployment.md) | Supabase, Vercel, seeding, geocoding, environment |
-| [`docs/security-testing.md`](docs/security-testing.md) | 90 attacks against the live database, what each control refused, and the two findings that were real |
+| [`docs/security-testing.md`](docs/security-testing.md) | Every run attacking the live database, what each control refused, and the two findings that were real |
 | [`docs/domain.md`](docs/domain.md) | livd.site, the DNS records, and what must survive every edit |
 | [`docs/email.md`](docs/email.md) | The two mail paths, the five addresses, and why there is no `no-reply@` |
 | [`docs/legal-review.md`](docs/legal-review.md) | The briefing pack for counsel, and what the product does with personal data |
