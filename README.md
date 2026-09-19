@@ -20,7 +20,7 @@ something a prospective renter can make a decision with.
 | **For** | Renters deciding where to live, and former residents contributing the record |
 | **My role** | Solo. Product, design system, interface, frontend, database, trust and safety, deployment |
 | **Built with** | Next.js 16 · React 19 · TypeScript · PostgreSQL via Supabase · Tailwind v4 · no ORM, no component library |
-| **Scale** | <!--count:tables-->41<!--/count--> tables · <!--count:policies-->75<!--/count--> RLS policies · <!--count:dbFunctions-->105<!--/count--> database functions · <!--count:tests-->1,000<!--/count--> tests · 12 markets |
+| **Scale** | <!--count:tables-->41<!--/count--> tables · <!--count:policies-->75<!--/count--> RLS policies · <!--count:dbFunctions-->105<!--/count--> database functions · <!--count:tests-->1,037<!--/count--> tests · 12 markets |
 | **State** | Deployed and working end to end, on seeded data. Not launched — no real reviews yet |
 
 ---
@@ -274,7 +274,7 @@ rather than merely displays. Written up in [`docs/product-spec.md`](docs/product
 
 **Design.** The design system — tokens, type scale, palette, motion, responsive
 strategy, voice — specified in [`docs/design-system.md`](docs/design-system.md)
-and implemented as <!--count:components-->74<!--/count--> components. No component library: a bought design system
+and implemented as <!--count:components-->75<!--/count--> components. No component library: a bought design system
 is the fastest route to looking like a template. Every user-facing string lives
 in one typed file so a second locale is a sibling object rather than a
 component change.
@@ -336,7 +336,7 @@ all.
 
 **<!--count:tables-->41<!--/count-->** tables · **<!--count:policies-->75<!--/count-->** RLS policies · **<!--count:dbFunctions-->105<!--/count-->** database functions ·
 **<!--count:migrations-->50<!--/count-->** migrations · **<!--count:routes-->40<!--/count-->** routes ·
-**<!--count:sourceFiles-->211<!--/count-->** source files · **<!--count:testFiles-->60<!--/count-->** test files.
+**<!--count:sourceFiles-->213<!--/count-->** source files · **<!--count:testFiles-->62<!--/count-->** test files.
 
 Full detail in [`docs/architecture.md`](docs/architecture.md) and
 [`docs/database-schema.md`](docs/database-schema.md).
@@ -345,7 +345,7 @@ Full detail in [`docs/architecture.md`](docs/architecture.md) and
 
 ## Evidence
 
-- **<!--count:tests-->1,000<!--/count--> tests** across <!--count:testFiles-->60<!--/count--> files (`npm test`), weighted toward the highest-risk
+- **<!--count:tests-->1,037<!--/count--> tests** across <!--count:testFiles-->62<!--/count--> files (`npm test`), weighted toward the highest-risk
   code: scoring, the safety linter, rate limiting, burst detection, the
   verification, sanction and account-deletion pipelines, the notification
   catalogue, the colour palette and the international layer.
