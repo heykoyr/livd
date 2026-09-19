@@ -172,6 +172,13 @@ rule displays one: the light-ground file on a light tab strip, the white file
 on a dark one. Verified working in Chromium — the rendered favicon really does
 change with the browser's colour scheme, rather than being assumed to.
 
+This is the **one** place in the product that follows the browser's colour
+scheme rather than the theme the visitor chose, and it is deliberate: the
+favicon is drawn on the tab strip, which is the browser's surface and not
+Livd's, so it has to suit the browser's chrome. A favicon cannot see the page's
+`data-theme` in any case — it is a separate document. Everything drawn on the
+page follows the chosen theme; see [`src/lib/theme.ts`](../src/lib/theme.ts).
+
 Two things worth knowing rather than rediscovering:
 
 - Chrome caches a rendered favicon, so a live theme switch may not repaint it

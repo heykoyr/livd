@@ -274,7 +274,7 @@ rather than merely displays. Written up in [`docs/product-spec.md`](docs/product
 
 **Design.** The design system — tokens, type scale, palette, motion, responsive
 strategy, voice — specified in [`docs/design-system.md`](docs/design-system.md)
-and implemented as <!--count:components-->75<!--/count--> components. No component library: a bought design system
+and implemented as <!--count:components-->74<!--/count--> components. No component library: a bought design system
 is the fastest route to looking like a template. Every user-facing string lives
 in one typed file so a second locale is a sibling object rather than a
 component change.
@@ -336,7 +336,7 @@ all.
 
 **<!--count:tables-->41<!--/count-->** tables · **<!--count:policies-->75<!--/count-->** RLS policies · **<!--count:dbFunctions-->105<!--/count-->** database functions ·
 **<!--count:migrations-->50<!--/count-->** migrations · **<!--count:routes-->40<!--/count-->** routes ·
-**<!--count:sourceFiles-->212<!--/count-->** source files · **<!--count:testFiles-->60<!--/count-->** test files.
+**<!--count:sourceFiles-->211<!--/count-->** source files · **<!--count:testFiles-->60<!--/count-->** test files.
 
 Full detail in [`docs/architecture.md`](docs/architecture.md) and
 [`docs/database-schema.md`](docs/database-schema.md).
