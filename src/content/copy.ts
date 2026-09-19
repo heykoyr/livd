@@ -37,7 +37,8 @@ export const copy = {
     openMenu: 'Open menu',
     closeMenu: 'Close menu',
     skipToContent: 'Skip to main content',
-    theme: 'Change theme',
+    themeToDark: 'Switch to dark mode',
+    themeToLight: 'Switch to light mode',
   },
 
   home: {

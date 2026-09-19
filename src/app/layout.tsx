@@ -3,9 +3,11 @@ import { Inter, Newsreader } from 'next/font/google';
 
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { ThemeScript } from '@/components/layout/theme-script';
 import { ToastProvider } from '@/components/ui/toast';
 import { SITE } from '@/config/site';
 import { copy } from '@/content/copy';
+import { THEME_VIEWPORT } from '@/lib/theme';
 import { getCurrentUser } from '@/server/auth/session';
 
 import './globals.css';
@@ -61,32 +63,9 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#fbfaf8' },
-    { media: '(prefers-color-scheme: dark)', color: '#0d0e0d' },
-  ],
-  colorScheme: 'light dark',
-};
-
-/**
- * Applies the stored theme before first paint.
- *
- * Without this the page renders light and then flips, which is the single most
- * visible quality tell in a dark-mode-capable site.
- */
-const themeScript = `
-(function(){
-  try {
-    var stored = localStorage.getItem('livd-theme');
-    var theme = stored === 'light' || stored === 'dark'
-      ? stored
-      : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    document.documentElement.setAttribute('data-theme', theme);
-    document.documentElement.style.colorScheme = theme;
-  } catch (e) {}
-})();
-`.trim();
+// The theme is Livd's to choose and then the visitor's, never the OS's — see
+// `src/lib/theme.ts` for why these are not a light/dark pair.
+export const viewport: Viewport = THEME_VIEWPORT;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
@@ -94,7 +73,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang={SITE.locale} suppressHydrationWarning className={`${inter.variable} ${newsreader.variable}`}>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <ThemeScript />
       </head>
       <body className="min-h-dvh bg-canvas text-ink antialiased">
         <ToastProvider>

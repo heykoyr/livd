@@ -3,6 +3,8 @@
 import Script from 'next/script';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { currentTheme } from '@/lib/theme';
+
 /**
  * The bot check, as a person experiences it.
  *
@@ -84,7 +86,10 @@ export function Turnstile({
       sitekey: siteKey,
       action,
       appearance: 'interaction-only',
-      theme: 'auto',
+      // Livd's theme, not 'auto', which follows the OS and would put a dark
+      // challenge on a page the visitor chose to see light. Read once: a
+      // widget can only be re-themed by rebuilding it, which loses its token.
+      theme: currentTheme(),
       callback: (token) => handleToken.current(token),
       // A token is single-use and lives about five minutes. Clearing it on
       // expiry means the form knows it has nothing rather than submitting

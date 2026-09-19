@@ -1,11 +1,13 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter, Newsreader } from 'next/font/google';
 
 import { Logo } from '@/components/brand/logo';
+import { ThemeScript } from '@/components/layout/theme-script';
 import { SearchCombobox } from '@/components/search/search-combobox';
 import { ButtonLink } from '@/components/ui/button';
 import { SITE } from '@/config/site';
 import { copy } from '@/content/copy';
+import { THEME_VIEWPORT } from '@/lib/theme';
 
 import './globals.css';
 
@@ -43,6 +45,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// Bypassing the root layout bypasses its theme too, so this document carries
+// the same viewport and the same pre-paint script. A visitor who chose dark
+// should not land on a light 404.
+export const viewport: Viewport = THEME_VIEWPORT;
+
 export default function GlobalNotFound() {
   return (
     <html
@@ -50,6 +57,9 @@ export default function GlobalNotFound() {
       suppressHydrationWarning
       className={`${inter.variable} ${newsreader.variable}`}
     >
+      <head>
+        <ThemeScript />
+      </head>
       <body className="min-h-dvh bg-canvas text-ink antialiased">
         <div className="container-shell flex min-h-dvh flex-col">
           <header className="border-b border-border py-5">

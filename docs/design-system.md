@@ -111,6 +111,22 @@ each with a soft background variant.
 
 Dark mode is a full token remap, not an inversion.
 
+**Which theme shows is Livd's decision first, and the visitor's after that —
+never the operating system's.** Someone who has never pressed the toggle sees
+the light theme, whatever their OS or browser prefers. Pressing it saves
+`light` or `dark` under `livd-theme` in `localStorage`, and that choice holds
+across pages, reloads, tabs and later visits, whatever the OS does afterwards.
+Nothing is saved until someone chooses, so "has not chosen" stays distinct from
+"chose light".
+
+`data-theme` on `<html>` is the one place the current theme lives: an inline
+script in `<head>` sets it from the saved choice before first paint, and this
+stylesheet derives every token, the `color-scheme` and the browser chrome's
+`theme-color` from it. The mechanics, and the reasoning, are in
+[`src/lib/theme.ts`](../src/lib/theme.ts). The single deliberate exception is
+the favicon, which is drawn on the browser's tab strip rather than on the page
+and so follows the browser — see [`brand-mark.md`](brand-mark.md).
+
 **Contrast.** Every pair the design actually puts together is asserted in
 `tests/design/contrast.test.ts`, which reads the values out of `globals.css` so
 the check cannot drift from the palette: body text at 4.5:1 on all four neutral

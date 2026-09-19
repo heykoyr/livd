@@ -115,6 +115,10 @@
 
 /* --- Dark theme remap -------------------------------------------------- */
 [data-theme='dark'] {
+  /* Native controls, scrollbars and the canvas follow the chosen theme. The
+     light counterpart is on `html` in the base layer below. */
+  color-scheme: dark;
+
   --color-canvas: #0d0e0d;
   --color-surface: #161816;
   --color-surface-sunken: #111311;
@@ -154,6 +158,23 @@
   --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px -6px rgb(0 0 0 / 0.5);
 }
 
+/*
+ * Next's built-in 404 — what a route's `notFound()` renders, since there is no
+ * `not-found.tsx` — brings an unlayered stylesheet that colours `body`, and the
+ * rule beside its heading, by the OS's prefers-color-scheme. Unlayered beats
+ * every layered rule in this file, so a visitor who had chosen light got a
+ * black page whenever their OS was dark. One more element of specificity keeps
+ * those pages in the theme the visitor chose.
+ */
+html body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+html .next-error-h1 {
+  border-right-color: var(--color-border-strong);
+}
+
 /* ==========================================================================
    Base
    ========================================================================== */
@@ -166,6 +187,10 @@
   }
 
   html {
+    /* Light unless `[data-theme='dark']` above says otherwise — the OS has no
+       say. `only` also refuses a browser's automatic darkening, which would
+       otherwise filter the light theme for anyone whose OS is dark. */
+    color-scheme: only light;
     -webkit-text-size-adjust: 100%;
     scroll-behavior: smooth;
     /* Anchored sections clear the sticky header. */

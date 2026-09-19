@@ -1,39 +1,62 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 
 import { IconButton } from '@/components/ui/button';
 import { copy } from '@/content/copy';
-
-type Theme = 'light' | 'dark';
+import {
+  THEME_STORAGE_KEY,
+  applyTheme,
+  currentTheme,
+  keepThemeColorInStep,
+  readSavedTheme,
+  resolveTheme,
+  saveTheme,
+  subscribeToTheme,
+} from '@/lib/theme';
 
 /**
  * Theme toggle.
  *
- * The inline script in the document head has already applied the stored theme
- * before paint; this component only reads what it decided and lets the user
- * change it. Rendering nothing until mounted avoids claiming a theme the server
- * could not have known.
+ * The inline script in the document head has already applied the saved theme
+ * before paint; this component reads what it decided and lets the visitor
+ * change it. It keeps no copy of the theme in state — a copy is a second
+ * source of truth that can disagree — so its icon and label follow
+ * `data-theme` whoever changes it. Rendering nothing until hydrated avoids
+ * claiming a theme the server could not have known.
  */
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme | null>(null);
+  const theme = useSyncExternalStore(subscribeToTheme, currentTheme, () => null);
 
-  useEffect(() => {
-    const current = document.documentElement.getAttribute('data-theme');
-    setTheme(current === 'dark' ? 'dark' : 'light');
+  // Strict Mode remounts the document in development, and React drops the
+  // attributes on `<html>` it did not set itself — `data-theme` among them.
+  // Putting the saved theme back before paint keeps development honest; in
+  // production it sets what the script already set.
+  useLayoutEffect(() => {
+    applyTheme(resolveTheme(readSavedTheme()));
   }, []);
 
-  function toggle(): void {
-    const next: Theme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    document.documentElement.setAttribute('data-theme', next);
-    document.documentElement.style.colorScheme = next;
-    try {
-      localStorage.setItem('livd-theme', next);
-    } catch {
-      // Private browsing, or storage disabled. The theme still applies for this
-      // page view; it simply is not remembered.
+  // A choice made in another tab applies here too, rather than this tab
+  // disagreeing until it is next reloaded. A null key means storage was
+  // cleared outright.
+  useEffect(() => {
+    function handleStorage(event: StorageEvent): void {
+      if (event.key !== THEME_STORAGE_KEY && event.key !== null) return;
+      applyTheme(resolveTheme(readSavedTheme()));
     }
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  // The header outlives every navigation, so this is the component that can
+  // keep the browser chrome right across them.
+  useEffect(() => keepThemeColorInStep(), []);
+
+  function toggle(): void {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    saveTheme(next);
   }
 
   if (theme === null) {
@@ -43,10 +66,12 @@ export function ThemeToggle() {
 
   return (
     <IconButton
-      label={copy.nav.theme}
+      // Names what a press does rather than what is on, so nobody has to work
+      // out which way it goes. A label that changes is also why this is not
+      // `aria-pressed`, which would have to describe a fixed one.
+      label={theme === 'dark' ? copy.nav.themeToLight : copy.nav.themeToDark}
       size="sm"
       onClick={toggle}
-      aria-pressed={theme === 'dark'}
       className="text-ink-muted hover:text-ink"
     >
       {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
