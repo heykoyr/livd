@@ -1,9 +1,11 @@
 /**
- * Renders every raster brand asset from the one master vector.
+ * Derives every generated brand asset from its master.
  *
- * `public/brand/livd-mark.svg` is the source of truth. Nothing here redraws the
- * mark — the path is read out of that file, so a favicon can never drift from
- * the master the way hand-exported icons always eventually do.
+ * `public/brand/logo/` holds the official logo and symbol, exactly as
+ * supplied; the web copies `<Logo>` renders are fitted from those. The icons
+ * are still drawn from `public/brand/livd-mark.svg`. Nothing here redraws
+ * either — paths are read out of the masters, so a derived file can never
+ * drift from its source the way hand-exported assets always eventually do.
  *
  * Run it when the master changes, not on every build: the outputs are committed
  * so that `next build` needs no image toolchain at all.
@@ -130,6 +132,128 @@ const write = (rel, data) => {
 };
 
 console.log('Livd brand assets');
+
+/* --- The official logo, on fitted canvases ----------------------------
+   `public/brand/logo/` holds the official Livd files exactly as supplied, and
+   nothing here writes to it. They are exported on fixed frames: the logo on
+   1600 × 400 with its artwork in the left half, the symbol centred on
+   1000 × 1000. A layout cannot see a frame's empty margin, only the box, so
+   the logo rendered as supplied would carry 87px of transparent canvas after
+   the full stop — pushing the header navigation right, and stretching the
+   home link's hit area into blank space.
+
+   So each file is re-issued with its canvas fitted to its artwork. The root
+   element's width, height and viewBox change and nothing else does: every
+   <path> is copied byte for byte, and `tests/design/brand-logo.test.ts` fails
+   if one ever differs, or if a fitted canvas clips a single point of the
+   drawing. Clear space belongs to the layout, as it did for the type-set
+   wordmark these replace. */
+
+/**
+ * The exact bounds of an SVG path, curves included.
+ *
+ * Only the absolute commands the official files are exported with. Anything
+ * else throws rather than being skipped, because a bound computed from part of
+ * a path is a canvas that crops the rest of it.
+ */
+function pathBounds(d) {
+  const tokens = d.match(/[a-zA-Z]|-?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) ?? [];
+  const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  const include = (x, y) => {
+    box.minX = Math.min(box.minX, x);
+    box.minY = Math.min(box.minY, y);
+    box.maxX = Math.max(box.maxX, x);
+    box.maxY = Math.max(box.maxY, y);
+  };
+
+  /** Where a cubic's derivative is zero on (0, 1) — its turning points. */
+  const extrema = (p0, p1, p2, p3) => {
+    const a = -p0 + 3 * p1 - 3 * p2 + p3;
+    const b = 2 * (p0 - 2 * p1 + p2);
+    const c = p1 - p0;
+    if (Math.abs(a) < 1e-12) return Math.abs(b) < 1e-12 ? [] : [-c / b];
+    const disc = b * b - 4 * a * c;
+    if (disc < 0) return [];
+    const root = Math.sqrt(disc);
+    return [(-b + root) / (2 * a), (-b - root) / (2 * a)];
+  };
+  const cubic = (p0, p1, p2, p3, t) =>
+    (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t ** 2 * p2 + t ** 3 * p3;
+
+  let i = 0;
+  let command = '';
+  let x = 0;
+  let y = 0;
+  const next = () => Number(tokens[i++]);
+
+  while (i < tokens.length) {
+    if (/[a-zA-Z]/.test(tokens[i])) command = tokens[i++];
+    switch (command) {
+      case 'M':
+      case 'L':
+        x = next();
+        y = next();
+        include(x, y);
+        if (command === 'M') command = 'L'; // further pairs are line-tos
+        break;
+      case 'H':
+        x = next();
+        include(x, y);
+        break;
+      case 'V':
+        y = next();
+        include(x, y);
+        break;
+      case 'C': {
+        const [x1, y1, x2, y2, x3, y3] = [next(), next(), next(), next(), next(), next()];
+        for (const t of extrema(x, x1, x2, x3)) {
+          if (t > 0 && t < 1) include(cubic(x, x1, x2, x3, t), cubic(y, y1, y2, y3, t));
+        }
+        for (const t of extrema(y, y1, y2, y3)) {
+          if (t > 0 && t < 1) include(cubic(x, x1, x2, x3, t), cubic(y, y1, y2, y3, t));
+        }
+        x = x3;
+        y = y3;
+        include(x, y);
+        break;
+      }
+      case 'Z':
+        break;
+      default:
+        throw new Error(`pathBounds: unsupported path command "${command}"`);
+    }
+  }
+  return box;
+}
+
+/** A master re-issued on a canvas fitted to its artwork. See above. */
+function fitted(master) {
+  const svg = readFileSync(p('public/brand/logo', master), 'utf8');
+  const paths = [...svg.matchAll(/ d="([^"]+)"/g)].map((m) => pathBounds(m[1]));
+  if (paths.length === 0) throw new Error(`No paths found in ${master}`);
+
+  // Outward to the thousandth, so rounding can only ever add canvas.
+  const floor = (n) => Math.floor(n * 1000) / 1000;
+  const ceil = (n) => Math.ceil(n * 1000) / 1000;
+  const minX = floor(Math.min(...paths.map((b) => b.minX)));
+  const minY = floor(Math.min(...paths.map((b) => b.minY)));
+  const width = round(ceil(Math.max(...paths.map((b) => b.maxX))) - minX, 3);
+  const height = round(ceil(Math.max(...paths.map((b) => b.maxY))) - minY, 3);
+
+  const out = svg.replace(/<svg\b[^>]*>/, (root) =>
+    root
+      .replace(/ width="[^"]*"/, ` width="${width}"`)
+      .replace(/ height="[^"]*"/, ` height="${height}"`)
+      .replace(/ viewBox="[^"]*"/, ` viewBox="${minX} ${minY} ${width} ${height}"`) +
+    `\n<!-- Generated by scripts/build-brand-assets.mjs from public/brand/logo/${master}: the same artwork, on a canvas fitted to it. Do not edit. -->`,
+  );
+  write(`public/brand/fitted/${master}`, Buffer.from(out));
+  console.log(`    ${width} × ${height}`);
+}
+
+for (const master of ['livd-logo.svg', 'livd-logo-white.svg', 'livd-symbol.svg', 'livd-symbol-white.svg']) {
+  fitted(master);
+}
 
 /*
  * The SVG favicon, which is what every current browser actually uses.

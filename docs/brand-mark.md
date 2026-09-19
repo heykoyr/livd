@@ -1,8 +1,89 @@
 # Livd — The Brand Mark
 
-The wordmark **Livd.** remains the primary signature and is unchanged. This
-documents the symbol that stands in where the wordmark cannot: a browser tab, a
-home screen, an avatar, a notification.
+The official Livd logo — the symbol and the **Livd.** wordmark together — is
+supplied artwork, and the product renders those files rather than drawing
+anything of its own. This documents where they live and how they are used, and
+the symbol that stands in where the logo cannot: a browser tab, a home screen,
+an avatar, a notification.
+
+---
+
+## The official logo
+
+### Files
+
+`public/brand/logo/` holds the official files **exactly as supplied**. Nothing
+in the build writes to it, and nothing may edit it: never redraw, re-export,
+recolour, stretch, crop, rotate, filter or shadow the logo.
+
+| File | What it is |
+| --- | --- |
+| `livd-logo.svg` | The full logo — symbol and wordmark — for light grounds |
+| `livd-logo-white.svg` | The full logo for dark grounds |
+| `livd-symbol.svg` | The symbol alone, for light grounds |
+| `livd-symbol-white.svg` | The symbol alone, for dark grounds |
+| `*.png`, `*@2x.png` | Raster exports of each, for places that cannot take SVG |
+
+`public/brand/favicon/` holds the supplied favicon set: `favicon-16`, `-32`
+and `-48`, each as SVG, PNG and `@2x` PNG.
+
+Colour is part of the artwork. The light-ground files use `#242624` and
+`#CECBC5` for the symbol, black for the word and clay `#AA5329` for the full
+stop; the dark-ground files use `#827C70` and white, with the same clay stop.
+
+### Fitted copies
+
+The supplied SVGs are exported on fixed frames — the logo on 1600 × 400 with
+its artwork in the left half, the symbol centred on 1000 × 1000. A layout sees
+the frame, not the drawing, so the logo rendered as supplied would carry 87px
+of transparent canvas after the full stop in the header.
+
+`npm run brand:build` therefore re-issues each SVG into `public/brand/fitted/`
+on a canvas fitted to its artwork: the root element's `width`, `height` and
+`viewBox` change and **nothing else does**. `tests/design/brand-logo.test.ts`
+fails if a single path differs from its master, or if a fitted canvas clips
+any point of the drawing — checked by sampling every curve, independently of
+the script's own arithmetic.
+
+Clear space is the layout's job, as it was for the type-set wordmark these
+replace.
+
+### In the product
+
+Always through `<Logo>` — never an `<img>` written by hand, and never the
+wordmark set as text.
+
+```tsx
+import { Logo } from '@/components/brand/logo';
+
+<Logo />                      // the full logo, following the site theme
+<Logo variant="symbol" />     // the symbol alone, where the logo will not fit
+<Logo theme="dark" />         // a surface whose ground does not follow the theme
+<Logo size="lg" />            // sm 20px · md 24px (default) · lg 32px tall
+```
+
+**Theme.** Both files are in the markup; the `dark:` variant, which keys on
+`data-theme`, displays one and hides the other. So the logo is right on first
+paint (the theme script sets the attribute before anything is drawn), swaps
+with the toggle without a request, and needs no theme logic of its own. It is
+never recoloured with a filter — the white logo is its own file.
+
+**Size.** `md` is 24px tall, which puts the wordmark's "L" at 14.3px against
+the 14px cap height of the 20px Newsreader wordmark it replaced, so the header
+kept its scale.
+
+**Accessibility.** Each file carries `alt="Livd"`, and the hidden one is
+`display: none` and so out of the accessibility tree. Inside the header's home
+link, the link's own `aria-label` ("Livd — home") names it.
+
+**Where it is used.** `SiteHeader`, `SiteFooter` and `global-not-found.tsx`.
+
+**Not yet.** The Open Graph and Twitter cards
+(`src/app/opengraph-image.png`, `twitter-image.png`) are static images that
+still show the type-set wordmark; they need re-rendering with the official
+logo as a separate piece of design work. Email templates set the wordmark as
+type on purpose — images are blocked by default in most clients, and none of
+them render SVG.
 
 ---
 
@@ -131,13 +212,5 @@ import { Mark } from '@/components/brand/mark';
 
 It inherits `currentColor` and is `aria-hidden` unless given a `label`.
 
-**It does not replace the wordmark.** `SiteHeader` and `SiteFooter` continue to
+**It does not replace the logo.** `SiteHeader` and `SiteFooter` continue to
 use `<Logo>`. The mark is an additional asset, not a substitution.
-
----
-
-## 7. Not done here
-
-The OpenGraph and Twitter images still use the wordmark alone, which is correct
-for a 1200×630 card where there is room for it. The mark is now available as a
-reusable source asset if they are ever revisited.

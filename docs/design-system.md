@@ -185,11 +185,12 @@ ReviewFilters · ReportReviewButton · SaveButton · ShareButton ·
 `layout/` — SiteHeader · SiteFooter · MobileNav · AccountMenu · ThemeToggle ·
 ProsePage. `brand/` — Logo · Mark.
 
-The wordmark and the symbol are two assets, not one. `Logo` is the primary
-signature and is what the header and footer use; `Mark` stands in only where
-the wordmark will not fit — a browser tab, a home screen, an avatar. Geometry,
-clear space, colour and the favicon system are in
-[`brand-mark.md`](brand-mark.md).
+`Logo` renders the official Livd logo files — never a redrawing of them — and
+is what the header, the footer and the 404 use. It follows the site theme,
+showing the white logo on the dark theme, and draws the symbol alone with
+`variant="symbol"`. `Mark` stands in only where the logo will not fit — a
+browser tab, a home screen, an avatar. The files, how they are fitted, and the
+favicon system are in [`brand-mark.md`](brand-mark.md).
 
 The review wizard's steps and the shortlist comparison table live beside the
 routes that own them, in `src/app/review/` and `src/app/shortlist/`, because

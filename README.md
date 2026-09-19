@@ -20,7 +20,7 @@ something a prospective renter can make a decision with.
 | **For** | Renters deciding where to live, and former residents contributing the record |
 | **My role** | Solo. Product, design system, interface, frontend, database, trust and safety, deployment |
 | **Built with** | Next.js 16 · React 19 · TypeScript · PostgreSQL via Supabase · Tailwind v4 · no ORM, no component library |
-| **Scale** | <!--count:tables-->41<!--/count--> tables · <!--count:policies-->75<!--/count--> RLS policies · <!--count:dbFunctions-->105<!--/count--> database functions · <!--count:tests-->953<!--/count--> tests · 12 markets |
+| **Scale** | <!--count:tables-->41<!--/count--> tables · <!--count:policies-->75<!--/count--> RLS policies · <!--count:dbFunctions-->105<!--/count--> database functions · <!--count:tests-->1,000<!--/count--> tests · 12 markets |
 | **State** | Deployed and working end to end, on seeded data. Not launched — no real reviews yet |
 
 ---
@@ -336,7 +336,7 @@ all.
 
 **<!--count:tables-->41<!--/count-->** tables · **<!--count:policies-->75<!--/count-->** RLS policies · **<!--count:dbFunctions-->105<!--/count-->** database functions ·
 **<!--count:migrations-->50<!--/count-->** migrations · **<!--count:routes-->40<!--/count-->** routes ·
-**<!--count:sourceFiles-->212<!--/count-->** source files · **<!--count:testFiles-->58<!--/count-->** test files.
+**<!--count:sourceFiles-->212<!--/count-->** source files · **<!--count:testFiles-->60<!--/count-->** test files.
 
 Full detail in [`docs/architecture.md`](docs/architecture.md) and
 [`docs/database-schema.md`](docs/database-schema.md).
@@ -345,7 +345,7 @@ Full detail in [`docs/architecture.md`](docs/architecture.md) and
 
 ## Evidence
 
-- **<!--count:tests-->953<!--/count--> tests** across <!--count:testFiles-->58<!--/count--> files (`npm test`), weighted toward the highest-risk
+- **<!--count:tests-->1,000<!--/count--> tests** across <!--count:testFiles-->60<!--/count--> files (`npm test`), weighted toward the highest-risk
   code: scoring, the safety linter, rate limiting, burst detection, the
   verification, sanction and account-deletion pipelines, the notification
   catalogue, the colour palette and the international layer.
