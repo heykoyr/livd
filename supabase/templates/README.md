@@ -195,11 +195,22 @@ hand-assembled link would have neither.
 
 Tables and inline styles throughout, because Outlook on Windows renders through
 Word and Gmail strips `<style>` blocks in several views. The `<style>` block
-carries only the dark-mode overrides and one media query, both of which fall
-back to the inline light values when removed. No images: nothing to block,
-nothing to fail, and a sign-in email that loads no remote content is a
-sign-in email that cannot be tracked. Georgia stands in for Newsreader, which
-no mail client will load.
+carries only the dark-mode overrides and two media queries, all of which fall
+back to the inline light values when removed. Georgia stands in for
+Newsreader, which no mail client will load.
+
+**One image: the logo.** It is the official brand file — a wordmark set in
+whichever serif the client owns is an approximation, and brand files exist to
+stop that. Two PNGs, `livd-logo.png` and `livd-logo-white.png` under
+`/brand/email/`, each on a tile of the ground it appears against, swapped by
+the dark media query; both carry `alt="Livd"` styled to match, so a client
+with images off shows the word where the logo would have been.
+
+The cost is worth naming, because it was deliberately avoided before: an
+email that loads a remote image is an email whose opening can be timed by
+whoever serves it. That is now true of this one. Nothing else loads, the URL
+carries no identifier of any kind, and the image is served from the same
+origin as every link in the message.
 
 ---
 

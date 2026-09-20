@@ -305,6 +305,28 @@ write('src/app/apple-icon.png', await png(180));
 write('public/brand/icons/livd-icon-192.png', await png(192));
 write('public/brand/icons/livd-icon-512.png', await png(512));
 
+/* --- The email logo ----------------------------------------------------
+   The one place a raster of the full logo is genuinely required: no email
+   client renders SVG, and none of them would load it if they did. Drawn at
+   twice the 82 × 24 it is displayed at, so it is sharp on a phone.
+
+   Opaque, and on the ground each mode actually has. An image is the one thing
+   a client that forces dark mode leaves alone while inverting everything
+   around it — a transparent dark-ink logo would be left invisible on a
+   blackened canvas, where a tile of the canvas's own colour cannot be. */
+
+const NIGHT = '#0D0E0D'; // --color-canvas, dark
+
+const emailLogo = (file, ground) =>
+  sharp(readFileSync(p('public/brand/fitted', file)), { density: 72 * 4 })
+    .resize({ width: 164, height: 48, fit: 'contain', background: ground })
+    .flatten({ background: ground })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+
+write('public/brand/email/livd-logo.png', await emailLogo('livd-logo.svg', PAPER));
+write('public/brand/email/livd-logo-white.png', await emailLogo('livd-logo-white.svg', NIGHT));
+
 /* --- The social card ---------------------------------------------------
    What a shared link previews as: one 2400 × 1260 image, served as both the
    OpenGraph and the Twitter card.

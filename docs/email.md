@@ -285,7 +285,9 @@ suppress a real send; and it is recorded in the audit trail as
 - `From: Livd <notifications@livd.site>` and `Reply-To: support@livd.site`
 - `Authentication-Results`: `dkim=pass header.i=@livd.site`, `spf=pass`, and
   `dmarc=pass header.from=livd.site`
-- every link, including the one behind the wordmark, on `https://livd.site`
+- every link, including the one behind the logo, on `https://livd.site`
+- the logo at the top rendering as the official mark, not as alt text — it is
+  loaded from `https://livd.site/brand/email/livd-logo.png`
 
 The page cannot test sign-in email. Supabase sends that itself — see
 [`supabase/templates/README.md`](../supabase/templates/README.md).

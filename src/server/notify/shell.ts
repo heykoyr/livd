@@ -13,7 +13,16 @@ import { SITE, absoluteUrl } from '@/config/site';
  *
  * Within those constraints it is the same design as the product: paper and
  * ink, one hairline, one accent, typography carrying the hierarchy. No hero
- * image, no gradient, no social icons, nothing to load.
+ * image, no gradient, no social icons.
+ *
+ * The logo is the one image in the message, because it is the logo — a
+ * wordmark set in whichever serif the client happens to own is an
+ * approximation of it, and the brand files exist precisely so nothing has to
+ * approximate. It is a PNG (no client renders SVG), on its own tile of paper
+ * (a client that forces dark mode inverts the ground but not the image, and a
+ * transparent dark-ink logo would vanish into it), and it carries
+ * `alt="Livd"` styled to match the type it replaced — so a reader with images
+ * turned off sees the word, in the face the email would have set it in.
  *
  * Every message has a plain-text twin. It is not a fallback nobody reads — a
  * message with no text part scores worse with every spam filter there is, and
@@ -110,7 +119,9 @@ export function renderEmail(input: EmailShellInput): { html: string; text: strin
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
 
         <tr><td style="padding:0 0 20px;">
-          <a href="${escapeHtml(SITE.url)}" style="font-family:Georgia,'Times New Roman',serif;font-size:21px;font-weight:600;letter-spacing:-0.02em;color:${INK};text-decoration:none;">Livd<span style="color:#AA5329;">.</span></a>
+          <a href="${escapeHtml(SITE.url)}" style="display:inline-block;text-decoration:none;"><img src="${escapeHtml(
+            absoluteUrl('/brand/email/livd-logo.png'),
+          )}" alt="Livd" width="82" height="24" style="display:block;border:0;width:82px;height:24px;font-family:Georgia,'Times New Roman',serif;font-size:19px;font-weight:600;letter-spacing:-0.02em;color:${INK};text-decoration:none;"></a>
         </td></tr>
 
         <tr><td style="background:${SURFACE};border:1px solid ${BORDER};border-radius:12px;padding:28px 26px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">

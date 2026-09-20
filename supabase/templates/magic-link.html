@@ -20,8 +20,13 @@
   * Web-safe fonts with the Livd serif first. Newsreader will not load in an
     email client; Georgia is the closest thing that is already installed
     everywhere, and it keeps the editorial feel the site has.
-  * No images. Nothing to block, nothing to fail to load, nothing that makes a
-    sign-in email look like marketing. The wordmark is set as type.
+  * One image, and only one: the logo. Set as type it was an approximation in
+    whichever serif the client happened to own, which is the thing brand files
+    exist to stop. Two PNGs — no client renders SVG — each on a tile of the
+    ground it appears against, swapped by the dark media query above; both
+    carry alt="Livd", styled to match, so a client with images off shows the
+    word exactly where the logo would have been. Nothing else loads: no hero,
+    no icons, nothing that makes a sign-in email look like marketing.
   * {{ .ConfirmationURL }} is Supabase's own token. It carries the PKCE code and
     the redirect Livd asked for. Do not construct a URL by hand here — that is
     what would break single use and expiry.
@@ -45,6 +50,8 @@
         .livd-subtle { color: #83867f !important; }
         .livd-rule { border-color: #2a2d2a !important; }
         .livd-button { background-color: #d8e4de !important; color: #0d0e0d !important; }
+        .livd-logo-light { display: none !important; }
+        .livd-logo-dark { display: block !important; }
       }
       @media only screen and (max-width: 600px) {
         .livd-pad { padding-left: 24px !important; padding-right: 24px !important; }
@@ -84,14 +91,27 @@
             width="100%"
             style="max-width:520px; width:100%;"
           >
-            <!-- Wordmark -->
+            <!-- Logo. Two files, one per ground; the media query below swaps
+                 them. The alt text is styled so that a client with images off
+                 shows the word where the logo would have been. -->
             <tr>
               <td class="livd-pad" style="padding:0 8px 24px 8px;">
-                <span
-                  class="livd-ink"
-                  style="font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:22px; letter-spacing:-0.02em; color:#17191a;"
-                  >Livd<span style="color:#aa5329;">.</span></span
-                >
+                <img
+                  class="livd-logo-light"
+                  src="https://livd.site/brand/email/livd-logo.png"
+                  alt="Livd"
+                  width="82"
+                  height="24"
+                  style="display:block; border:0; width:82px; height:24px; font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:20px; letter-spacing:-0.02em; color:#17191a;"
+                />
+                <img
+                  class="livd-logo-dark"
+                  src="https://livd.site/brand/email/livd-logo-white.png"
+                  alt="Livd"
+                  width="82"
+                  height="24"
+                  style="display:none; border:0; width:82px; height:24px; font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:20px; letter-spacing:-0.02em; color:#f2f1ed; mso-hide:all;"
+                />
               </td>
             </tr>
 
