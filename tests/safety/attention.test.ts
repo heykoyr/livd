@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { withoutTimestamps } from '../leak-scan';
+
 /**
  * The dashboard.
  *
@@ -298,7 +300,9 @@ describe('what it does not carry', () => {
 
     expect(serialised).not.toContain('@example.test');
     expect(serialised).not.toContain('boiler');
-    expect(serialised).not.toContain('51.5');
+    // The payload answers in counts and timestamps, and a timestamp written in
+    // the 51st second spells this coordinate. See tests/leak-scan.ts.
+    expect(withoutTimestamps(serialised)).not.toContain('51.5');
     expect(serialised).not.toContain('latitude');
   });
 

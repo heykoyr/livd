@@ -2,9 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VERIFICATION_LIFETIME } from '@/config/verification';
+
+import { withoutTimestamps } from '../leak-scan';
 
 /**
  * Server-side enforcement, run against the real store.
@@ -330,9 +332,12 @@ describe('the audit trail records the decision, never the position', () => {
     const stored = JSON.stringify(database.propertyVerifications);
 
     expect(database.propertyVerifications).toHaveLength(1);
-    expect(stored).not.toContain('51.546');
-    expect(stored).not.toContain('-0.052');
-    expect(stored).not.toContain('23.4');
+    // Values are scanned with the timestamps blanked; a row's own createdAt can
+    // spell one of these numbers by coincidence. See tests/leak-scan.ts.
+    expect(withoutTimestamps(stored)).not.toContain('51.546');
+    expect(withoutTimestamps(stored)).not.toContain('-0.052');
+    expect(withoutTimestamps(stored)).not.toContain('23.4');
+    // Field names cannot collide with a timestamp, so these read the lot.
     expect(stored.toLowerCase()).not.toContain('latitude');
     expect(stored.toLowerCase()).not.toContain('accuracy');
     expect(stored.toLowerCase()).not.toContain('distance');
@@ -347,6 +352,48 @@ describe('the audit trail records the decision, never the position', () => {
       'status',
       'userId',
     ]);
+  });
+
+  /**
+   * The same promise, checked at the one instant that used to break it.
+   *
+   * The row above is written at whatever time the suite runs, and the accuracy
+   * it must not store is 23.4 — so a run landing in the 23rd second with a
+   * millisecond in the 400s wrote a createdAt of "...T00:11:23.408Z" and failed
+   * on a row that held no accuracy at all. About one run in six hundred, which
+   * a re-run always "fixed". Pinning the clock there turns that into a case
+   * that either passes every time or fails every time.
+   */
+  it('is not fooled by a clock that spells the accuracy', async () => {
+    const { repository, resident, here } = await scenario();
+
+    // Only Date: the store still writes files, and faking timers would hang it.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-20T00:11:23.408Z'));
+
+    try {
+      await repository.verifyPropertyLocation({
+        userId: resident.id,
+        propertyId: here.id,
+        ...AT_THE_PROPERTY,
+        accuracyMeters: 23.4,
+        capturedAtMs: Date.now(),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const { getDatabase } = await import('@/server/data/local/store');
+    const database = await getDatabase();
+    const row = database.propertyVerifications[0]!;
+
+    // The collision is real: the timestamp really does spell the accuracy.
+    expect(row.createdAt).toContain('23.4');
+    expect(JSON.stringify(row)).toContain('23.4');
+
+    // And it is still the clock rather than a leak.
+    expect(withoutTimestamps(JSON.stringify(row))).not.toContain('23.4');
+    expect(Object.keys(row)).not.toContain('accuracyMeters');
   });
 
   it('records failures too, because a run of them is the shape of abuse', async () => {
