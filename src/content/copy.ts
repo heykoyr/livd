@@ -1095,6 +1095,7 @@ export const copy = {
     notFoundTitle: 'We could not find that page',
     notFoundBody:
       'The link may be wrong, or the page may have moved. Searching for the property is usually the fastest way back.',
+    notFoundHome: 'Go to the homepage',
     propertyNotFoundTitle: 'We could not find that property',
     propertyNotFoundBody:
       'It may have been merged with a duplicate listing, or removed. Try searching for the address.',

@@ -158,23 +158,6 @@
   --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px -6px rgb(0 0 0 / 0.5);
 }
 
-/*
- * Next's built-in 404 — what a route's `notFound()` renders, since there is no
- * `not-found.tsx` — brings an unlayered stylesheet that colours `body`, and the
- * rule beside its heading, by the OS's prefers-color-scheme. Unlayered beats
- * every layered rule in this file, so a visitor who had chosen light got a
- * black page whenever their OS was dark. One more element of specificity keeps
- * those pages in the theme the visitor chose.
- */
-html body {
-  background-color: var(--color-canvas);
-  color: var(--color-ink);
-}
-
-html .next-error-h1 {
-  border-right-color: var(--color-border-strong);
-}
-
 /* ==========================================================================
    Base
    ========================================================================== */

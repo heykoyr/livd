@@ -66,6 +66,10 @@ const PAGES = [
   ['For owners', '/for-owners'],
   ['Privacy', '/legal/privacy'],
   ['Not found', '/property/does-not-exist'],
+  // The 404 a route asks for, which is a different page from the one above:
+  // `app/not-found.tsx` inside the site chrome, rather than a property page
+  // rendering `PropertyMissing` itself.
+  ['Not found, from a route', '/places/zz'],
 ];
 
 /** Everything behind `requireUserPage` or `requireRolePage`. */

@@ -2,9 +2,8 @@ import type { Metadata, Viewport } from 'next';
 import { Inter, Newsreader } from 'next/font/google';
 
 import { Logo } from '@/components/brand/logo';
+import { PageNotFound } from '@/components/layout/page-not-found';
 import { ThemeScript } from '@/components/layout/theme-script';
-import { SearchCombobox } from '@/components/search/search-combobox';
-import { ButtonLink } from '@/components/ui/button';
 import { SITE } from '@/config/site';
 import { copy } from '@/content/copy';
 import { THEME_VIEWPORT } from '@/lib/theme';
@@ -12,19 +11,24 @@ import { THEME_VIEWPORT } from '@/lib/theme';
 import './globals.css';
 
 /**
- * The 404 page — every 404, whether from an unmatched URL or a `notFound()`
- * call inside a route.
+ * The 404 for a URL that matches no route at all.
  *
- * This file owns its own `<html>` and `<body>`, which is the point of it.
- * Next renders a not-found boundary *outside* the root layout, in a bare
- * document with no `lang` attribute and none of the site's styling. That is a
- * genuine WCAG 3.1.1 failure — a screen reader has no idea what language to
- * read the page in — and taking ownership of the document is the only way to
- * put the attribute back.
+ * Only that. A `notFound()` call inside a route never reaches here — it has
+ * matched a route already — and is answered by `app/not-found.tsx`, inside the
+ * site's own chrome. This file used to claim it served both, which was never
+ * true and left those routes showing the framework's built-in 404 between
+ * Livd's header and footer.
  *
- * The trade is that a 404 cannot be property-specific. That is a fair price:
- * almost every 404 here is a mistyped or stale property URL from someone
- * looking for a real property, so the search box is what they need either way.
+ * It owns its own `<html>` and `<body>`, which is the point of it. Next
+ * answers an unmatched URL without rendering the root layout, so without this
+ * the document would have no `lang` attribute and none of the site's styling —
+ * a genuine WCAG 3.1.1 failure, since a screen reader would not know what
+ * language to read the page in.
+ *
+ * The trade is that this 404 cannot be property-specific, and the chrome is a
+ * logo and a footer line rather than the site's real header: there is no
+ * router here to hand a client navigation to. Both are a fair price for a
+ * document that is correct on its own.
  */
 
 const inter = Inter({
@@ -78,31 +82,7 @@ export default function GlobalNotFound() {
           </header>
 
           <main className="flex flex-1 items-center py-16">
-            <div className="w-full max-w-xl">
-              <p className="text-micro font-semibold uppercase tracking-micro text-ink-subtle">
-                404
-              </p>
-              <h1 className="mt-4 font-display text-display-lg tracking-display text-ink">
-                {copy.errors.notFoundTitle}
-              </h1>
-              <p className="mt-4 text-body-lg text-ink-muted">
-                The link may be wrong, or the property may have been merged with a duplicate.
-                Searching for the address is usually the fastest way back.
-              </p>
-
-              <div className="mt-8">
-                <SearchCombobox size="lg" />
-              </div>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <ButtonLink href="/places" variant="secondary">
-                  {copy.nav.explore}
-                </ButtonLink>
-                <ButtonLink href="/" variant="secondary">
-                  Go to the homepage
-                </ButtonLink>
-              </div>
-            </div>
+            <PageNotFound />
           </main>
 
           <footer className="border-t border-border py-6">
