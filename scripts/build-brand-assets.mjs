@@ -305,4 +305,44 @@ write('src/app/apple-icon.png', await png(180));
 write('public/brand/icons/livd-icon-192.png', await png(192));
 write('public/brand/icons/livd-icon-512.png', await png(512));
 
+/* --- The social card ---------------------------------------------------
+   What a shared link previews as: one 2400 × 1260 image, served as both the
+   OpenGraph and the Twitter card.
+
+   The card is a designed, hand-made asset — Newsreader for the line, Inter
+   beneath it — and it is not redrawn here. `public/brand/og/social-card-plate.png`
+   is that design with the logo's space left empty, and this composites the
+   official logo into it. Everything else on the card is the plate's own
+   pixels, untouched.
+
+   The placement is taken from the type it replaces, measured off the original
+   card: the layout's left margin is 160, and the wordmark stood on a baseline
+   at y=196 with a 50px cap height. At 84px tall the official logo's "L" is
+   50.05px, and its cap line lands 16.97px below the top of its box — so a top
+   of 130 puts the wordmark back on the baseline it has always had, with the
+   symbol now beside it. `fit: 'contain'` scales it by its own aspect ratio:
+   the logo cannot be stretched here, only fitted. */
+
+const CARD_LOGO = { left: 160, top: 130, width: 287, height: 84 };
+
+const cardLogo = await sharp(readFileSync(p('public/brand/fitted/livd-logo.svg')), {
+  density: 72 * 4,
+})
+  .resize({
+    ...CARD_LOGO,
+    fit: 'contain',
+    background: { r: 0, g: 0, b: 0, alpha: 0 },
+  })
+  .png()
+  .toBuffer();
+
+const card = await sharp(p('public/brand/og/social-card-plate.png'))
+  .composite([{ input: cardLogo, left: CARD_LOGO.left, top: CARD_LOGO.top }])
+  .png({ compressionLevel: 9 })
+  .toBuffer();
+
+/* Both file conventions, byte for byte the same image, as they were before. */
+write('src/app/opengraph-image.png', card);
+write('src/app/twitter-image.png', card);
+
 console.log('done');

@@ -78,12 +78,34 @@ link, the link's own `aria-label` ("Livd — home") names it.
 
 **Where it is used.** `SiteHeader`, `SiteFooter` and `global-not-found.tsx`.
 
-**Not yet.** The Open Graph and Twitter cards
-(`src/app/opengraph-image.png`, `twitter-image.png`) are static images that
-still show the type-set wordmark; they need re-rendering with the official
-logo as a separate piece of design work. Email templates set the wordmark as
-type on purpose — images are blocked by default in most clients, and none of
-them render SVG.
+**Not yet.** Email templates set the wordmark as type on purpose — images are
+blocked by default in most clients, and none of them render SVG.
+
+### The social card
+
+What a shared link previews as: one 2400 × 1260 image, served as both the
+OpenGraph and the Twitter card, byte for byte the same file.
+
+The card is a designed, hand-made asset — Newsreader for the line, Inter
+beneath it — and nothing regenerates the design. What is generated is the logo
+on it:
+
+| File | What it is |
+| --- | --- |
+| `public/brand/og/social-card-plate.png` | **The source.** The card as designed, with the logo's space left empty. |
+| `src/app/opengraph-image.png` | The plate with the official logo composited in |
+| `src/app/twitter-image.png` | The same image |
+
+The placement is taken from the type it replaced, measured off the original
+card: left margin 160, baseline at y=196, cap height 50px. At 84px tall the
+logo's "L" stands 50.05px, so the wordmark sits on the baseline it always had
+and the symbol now stands beside it. It is fitted by its own aspect ratio, so
+it cannot be stretched by a placement mistake.
+
+`tests/design/social-card.test.ts` decodes both PNGs and asserts the card is
+the plate everywhere outside that box — pixel for pixel — and that the box
+holds the official artwork's own colours. Editing the design means editing the
+plate and re-running `npm run brand:build`.
 
 ---
 
