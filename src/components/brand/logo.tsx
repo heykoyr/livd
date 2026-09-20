@@ -81,6 +81,11 @@ export function Logo({
       width={art[tone].width}
       height={art[tone].height}
       alt={copy.brand.name}
+      // Only on the pair that follows the theme, and only so that print can
+      // pick the light-ground file: on paper the white one is nothing at all.
+      // A logo pinned to a ground with `theme` is left alone, because hiding
+      // it would print no logo rather than the wrong one.
+      data-logo={display ? tone : undefined}
       className={cn('block w-auto shrink-0', HEIGHTS[size], className, display)}
     />
   );

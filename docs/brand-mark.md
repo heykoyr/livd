@@ -62,6 +62,11 @@ import { Logo } from '@/components/brand/logo';
 <Logo size="lg" />            // sm 20px · md 24px (default) · lg 32px tall
 ```
 
+**On paper.** The pair carries `data-logo`, and `@media print` shows the
+light-ground file whatever the visitor chose — the white one on white paper is
+nothing at all. A logo pinned to a ground with `theme` is left alone, since
+hiding it would print no logo rather than the wrong one.
+
 **Theme.** Both files are in the markup; the `dark:` variant, which keys on
 `data-theme`, displays one and hides the other. So the logo is right on first
 paint (the theme script sets the attribute before anything is drawn), swaps

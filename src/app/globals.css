@@ -158,6 +158,75 @@
   --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px -6px rgb(0 0 0 / 0.5);
 }
 
+/* --- Print --------------------------------------------------------------
+ * Paper is light, and a browser does not print background colours. A page
+ * read in the dark theme therefore printed pale ink onto white — the text
+ * near enough invisible, the logo actually invisible, since the file the dark
+ * theme shows is the white one. Nobody would have seen it until the page came
+ * out of the printer blank.
+ *
+ * So print restores the light palette whatever the visitor chose on screen.
+ * It is the theme that was designed for a white ground, which is what paper
+ * is, and every token the block above remaps is restored below.
+ * `tests/design/print.test.ts` fails if a token is ever added to one and not
+ * the other. Must come after the dark block: the two selectors match with
+ * equal specificity, so the later one wins.
+ */
+@media print {
+  [data-theme='dark'] {
+    color-scheme: light;
+
+    --color-canvas: #fbfaf8;
+    --color-surface: #ffffff;
+    --color-surface-sunken: #f4f2ee;
+    --color-surface-raised: #ffffff;
+    --color-border: #e5e1d9;
+    --color-border-strong: #cfc9bd;
+    --color-ink: #17191a;
+    --color-ink-muted: #5c5f5b;
+    --color-ink-subtle: #6d7069;
+    --color-ink-inverse: #fbfaf8;
+
+    --color-brand: #12312a;
+    --color-brand-hover: #0c241f;
+    --color-brand-soft: #e8efeb;
+    --color-brand-border: #c3d5cd;
+    --color-brand-ink: #0c241f;
+    --color-accent: #aa5329;
+    --color-accent-soft: #f6ece5;
+
+    --color-score-strong: #2c6b58;
+    --color-score-good: #4c754c;
+    --color-score-mixed: #876923;
+    --color-score-weak: #9c5b33;
+    --color-score-poor: #a34430;
+    --color-score-unknown: #6d7068;
+
+    --color-positive: #2c6b58;
+    --color-positive-soft: #e6efeb;
+    --color-caution: #8a5f14;
+    --color-caution-soft: #f8f0dd;
+    --color-critical: #a34430;
+    --color-critical-soft: #f9eae6;
+    --color-info: #35566b;
+    --color-info-soft: #e8eff3;
+
+    --shadow-overlay: 0 1px 2px rgb(23 25 26 / 0.04), 0 12px 32px -8px rgb(23 25 26 / 0.14);
+    --shadow-popover: 0 1px 2px rgb(23 25 26 / 0.05), 0 6px 16px -6px rgb(23 25 26 / 0.12);
+  }
+
+  /* The logo is two files rather than one recoloured, so the theme swap is a
+     display swap — and on paper the light-ground file is the one that exists.
+     `<Logo>` marks the pair for exactly this. */
+  [data-logo='light'] {
+    display: block !important;
+  }
+
+  [data-logo='dark'] {
+    display: none !important;
+  }
+}
+
 /* ==========================================================================
    Base
    ========================================================================== */

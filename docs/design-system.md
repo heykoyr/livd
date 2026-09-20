@@ -127,6 +127,14 @@ stylesheet derives every token, the `color-scheme` and the browser chrome's
 the favicon, which is drawn on the browser's tab strip rather than on the page
 and so follows the browser — see [`brand-mark.md`](brand-mark.md).
 
+**On paper the light theme is the only theme.** A browser does not print
+background colours, so a page read in dark printed pale ink onto a white sheet
+— and the logo, whose dark-theme file is the white one, printed as nothing at
+all. `@media print` restores every token the dark theme remaps and shows the
+light-ground logo instead. `tests/design/print.test.ts` compares the two
+palettes token for token, so one cannot gain a colour the other never hears
+about.
+
 **Contrast.** Every pair the design actually puts together is asserted in
 `tests/design/contrast.test.ts`, which reads the values out of `globals.css` so
 the check cannot drift from the palette: body text at 4.5:1 on all four neutral
