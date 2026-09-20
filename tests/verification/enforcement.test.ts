@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { VERIFICATION_LIFETIME } from '@/config/verification';
 
 import { withoutTimestamps } from '../leak-scan';
+import { removeTree } from '../temp-dir';
 
 /**
  * Server-side enforcement, run against the real store.
@@ -42,7 +43,7 @@ afterAll(async () => {
   process.chdir(original.cwd);
   if (original.backend === undefined) delete process.env.LIVD_DATA_BACKEND;
   else process.env.LIVD_DATA_BACKEND = original.backend;
-  await rm(workDir, { recursive: true, force: true });
+  await removeTree(workDir);
 });
 
 /** A property at a known point, and two accounts. */
@@ -115,7 +116,7 @@ function draft(propertyId: string, verificationId: string | null) {
 beforeEach(async () => {
   const { resetCache } = await import('@/server/data/local/store');
   resetCache();
-  await rm(join(workDir, '.data'), { recursive: true, force: true });
+  await removeTree(join(workDir, '.data'));
 });
 
 describe('the server decides the verification, not the client', () => {

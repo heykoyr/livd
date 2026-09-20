@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -6,6 +6,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { hasSearchIntent, parseSearchFilters } from '@/lib/validation/search';
 import type { SearchFilters } from '@/types/domain';
+
+import { removeTree } from '../temp-dir';
 
 /**
  * Search reaches the whole world, and a local default may only reorder it.
@@ -42,13 +44,13 @@ afterAll(async () => {
   else process.env.LIVD_DATA_BACKEND = original.backend;
   if (original.demo === undefined) delete process.env.LIVD_SHOW_DEMO_DATA;
   else process.env.LIVD_SHOW_DEMO_DATA = original.demo;
-  await rm(workDir, { recursive: true, force: true });
+  await removeTree(workDir);
 });
 
 beforeEach(async () => {
   const { resetCache } = await import('@/server/data/local/store');
   resetCache();
-  await rm(join(workDir, '.data'), { recursive: true, force: true });
+  await removeTree(join(workDir, '.data'));
 });
 
 /** Two buildings of the same name in different countries, plus a loud decoy. */

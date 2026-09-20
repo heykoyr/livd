@@ -1,8 +1,10 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { removeTree } from '../temp-dir';
 
 /**
  * The email delivery check.
@@ -51,7 +53,7 @@ afterAll(async () => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
-  await rm(workDir, { recursive: true, force: true });
+  await removeTree(workDir);
 });
 
 beforeEach(async () => {
@@ -61,7 +63,7 @@ beforeEach(async () => {
   resetCache();
   // `resetModules` also discards the rate limiter's in-memory store, so every
   // test starts with an unspent allowance.
-  await rm(join(workDir, '.data'), { recursive: true, force: true });
+  await removeTree(join(workDir, '.data'));
 });
 
 interface Sent {

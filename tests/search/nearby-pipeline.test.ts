@@ -1,8 +1,10 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+
+import { removeTree } from '../temp-dir';
 
 /**
  * The proximity pipeline, from a property's coordinates to a distance.
@@ -35,13 +37,13 @@ afterAll(async () => {
   else process.env.LIVD_DATA_BACKEND = original.backend;
   if (original.demo === undefined) delete process.env.LIVD_SHOW_DEMO_DATA;
   else process.env.LIVD_SHOW_DEMO_DATA = original.demo;
-  await rm(workDir, { recursive: true, force: true });
+  await removeTree(workDir);
 });
 
 beforeEach(async () => {
   const { resetCache } = await import('@/server/data/local/store');
   resetCache();
-  await rm(join(workDir, '.data'), { recursive: true, force: true });
+  await removeTree(join(workDir, '.data'));
 });
 
 /** Lekki Phase 1, Lagos. */

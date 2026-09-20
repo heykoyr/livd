@@ -1,10 +1,12 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { maskEmail } from '@/lib/safety/identity';
+
+import { removeTree } from '../temp-dir';
 
 /**
  * Identity masking, and the directory that depends on it.
@@ -36,13 +38,13 @@ afterAll(async () => {
   process.chdir(original.cwd);
   if (original.backend === undefined) delete process.env.LIVD_DATA_BACKEND;
   else process.env.LIVD_DATA_BACKEND = original.backend;
-  await rm(workDir, { recursive: true, force: true });
+  await removeTree(workDir);
 });
 
 beforeEach(async () => {
   const { resetCache } = await import('@/server/data/local/store');
   resetCache();
-  await rm(join(workDir, '.data'), { recursive: true, force: true });
+  await removeTree(join(workDir, '.data'));
 });
 
 describe('maskEmail agrees with livd_mask_email', () => {
