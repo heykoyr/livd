@@ -432,7 +432,7 @@ AI-generated prose. `docs/roadmap.md` has the reasoning and what comes next.
 | [`docs/product-spec.md`](docs/product-spec.md) | What Livd is, who it is for, the intelligence layer, and what is out of scope |
 | [`docs/architecture.md`](docs/architecture.md) | Stack, the two-adapter data layer, rendering, trust and safety implementation, security posture |
 | [`docs/design-system.md`](docs/design-system.md) | Tokens, typography, colour and contrast, space, components, motion, responsive, voice |
-| [`docs/brand-mark.md`](docs/brand-mark.md) | The standalone symbol, the favicon and app-icon system, and how to use them |
+| [`docs/brand-mark.md`](docs/brand-mark.md) | The official logo files, the standalone symbol, the favicon and app-icon system, and how to use them |
 | [`docs/database-schema.md`](docs/database-schema.md) | Every table and the reasoning behind it |
 | [`docs/deployment.md`](docs/deployment.md) | Supabase, Vercel, seeding, geocoding, environment |
 | [`docs/security-testing.md`](docs/security-testing.md) | Every run attacking the live database, what each control refused, and the two findings that were real |
