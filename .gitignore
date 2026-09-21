@@ -56,3 +56,10 @@ yarn-error.log*
 
 # vitest JSON report — read by scripts/readme-counts.mjs, never committed
 .vitest-report.json
+
+# The README hero at full size — 2160px, 2.5 MB. What the README serves is
+# docs/images/livd-hero.jpg, a 1440px copy an eleventh of the weight, which is
+# already more pixels than GitHub can render. This is the master it came from:
+# kept beside the project so it is easy to find, out of the repository so the
+# same image is not carried twice.
+/Livd.png
