@@ -12,7 +12,7 @@ something a prospective renter can make a decision with.
 > labelled **Sample data** wherever it appears, excluded from the sitemap, and
 > marked `noindex`. No real resident has reviewed anything on Livd yet.
 
-![The property page](docs/images/property-page.png)
+![Livd — property intelligence built on what current and former residents actually say about living there](docs/images/livd-hero.jpg)
 
 | | |
 | --- | --- |
@@ -49,6 +49,12 @@ rather than as prose nobody can count.
 ---
 
 ## What it looks like
+
+![The property page](docs/images/property-page.png)
+
+The property page. A score is shown only where there is enough evidence to
+justify one, and the confidence band, the review count and the direction of
+travel are stated beside it rather than left to be inferred.
 
 ![Search results](docs/images/search.png)
 
