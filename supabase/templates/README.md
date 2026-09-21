@@ -195,16 +195,27 @@ hand-assembled link would have neither.
 
 Tables and inline styles throughout, because Outlook on Windows renders through
 Word and Gmail strips `<style>` blocks in several views. The `<style>` block
-carries only the dark-mode overrides and two media queries, all of which fall
-back to the inline light values when removed. Georgia stands in for
+carries one width media query and no colour at all. Georgia stands in for
 Newsreader, which no mail client will load.
 
-**One image: the logo.** It is the official brand file — a wordmark set in
-whichever serif the client owns is an approximation, and brand files exist to
-stop that. Two PNGs, `livd-logo.png` and `livd-logo-white.png` under
-`/brand/email/`, each on a tile of the ground it appears against, swapped by
-the dark media query; both carry `alt="Livd"` styled to match, so a client
-with images off shows the word where the logo would have been.
+**The email is dark, in every client.** Not light with a dark media query over
+it: Gmail does not honour `prefers-color-scheme`, it inverts a light message
+itself, and it inverts backgrounds and text while leaving every image exactly
+as it is. The palette is therefore written into the markup — canvas `#0d0e0d`,
+card `#161816`, rule `#2a2d2a`, ink `#f2f1ed`, sage button `#d8e4de` — and the
+`<meta name="color-scheme" content="dark">` pair tells a client the message is
+already in the scheme it might otherwise convert it to.
+
+**One image: the logo**, `livd-logo-white.png` under `/brand/email/`, white on
+a transparent ground so it sits on the email rather than on a tile of its own.
+It carries `alt="Livd"` styled to match, so a client with images off shows the
+word where the logo would have been.
+
+That transparency is the fix for a bug that shipped: the file was first drawn
+on an opaque tile of the ground it was meant for, and Gmail duly darkened the
+message around it and left the tile alone. It arrived as a white rectangle in
+the middle of a dark email. The ground belongs to the template; the logo
+carries none.
 
 The cost is worth naming, because it was deliberately avoided before: an
 email that loads a remote image is an email whose opening can be timed by

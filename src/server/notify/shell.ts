@@ -18,11 +18,23 @@ import { SITE, absoluteUrl } from '@/config/site';
  * The logo is the one image in the message, because it is the logo — a
  * wordmark set in whichever serif the client happens to own is an
  * approximation of it, and the brand files exist precisely so nothing has to
- * approximate. It is a PNG (no client renders SVG), on its own tile of paper
- * (a client that forces dark mode inverts the ground but not the image, and a
- * transparent dark-ink logo would vanish into it), and it carries
- * `alt="Livd"` styled to match the type it replaced — so a reader with images
- * turned off sees the word, in the face the email would have set it in.
+ * approximate. It is a PNG (no client renders SVG), transparent, and it
+ * carries `alt="Livd"` styled to match the type it replaced — so a reader
+ * with images turned off sees the word, in the face the email would have set
+ * it in.
+ *
+ * It was briefly drawn on an opaque tile of paper, on the reasoning that a
+ * client forcing dark mode inverts the ground but not the image. That is true
+ * and it is exactly why the tile was wrong: Gmail darkened the message around
+ * a logo it would not touch, and the tile arrived as a white rectangle. The
+ * ground belongs to the email, so this message states its own — light, as
+ * below — and uses the file drawn for it.
+ *
+ * The residual case is a client that forces this light message dark anyway:
+ * the wordmark is black and will dim into the ground it is given, where the
+ * white file would have been right. The sign-in template answers that by
+ * being dark in every client; this one is not, because a notification is read
+ * in a thread of other mail and looking like the rest of it matters more.
  *
  * Every message has a plain-text twin. It is not a fallback nobody reads — a
  * message with no text part scores worse with every spam filter there is, and

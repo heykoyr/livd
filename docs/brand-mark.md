@@ -83,8 +83,13 @@ link, the link's own `aria-label` ("Livd — home") names it.
 
 **Where it is used.** `SiteHeader`, `SiteFooter` and `global-not-found.tsx`.
 
-**Not yet.** Email templates set the wordmark as type on purpose — images are
-blocked by default in most clients, and none of them render SVG.
+**In email.** Both templates render the logo as a transparent PNG from
+`public/brand/email/` — no client renders SVG. The sign-in email is dark in
+every client and uses the white file at 140 × 41; the notification shell is
+light and uses the dark-ink file at 82 × 24. Neither carries a tile: a ground
+baked into the image is a white rectangle waiting to happen the first time a
+client darkens the message around it. See
+[`supabase/templates/README.md`](../supabase/templates/README.md).
 
 ### The social card
 

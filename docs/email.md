@@ -288,6 +288,8 @@ suppress a real send; and it is recorded in the audit trail as
 - every link, including the one behind the logo, on `https://livd.site`
 - the logo at the top rendering as the official mark, not as alt text — it is
   loaded from `https://livd.site/brand/email/livd-logo.png`
+- **no rectangle around the logo**, in a dark client as well as a light one.
+  The file is transparent; a tile around it means the wrong asset shipped
 
 The page cannot test sign-in email. Supabase sends that itself — see
 [`supabase/templates/README.md`](../supabase/templates/README.md).

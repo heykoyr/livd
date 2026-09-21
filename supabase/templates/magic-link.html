@@ -15,18 +15,25 @@
     client agrees on.
   * Inline styles on every element. Gmail strips <style> blocks in some views,
     so anything that matters cannot live in a stylesheet. The <style> block
-    below carries only the dark-mode hints and the one media query, both of
-    which degrade to the inline values when removed.
+    below carries one width media query and no colour at all: strip it and the
+    email still looks like itself, one column narrower in its padding.
   * Web-safe fonts with the Livd serif first. Newsreader will not load in an
     email client; Georgia is the closest thing that is already installed
     everywhere, and it keeps the editorial feel the site has.
-  * One image, and only one: the logo. Set as type it was an approximation in
-    whichever serif the client happened to own, which is the thing brand files
-    exist to stop. Two PNGs — no client renders SVG — each on a tile of the
-    ground it appears against, swapped by the dark media query above; both
-    carry alt="Livd", styled to match, so a client with images off shows the
-    word exactly where the logo would have been. Nothing else loads: no hero,
-    no icons, nothing that makes a sign-in email look like marketing.
+  * The email is dark, explicitly and always, rather than light with a dark
+    media query over it. Gmail does not honour prefers-color-scheme; it takes a
+    light email and inverts the colours itself, and it inverts backgrounds and
+    text but never the pixels of an image. A logo drawn for the light ground
+    therefore arrived as a white rectangle floating in a dark email. Declaring
+    the dark ground in the markup is what stops a client from guessing.
+
+  * One image, and only one: the logo, white, on a transparent background so
+    it sits directly on that ground with no tile around it. Set as type it was
+    an approximation in whichever serif the client happened to own, which is
+    the thing brand files exist to stop. A PNG because no client renders SVG.
+    alt="Livd", styled to match, so a client with images off shows the word
+    exactly where the logo would have been. Nothing else loads: no hero, no
+    icons, nothing that makes a sign-in email look like marketing.
   * {{ .ConfirmationURL }} is Supabase's own token. It carries the PKCE code and
     the redirect Livd asked for. Do not construct a URL by hand here — that is
     what would break single use and expiry.
@@ -36,23 +43,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light dark" />
-    <meta name="supported-color-schemes" content="light dark" />
+    <!-- The email is dark in every client, so it declares one scheme rather
+         than two. A client told which scheme the message is already in has no
+         reason to transform it into the other one. -->
+    <meta name="color-scheme" content="dark" />
+    <meta name="supported-color-schemes" content="dark" />
     <title>Your Livd sign-in link</title>
     <style>
-      /* Apple Mail and iOS Mail honour this; Gmail does not, which is why the
-         light palette is also inline on every element. */
-      @media (prefers-color-scheme: dark) {
-        .livd-canvas { background-color: #0d0e0d !important; }
-        .livd-card { background-color: #161816 !important; border-color: #2a2d2a !important; }
-        .livd-ink { color: #f2f1ed !important; }
-        .livd-muted { color: #a3a69f !important; }
-        .livd-subtle { color: #83867f !important; }
-        .livd-rule { border-color: #2a2d2a !important; }
-        .livd-button { background-color: #d8e4de !important; color: #0d0e0d !important; }
-        .livd-logo-light { display: none !important; }
-        .livd-logo-dark { display: block !important; }
-      }
+      /* Every colour is inline below, on the element, because Gmail strips
+         <style> in several views. Nothing in here carries a colour: this block
+         is layout only, for the one width that needs it. */
       @media only screen and (max-width: 600px) {
         .livd-pad { padding-left: 24px !important; padding-right: 24px !important; }
         .livd-title { font-size: 26px !important; }
@@ -62,12 +62,12 @@
 
   <body
     class="livd-canvas"
-    style="margin:0; padding:0; background-color:#fbfaf8; -webkit-font-smoothing:antialiased;"
+    style="margin:0; padding:0; background-color:#0d0e0d; -webkit-font-smoothing:antialiased;"
   >
     <!-- Preheader: the grey line a client shows next to the subject. Hidden in
          the body itself by the zero dimensions. -->
     <div
-      style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#fbfaf8; opacity:0;"
+      style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#0d0e0d; opacity:0;"
     >
       Use the button in this email to sign in to Livd. The link expires in 15 minutes.
     </div>
@@ -79,7 +79,7 @@
       border="0"
       width="100%"
       class="livd-canvas"
-      style="background-color:#fbfaf8;"
+      style="background-color:#0d0e0d;"
     >
       <tr>
         <td align="center" style="padding:40px 16px;">
@@ -91,26 +91,19 @@
             width="100%"
             style="max-width:520px; width:100%;"
           >
-            <!-- Logo. Two files, one per ground; the media query below swaps
-                 them. The alt text is styled so that a client with images off
-                 shows the word where the logo would have been. -->
+            <!-- The logo: the official white file, on a transparent ground, so
+                 it sits on the email itself rather than on a tile of its own.
+                 The alt text is styled so that a client with images off shows
+                 the word where the logo would have been. -->
             <tr>
               <td class="livd-pad" style="padding:0 8px 24px 8px;">
                 <img
-                  class="livd-logo-light"
-                  src="https://livd.site/brand/email/livd-logo.png"
-                  alt="Livd"
-                  width="82"
-                  height="24"
-                  style="display:block; border:0; width:82px; height:24px; font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:20px; letter-spacing:-0.02em; color:#17191a;"
-                />
-                <img
-                  class="livd-logo-dark"
+                  class="livd-logo"
                   src="https://livd.site/brand/email/livd-logo-white.png"
                   alt="Livd"
-                  width="82"
-                  height="24"
-                  style="display:none; border:0; width:82px; height:24px; font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:20px; letter-spacing:-0.02em; color:#f2f1ed; mso-hide:all;"
+                  width="140"
+                  height="41"
+                  style="display:block; border:0; width:140px; height:41px; font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:24px; letter-spacing:-0.02em; color:#f2f1ed;"
                 />
               </td>
             </tr>
@@ -119,21 +112,21 @@
             <tr>
               <td
                 class="livd-card"
-                style="background-color:#ffffff; border:1px solid #e5e1d9; border-radius:12px;"
+                style="background-color:#161816; border:1px solid #2a2d2a; border-radius:12px;"
               >
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                   <tr>
                     <td class="livd-pad" style="padding:40px 40px 0 40px;">
                       <h1
                         class="livd-ink livd-title"
-                        style="margin:0; font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:30px; line-height:1.15; letter-spacing:-0.021em; font-weight:400; color:#17191a;"
+                        style="margin:0; font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:30px; line-height:1.15; letter-spacing:-0.021em; font-weight:400; color:#f2f1ed;"
                       >
                         Your sign-in link
                       </h1>
 
                       <p
                         class="livd-muted"
-                        style="margin:16px 0 0 0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; line-height:1.6; color:#5c5f5b;"
+                        style="margin:16px 0 0 0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; line-height:1.6; color:#a3a69f;"
                       >
                         Use the button below to securely sign in to Livd.
                       </p>
@@ -146,9 +139,9 @@
                     <td class="livd-pad" style="padding:28px 40px 0 40px;">
                       <!--[if mso]>
                         <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
-                          href="{{ .ConfirmationURL }}" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="17%" stroke="f" fillcolor="#12312a">
+                          href="{{ .ConfirmationURL }}" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="17%" stroke="f" fillcolor="#d8e4de">
                           <w:anchorlock/>
-                          <center style="color:#fbfaf8;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:500;">Sign in to Livd</center>
+                          <center style="color:#0d0e0d;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:500;">Sign in to Livd</center>
                         </v:roundrect>
                       <![endif]-->
                       <!--[if !mso]><!-- -->
@@ -157,14 +150,14 @@
                           <td
                             class="livd-button"
                             align="center"
-                            bgcolor="#12312a"
-                            style="background-color:#12312a; border-radius:8px;"
+                            bgcolor="#d8e4de"
+                            style="background-color:#d8e4de; border-radius:8px;"
                           >
                             <a
                               href="{{ .ConfirmationURL }}"
                               target="_blank"
                               class="livd-button"
-                              style="display:inline-block; padding:14px 28px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; font-weight:500; line-height:20px; color:#fbfaf8; text-decoration:none; border-radius:8px;"
+                              style="display:inline-block; padding:14px 28px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; font-weight:500; line-height:20px; color:#0d0e0d; text-decoration:none; border-radius:8px;"
                               >Sign in to Livd</a
                             >
                           </td>
@@ -178,7 +171,7 @@
                     <td class="livd-pad" style="padding:28px 40px 0 40px;">
                       <p
                         class="livd-muted"
-                        style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:14px; line-height:1.6; color:#5c5f5b;"
+                        style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:14px; line-height:1.6; color:#a3a69f;"
                       >
                         This link expires in 15 minutes and can only be used once. If you did not
                         ask to sign in, you can ignore this email — nothing will happen.
@@ -199,11 +192,11 @@
                         <tr>
                           <td
                             class="livd-rule"
-                            style="border-top:1px solid #e5e1d9; padding-top:20px;"
+                            style="border-top:1px solid #2a2d2a; padding-top:20px;"
                           >
                             <p
                               class="livd-subtle"
-                              style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.5; color:#6d7069;"
+                              style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.5; color:#83867f;"
                             >
                               If the button does not work, paste this into your browser:
                             </p>
@@ -211,7 +204,7 @@
                               <a
                                 href="{{ .ConfirmationURL }}"
                                 target="_blank"
-                                style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.5; color:#12312a;"
+                                style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.5; color:#d8e4de;"
                                 >{{ .ConfirmationURL }}</a
                               >
                             </p>
@@ -228,7 +221,7 @@
               <td class="livd-pad" style="padding:24px 8px 0 8px;">
                 <p
                   class="livd-subtle"
-                  style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.6; color:#6d7069;"
+                  style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.6; color:#83867f;"
                 >
                   Livd — know what it&rsquo;s really like to live there.
                 </p>

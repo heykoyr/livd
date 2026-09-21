@@ -45,15 +45,16 @@ describe('the files email points at', () => {
     expect(existsSync(join(process.cwd(), 'public', path))).toBe(true);
   });
 
-  it.each([LIGHT, DARK])('%s is a PNG with no alpha, on its own ground', (path) => {
+  it.each([LIGHT, DARK])('%s is a transparent PNG, carrying no ground of its own', (path) => {
     const b = readFileSync(join(process.cwd(), 'public', path));
     expect(b.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
-    expect(b.readUInt32BE(16)).toBe(164); // twice the 82 it is displayed at
-    expect(b.readUInt32BE(20)).toBe(48);
-    // Colour type 2 is truecolour without alpha: a client that forces dark
-    // mode inverts the ground but not the image, and a transparent dark-ink
-    // logo would be left invisible on it.
-    expect(b.readUInt8(25)).toBe(2);
+    expect(b.readUInt32BE(16)).toBe(280); // twice the 140 the sign-in email shows
+    expect(b.readUInt32BE(20)).toBe(82);
+    // Colour type 6 is truecolour *with* alpha. An opaque tile shipped once
+    // and arrived as a white rectangle in the middle of a darkened Gmail
+    // message, because a client that inverts a mail leaves its images alone.
+    // The ground belongs to the template, not to the logo.
+    expect(b.readUInt8(25)).toBe(6);
   });
 });
 
@@ -83,22 +84,49 @@ describe('a notification email', () => {
 
 describe('the sign-in template', () => {
   const template = read('supabase/templates/magic-link.html');
+  const markup = template.slice(template.indexOf('<!doctype html>'));
 
-  it('carries both logos, absolute, on the canonical origin', () => {
-    expect(template).toContain(`src="${ORIGIN}${LIGHT}"`);
-    expect(template).toContain(`src="${ORIGIN}${DARK}"`);
+  it('shows the white logo, absolute, on the canonical origin', () => {
+    expect(markup).toContain(`src="${ORIGIN}${DARK}"`);
+    expect(markup).not.toContain(`src="${ORIGIN}${LIGHT}"`);
   });
 
-  it('swaps them on the dark scheme rather than recolouring one', () => {
-    const dark = template.slice(template.indexOf('@media (prefers-color-scheme: dark)'));
-    expect(dark).toContain('.livd-logo-light { display: none !important; }');
-    expect(dark).toContain('.livd-logo-dark { display: block !important; }');
+  it('carries one logo and names Livd for a client with images turned off', () => {
+    const images = markup.match(/<img[\s\S]*?\/>/g) ?? [];
+
+    expect(images).toHaveLength(1);
+    expect(images[0]).toContain('alt="Livd"');
   });
 
-  it('names Livd for a client with images turned off', () => {
-    const images = template.match(/<img[\s\S]*?\/>/g) ?? [];
+  /**
+   * The email states its own ground rather than leaving a client to decide.
+   * Gmail does not honour `prefers-color-scheme`; it inverts a light message
+   * itself and leaves every image untouched, which is how a logo on a light
+   * tile came to sit in a dark message as a white rectangle. A white logo is
+   * only right on a dark ground, so the ground has to be written down.
+   */
+  it('declares the dark scheme it is drawn in', () => {
+    expect(markup).toContain('<meta name="color-scheme" content="dark" />');
+    expect(markup).toContain('<meta name="supported-color-schemes" content="dark" />');
+  });
 
-    expect(images).toHaveLength(2);
-    for (const image of images) expect(image).toContain('alt="Livd"');
+  it('is dark in the markup, not by a media query a client may ignore', () => {
+    expect(markup).not.toContain('prefers-color-scheme');
+    // The canvas, the card and the body copy, as the dark theme declares them.
+    expect(markup).toContain('background-color:#0d0e0d');
+    expect(markup).toContain('background-color:#161816');
+    expect(markup).toContain('color:#f2f1ed');
+  });
+
+  it('leaves no light-theme colour behind to fight the ground', () => {
+    for (const light of ['#fbfaf8', '#ffffff', '#e5e1d9', '#17191a', '#5c5f5b', '#12312a']) {
+      expect(markup, `${light} is a light-theme value`).not.toContain(light);
+    }
+  });
+
+  it('still hands sign-in to Supabase, untouched', () => {
+    // Four uses: the VML button, the anchor, and the fallback link, which
+    // carries it as both its href and the text somebody pastes.
+    expect(markup.match(/{{ \.ConfirmationURL }}/g) ?? []).toHaveLength(4);
   });
 });

@@ -307,25 +307,37 @@ write('public/brand/icons/livd-icon-512.png', await png(512));
 
 /* --- The email logo ----------------------------------------------------
    The one place a raster of the full logo is genuinely required: no email
-   client renders SVG, and none of them would load it if they did. Drawn at
-   twice the 82 × 24 it is displayed at, so it is sharp on a phone.
+   client renders SVG, and none of them would load it if they did.
 
-   Opaque, and on the ground each mode actually has. An image is the one thing
-   a client that forces dark mode leaves alone while inverting everything
-   around it — a transparent dark-ink logo would be left invisible on a
-   blackened canvas, where a tile of the canvas's own colour cannot be. */
+   Transparent, which took a shipped mistake to arrive at. These were first
+   drawn on an opaque tile of the ground each was meant for, reasoning that a
+   client forcing dark mode inverts backgrounds and text but never the pixels
+   of an image, so a transparent dark-ink logo would be left invisible. What
+   actually happens is worse and more obvious: Gmail darkened the sign-in
+   email around a logo it would not touch, and the tile arrived as a white
+   rectangle sitting in the middle of it.
 
-const NIGHT = '#0D0E0D'; // --color-canvas, dark
+   The ground is the email's business, not the logo's. Each template now
+   states the ground it is on and uses the file drawn for it — see
+   `supabase/templates/magic-link.html`, which is dark in every client for
+   exactly this reason.
 
-const emailLogo = (file, ground) =>
+   Drawn at 280 × 82, twice the 140 × 41 the sign-in email displays, which is
+   also sharp at the 82 × 24 the notification shell uses. */
+
+const emailLogo = (file) =>
   sharp(readFileSync(p('public/brand/fitted', file)), { density: 72 * 4 })
-    .resize({ width: 164, height: 48, fit: 'contain', background: ground })
-    .flatten({ background: ground })
+    .resize({
+      width: 280,
+      height: 82,
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .png({ compressionLevel: 9 })
     .toBuffer();
 
-write('public/brand/email/livd-logo.png', await emailLogo('livd-logo.svg', PAPER));
-write('public/brand/email/livd-logo-white.png', await emailLogo('livd-logo-white.svg', NIGHT));
+write('public/brand/email/livd-logo.png', await emailLogo('livd-logo.svg'));
+write('public/brand/email/livd-logo-white.png', await emailLogo('livd-logo-white.svg'));
 
 /* --- The social card ---------------------------------------------------
    What a shared link previews as: one 2400 × 1260 image, served as both the
