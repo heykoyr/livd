@@ -1,234 +1,214 @@
-# Auth email — what has to be set by hand
+# Auth email — what is set in Supabase, and why
 
-Supabase exposes no API for Auth URL configuration, email templates or the
-sender identity. Everything in this file is a dashboard change. Nothing in the
-repository can make it happen, and nothing in the repository should pretend to.
+Supabase owns four things Livd's sign-in depends on: the URL configuration, the
+SMTP sender, the email templates and the rate limits. None of them live in this
+repository. This file records what each one is set to, why, and how to check it
+from outside — because a written-down value has been wrong here before, for
+weeks, without anybody noticing.
 
-**Read §2 before §3.** On the built-in email sender the dashboard locks the
-subject *and* the body: "Set up custom SMTP to edit templates". Custom SMTP is
-therefore the gate on all of it — the sender name, the subject and the HTML —
-not just the sender name, which is what an earlier version of this file
-implied.
-
-The application code is already correct: `src/app/auth/callback/route.ts`
-exchanges the code, `src/middleware.ts` keeps the session alive, and
-`src/server/actions/auth.ts` asks for an absolute redirect built from
-`SITE.url`. What follows is the half that lives in Supabase.
+Last read from the live project on **21 September 2026**, through the
+Management API (`GET /v1/projects/tehkyjihyyhxxrqlvmck/config/auth`).
 
 ---
 
-## 1. URL configuration — this is what caused the localhost redirect
+## 0. How email sign-in works
+
+```
+/sign-in                 person enters an address
+  │  requestSignIn       signInWithOtp — Supabase stores a one-time token
+  ▼
+email                    Livd <notifications@livd.site>, via Resend SMTP
+  │                      link:  https://livd.site/auth/confirm?token_hash=…&type=email&next=…
+  │                      code:  the same token, as eight digits
+  ▼
+/auth/confirm            GET. Shows "Sign in to Livd". Spends nothing.
+  │  tap                 POST, same-origin only
+  ▼
+/auth/verify             verifyOtp({ token_hash, type }) — Supabase checks and
+  │                      deletes the token, returns a session; httpOnly cookies
+  ▼
+next                     the page the person was on, a Livd path only
+```
+
+Or, on the "check your email" screen, the eight-digit code →
+`verifySignInCode` → `verifyOtp({ email, token })`. Same token: using either
+spends both.
+
+**Why it is built this way.** Until 21 September the email carried Supabase's
+default `{{ .ConfirmationURL }}`. That link goes to Supabase, which spends the
+token on the first GET and then redirects with a PKCE code, which Livd
+exchanged for a session at `/auth/callback`. The exchange needs the PKCE
+verifier — a cookie in the browser that asked for the email. Supabase's auth
+log for 21 September shows what that means on an iPhone whose default browser
+is Chrome:
+
+```
+01:29:06  POST /otp      from the Vercel function (the request, made in Safari)
+01:29:37  GET  /verify   303, user agent CriOS — iOS Chrome
+01:29:39  POST /token    400 "both auth code and code verifier should be non-empty"
+```
+
+The link opened in Chrome, Chrome had no verifier, and the page said "that
+link did not work … sign-in links expire", which was not what happened.
+Ten minutes later a second attempt failed with `bad_code_verifier` — Chrome now
+held a verifier, from a different request — and tapping that link again gave
+"One-time token not found". The request after that was refused with
+`429: For security purposes, you can only request this after 10 seconds`, which
+Livd described as a limit "on our email provider".
+
+The token-hash design fixes all of it without weakening anything:
+
+- **Any browser.** `verifyOtp` with a token hash needs nothing from the
+  requesting browser. This is the flow Supabase documents for server-rendered
+  apps.
+- **Scanner-proof.** Opening the link does nothing; only the tap (a POST) does.
+  Mail scanners — Gmail's, Outlook Safe Links, corporate gateways — fetch links
+  but do not submit forms, so they cannot spend the token before its owner.
+- **Still one-time, still expiring.** Supabase deletes the token when it is
+  redeemed and refuses it after `mailer_otp_exp`. Livd never builds, stores or
+  logs a token.
+- **Cross-device.** The code covers the email that opens on a phone while the
+  sign-in page waits on a laptop.
+
+What is given up: PKCE bound the link to the browser that asked, so a link
+intercepted in transit was useless elsewhere. A token-hash link is a bearer
+credential for up to an hour — the same property every magic link without PKCE
+has, and exactly the property that makes it work in the browser iOS opens.
+Google sign-in keeps PKCE, where one tab does the whole round trip.
+
+`/auth/callback` still exists for Google, and as a degraded fallback: if the
+template were ever reverted to `{{ .ConfirmationURL }}`, the link would land
+there and finish in the requesting browser — and say plainly when it could
+not.
+
+---
+
+## 1. URL configuration
 
 **Authentication → URL Configuration**
 
-Probed from outside with `npm run domain:check`, which reports the live values
-rather than what anybody remembers setting:
-
-| Field | Value | Status |
+| Field | Live value | Why |
 | --- | --- | --- |
-| Site URL | `https://livd.site` | **done** — verified 17 September 2026 |
-| Redirect URLs | `https://livd.site/**`, `https://www.livd.site/**`, `http://localhost:3000/**` | **done** — production callback honoured, localhost still honoured |
+| Site URL | `https://livd.site` | The host of every sign-in link (`{{ .SiteURL }}` in the template), and Supabase's fallback for any redirect it will not honour |
+| Redirect URLs | `https://livd.site/**`, `https://www.livd.site/**`, `http://localhost:3000/**` | `/auth/callback` (Google, and the `emailRedirectTo` passed as `next`); localhost for development |
 
-Confirmed end to end the same day by a real sign-in email: its link was
-`…/auth/v1/verify?…&redirect_to=https://livd.site/auth/callback?next=/`.
+Nothing else is needed. `/auth/confirm` is not a redirect target — the email
+links to it directly — so it needs no entry. Preview deployments are
+deliberately absent: they are behind Vercel SSO and nobody signs into them.
 
-An earlier version of this file recorded the Site URL as
-`https://livd-psi.vercel.app`. It is not, and has not been for some time —
-both are aliases of the same deployment, which is exactly why nobody noticed.
-Do not trust this table; run the check.
-
-Sub-paths of the Site URL are allow-listed implicitly — probing GoTrue with a
-throwaway token shows `https://livd-koyrstudio.vercel.app/auth/callback?next=%2Freview`
-honoured in full while `https://not-allowed.example/x` falls back. So
-production has needed only the Site URL so far.
-
-**Order matters, and getting it wrong is silent.** Add the two `livd.site`
-entries to the Redirect URLs list *first*: that step is purely additive and
-breaks nothing while the old host is still the Site URL. Only then change the
-Site URL and `NEXT_PUBLIC_SITE_URL` in Vercel, which are one change in two
-places. Doing the Vercel half alone produces sign-in links that work and land
-the person on the old origin, signed out, with nothing logged. See
-[`docs/domain.md`](../../docs/domain.md).
-
-Local development must keep working: `http://localhost:3000/**` stays on the
-list. Removing it to tidy up would be a regression, and `npm run domain:check`
-asserts it is still there.
-
-Add `https://*-koyrstudio.vercel.app/**` too if preview deployments should be
-able to sign anyone in.
-
-**How to check this without sending an email.** GoTrue validates `redirect_to`
-against the allow list before it redirects, even for a token it will reject.
-Point it at an origin that can never be allowed and whatever it falls back to
-*is* the Site URL:
+**Supabase does not reject a redirect it will not honour; it substitutes the
+Site URL, silently.** Probe it rather than trusting this table:
 
 ```bash
-curl -sI -H "apikey: $ANON_KEY" \n  "$SUPABASE_URL/auth/v1/verify?token=probe&type=magiclink&redirect_to=https%3A%2F%2Fnot-allowed.example%2Fx" \n  | grep -i '^location'
+curl -sI -H "apikey: $ANON_KEY" \
+  "$SUPABASE_URL/auth/v1/verify?token=probe&type=magiclink&redirect_to=https%3A%2F%2Fnot-allowed.example%2Fx" \
+  | grep -i '^location'
 ```
 
-**Why the Site URL matters more than it looks.** When Livd asks for a magic
-link it passes `emailRedirectTo`. If that URL is not on the Redirect URLs list,
-GoTrue does not error — it silently substitutes the Site URL. The Site URL was
-still Supabase's default, `http://localhost:3000`, which is exactly what the
-link in the email pointed at. Fixing the application alone would not have
-fixed the email.
-
-When a custom domain replaces the Vercel one, both the Site URL here and
-`NEXT_PUBLIC_SITE_URL` in Vercel have to change together. That is happening
-now: the domain is `livd.site`.
+`npm run domain:check` wraps this.
 
 ---
 
-## 2. Custom SMTP — the gate on everything below
+## 2. SMTP — Resend
 
-**Project Settings → Authentication → SMTP Settings**
+**Authentication → Emails → SMTP Settings**
 
-Until this is configured, Supabase sends its own default template and the
-dashboard disables both the Subject and Body fields on the Magic Link page:
-*"Emails will be sent using the default templates. Set up custom SMTP to edit
-their subject and body."* The sender is likewise fixed at
-`noreply@mail.app.supabase.io`, displayed as "Supabase Auth".
-
-So this single setting gates three things at once — the sender name, the
-subject and the HTML in §3. None of them can be changed from the application,
-and none of them can be changed from the dashboard either while the built-in
-sender is in use.
-
-Two things follow from that, and they are the same thing:
-
-- The built-in sender is rate-limited to a handful of emails per hour and is
-  explicitly not intended for production. `docs/roadmap.md` has listed "an
-  email provider for magic links" as a pre-launch item since Phase 7. This is
-  not theoretical: on 7 September 2026, testing the newly-fixed flow hit it
-  four times inside four minutes —
-
-  ```
-  429: email rate limit exceeded   (over_email_send_rate_limit)   POST /otp
-  ```
-
-  Livd surfaces that specifically now rather than as a generic failure, but
-  the limit itself only lifts with custom SMTP.
-- Custom SMTP is what changes the sender name.
-
-**Status: configured on 17 September 2026, and verified by a real email.**
-
-| | Before (13:58 UTC) | After (14:26 UTC) |
-| --- | --- | --- |
-| From | `Supabase Auth <noreply@mail.app.supabase.io>` | `Livd <notifications@livd.site>` |
-| Subject | `Your sign-in link` | `Your Livd sign-in link` |
-| Body | Supabase default, "powered by Supabase" | `magic-link.html` |
-| Sent through | Supabase's Postmark pool | Resend, via Amazon SES eu-west-1 |
-| DMARC | `pass header.from=supabase.io` | `pass header.from=livd.site` |
-| DKIM | `@mail.app.supabase.io` | `@livd.site`, selector `resend` |
-| Redirect in the link | `https://livd.site/auth/callback` | `https://livd.site/auth/callback` |
-
-The message has no `Reply-To`. That is correct for a sign-in link — it invites
-no reply — and it is why notifications set one and this does not.
-
-The domain is ready for it: DKIM, the return-path and DMARC for `livd.site` are
-published and `npm run domain:check` passes them.
-
-**Set:**
-
-| Field | Value |
+| Field | Live value |
 | --- | --- |
 | Host | `smtp.resend.com` |
 | Port | `465` |
 | Username | `resend` |
-| Password | a Resend API key with sending permission |
+| Password | the Resend API key named **Supabase** (sending access only) |
 | Sender email | `notifications@livd.site` |
 | Sender name | `Livd` |
 
-Those four connection values are Resend's SMTP settings as shown at
-resend.com → Settings → SMTP; the page is the authority if they ever differ.
-Resend's Supabase integration (resend.com → Integrations → Supabase) fills the
-same fields in one step and is an equally good way to do it.
+Configured 17 September 2026. The domain `livd.site` is verified in Resend
+(region eu-west-1) with DKIM `resend._domainkey`, the `send`/`rsend` return
+paths and DMARC — see [`docs/email.md`](../../docs/email.md). The Supabase key
+is separate from the application's so either can be rotated alone.
 
-After saving, open **Authentication → Rate Limits** — custom SMTP starts at a
-conservative sends-per-hour figure that is worth reading rather than assuming.
-
-Resend is already Livd's transactional provider, so pointing Supabase's SMTP
-at it means one verified domain, one reputation and one place to read a
-delivery log — rather than a second provider existing solely to send the one
-email Supabase owns.
-
-**Use a separate API key from the application's.** Same account, same verified
-domain, different key. Supabase stores it in its own dashboard, and a key that
-lives in two services cannot be rotated in one of them.
-
-The domain has to show **Verified** at resend.com/domains first —
-`notifications@livd.site` is refused with a 403 until it does. See
-[`docs/email.md`](../../docs/email.md).
-
-Until then, none of it changes: recipients see "Supabase Auth" and Supabase's
-own default wording. The template in §3 is written and waiting; it cannot be
-applied first.
-
-**How to confirm it worked.** Request a sign-in link to an inbox you can read
-and open the original message. `From` should read `Livd <notifications@livd.site>`,
-and `Authentication-Results` should show `dkim=pass header.i=@livd.site` and
-`dmarc=pass header.from=livd.site`. Before this change the same header reads
-`dmarc=pass header.from=supabase.io` — which passes, and is exactly the problem.
+**Link tracking is off, and must stay off.** Resend's click tracking rewrites
+every link through a tracking host; a rewritten sign-in link is the classic way
+these break. The domain's *Configuration → Enable tracking metrics* is not
+configured, so nothing is rewritten.
 
 ---
 
 ## 3. The email itself
 
-**Authentication → Emails → Magic Link**
+**Authentication → Emails → Magic Link** *and* **Confirm signup**
 
-*Both fields are disabled until custom SMTP is configured — see §2.*
+Both templates get the same file, [`magic-link.html`](./magic-link.html), and
+the same subject, `Your Livd sign-in link`. A first sign-in is sent the
+*Confirm signup* template, not *Magic Link* — until 21 September that one was
+still Supabase's default ("Confirm your email address", "Follow this link to
+confirm your user"), so every new visitor's first email looked like somebody
+else's.
 
-- **Subject:** `Your Livd sign-in link`. Supabase's default is `Your sign-in
-  link`, which names nothing; in an inbox sorted by sender that line is the
-  only thing saying which service the link belongs to.
-- **Body:** the contents of [`magic-link.html`](./magic-link.html)
+The link is
 
-That file is the source of truth. The dashboard has no API, so the two can
-drift — change the file first, then paste it.
+```
+{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next={{ .RedirectTo }}
+```
 
-It uses `{{ .ConfirmationURL }}`, which is Supabase's own token. It carries the
-PKCE code and the redirect Livd asked for. Do not build a URL by hand in the
-template: single use and expiry are properties of that token, and a
-hand-assembled link would have neither.
+- `type=email` covers both templates: Supabase looks the hash up as a
+  confirmation token or a recovery (magic link) token.
+- `{{ .SiteURL }}`, not `{{ .RedirectTo }}`, as the host: every sign-in email
+  lands on `https://livd.site`, whatever environment asked for it.
+- `next` is the address Livd passed as `emailRedirectTo`. `/auth/confirm` takes
+  only a Livd path from it, through `safeNextPath`.
 
-### What it is checked against
+The file is the source of truth; the dashboard can drift. Change the file,
+then apply it to both templates. `tests/auth/sign-in-template.test.ts` asserts
+the link shape, that `{{ .ConfirmationURL }}` is gone, and that the file says
+nothing Supabase-branded.
 
-Tables and inline styles throughout, because Outlook on Windows renders through
-Word and Gmail strips `<style>` blocks in several views. The `<style>` block
-carries one width media query and no colour at all. Georgia stands in for
-Newsreader, which no mail client will load.
-
-**The email is dark, in every client.** Not light with a dark media query over
-it: Gmail does not honour `prefers-color-scheme`, it inverts a light message
-itself, and it inverts backgrounds and text while leaving every image exactly
-as it is. The palette is therefore written into the markup — canvas `#0d0e0d`,
-card `#161816`, rule `#2a2d2a`, ink `#f2f1ed`, sage button `#d8e4de` — and the
-`<meta name="color-scheme" content="dark">` pair tells a client the message is
-already in the scheme it might otherwise convert it to.
-
-**One image: the logo**, `livd-logo-white.png` under `/brand/email/`, white on
-a transparent ground so it sits on the email rather than on a tile of its own.
-It carries `alt="Livd"` styled to match, so a client with images off shows the
-word where the logo would have been.
-
-That transparency is the fix for a bug that shipped: the file was first drawn
-on an opaque tile of the ground it was meant for, and Gmail duly darkened the
-message around it and left the tile alone. It arrived as a white rectangle in
-the middle of a dark email. The ground belongs to the template; the logo
-carries none.
-
-The cost is worth naming, because it was deliberately avoided before: an
-email that loads a remote image is an email whose opening can be timed by
-whoever serves it. That is now true of this one. Nothing else loads, the URL
-carries no identifier of any kind, and the image is served from the same
-origin as every link in the message.
+What the email is checked against — tables, inline styles, one dark palette
+written into the markup because Gmail inverts rather than honouring
+`prefers-color-scheme`, one transparent logo — is described in the file's
+header comment.
 
 ---
 
-## 4. Link lifetime
+## 4. Lifetime and rate limits
 
-**Authentication → Providers → Email**
+**Authentication → Emails** (OTP expiry) and **Authentication → Rate Limits**
 
-The sign-in page tells people the link "expires in 15 minutes"
-(`copy.auth.linkSentBody`), and Supabase's default was 3600 seconds. Set to 900
-on 7 September 2026 so the two agree. If either moves, move the other.
+| Setting | Live value | Why |
+| --- | --- | --- |
+| `mailer_otp_exp` — link and code lifetime | **3600 s** (was 900) | Supabase's default. Fifteen minutes turned slow mail and app-switching into "expired"; an hour is still one-time and short. `SIGN_IN_EMAIL.lifetimeMinutes` in `src/config/site.ts` must match — the interface quotes it |
+| `mailer_otp_length` | 8 | Eight digits, ten tries per address per fifteen minutes (`authCodeVerify`) |
+| `smtp_max_frequency` — per-address interval | 60 s | Stops one address being flooded. `SIGN_IN_EMAIL.cooldownSeconds` matches it so the resend button counts down to the moment Supabase will accept |
+| `rate_limit_email_sent` — sign-in emails per hour, project-wide | 30 | See below |
+| `rate_limit_otp`, `rate_limit_verify` — per IP, per 5 minutes | 30, 30 | Requests reach Supabase from Vercel's egress addresses, not the visitor's, so these are shared; Livd's own limits are per person |
+
+**Why 30 emails an hour, and not more.** Resend is on the Free plan: 100 emails
+a day and 3,000 a month, shared with every notification Livd sends. Thirty an
+hour already allows more than Resend will deliver in a day, so raising it
+creates no capacity — it only lets one bad hour spend the whole day's quota,
+notifications included. When Resend moves to a paid plan (no daily cap), raise
+this to 100–150 an hour.
+
+Livd adds its own limits in front (`src/lib/safety/rate-limit.ts`): six requests
+per address per fifteen minutes, twenty per origin per hour — so one visitor
+cannot spray links at strangers and spend the project's allowance.
+
+---
+
+## 5. Checking it
+
+**The link and sender** — request a link to an inbox you can read, and open the
+original message:
+
+- `From: Livd <notifications@livd.site>`, subject `Your Livd sign-in link`,
+  whether the address is new or not;
+- `Authentication-Results`: `dkim=pass header.i=@livd.site`,
+  `dmarc=pass header.from=livd.site`;
+- the button's link starts `https://livd.site/auth/confirm?token_hash=` — not
+  `supabase.co`, not a tracking host.
+
+**The flow** — open the link in a *different* browser from the one that asked.
+It should show "Finish signing in", and one tap should sign in there.
+
+**The config** — `GET /v1/projects/{ref}/config/auth` with a Management API
+token, or the dashboard pages named above.

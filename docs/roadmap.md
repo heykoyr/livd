@@ -127,9 +127,11 @@ Livd's own template as `Livd <notifications@livd.site>` with `dkim=pass`,
 `spf=pass` and `dmarc=pass`. A production delivery check from `/admin/email`
 sent the whole catalogue: twelve accepted, none failed.
 
-What custom SMTP unlocked but has not yet been switched on is the setting that
-sends a typed code instead of a link. It still matters: the link is single-use,
-and Gmail's scanner spends it about fifteen seconds after delivery.
+**Email sign-in works in any browser.** Resolved 21 September 2026: the link
+now goes to `/auth/confirm`, which spends nothing until the person taps, and
+redeems the token with `verifyOtp` wherever the email opened. The email also
+carries an eight-digit code for a different device. See
+[`supabase/templates/README.md`](../supabase/templates/README.md).
 
 The other pre-launch items are done:
 

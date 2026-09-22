@@ -417,9 +417,9 @@ the production path, so delivery can be checked without inventing content to
 trigger it: twelve accepted, none failed. The evidence is in
 [`docs/email.md`](docs/email.md) §9.
 
-What custom SMTP unlocked but has not been switched on is the setting that sends
-a typed code instead of a link. It still matters — the link is single-use, and
-Gmail's scanner spends it about fifteen seconds after delivery.
+Signing in by email works in any browser since 21 September: the link opens a
+Livd page that spends nothing until it is tapped, so a mail scanner cannot use
+it up, and the email carries a code for signing in on a different device.
 
 The two remaining pre-launch items: error monitoring, and a legal entity with
 counsel's review of the three policy pages in each market.

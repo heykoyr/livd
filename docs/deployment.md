@@ -292,17 +292,20 @@ npm run vercel -- env add SUPABASE_SERVICE_ROLE_KEY production --type secret
 
 ### Authentication
 
-Supabase Auth, no passwords stored, two ways in: Google, and a link sent by
-email.
+Supabase Auth, no passwords stored, two ways in: Google, and an email carrying a
+link and a code. Both work in production.
 
-**Google is the one that works today.** Email delivery is not the problem — the
-emails arrive. The problem is that a Supabase sign-in link may be used once, and
-Gmail follows every link it delivers to scan it about fifteen seconds after it
-lands. The scanner spends the link before the person opens the message, so the
-click that follows fails. Every account created before Google sign-in existed
-shows the same signature: email confirmed, session never created, a consistent
-fourteen-to-nineteen second gap between the link being sent and being used.
-Nothing is emailed in the Google flow, so there is nothing to intercept.
+**Email sign-in** is described end to end in
+[`supabase/templates/README.md`](../supabase/templates/README.md) §0. In short:
+the link goes to `/auth/confirm` on `livd.site` with Supabase's token hash;
+opening it spends nothing, and one tap redeems it with `verifyOtp`, in whatever
+browser the email opened in. Until 21 September 2026 the email used Supabase's
+default link, which only completed in the browser that had asked for it — so
+on an iPhone that opens links in Chrome, a link requested in Safari always
+failed. The dashboard settings it depends on are recorded in that file.
+
+**Google** uses PKCE through `/auth/callback`, which is correct there: one tab
+does the whole round trip, so the verifier cookie is always present.
 
 Both halves have to exist before the button appears, and Livd cannot see either
 one, so `NEXT_PUBLIC_GOOGLE_SIGN_IN` gates it and defaults to off. A button that
@@ -331,15 +334,11 @@ Note what the consent screen says: "to continue to
 `<project-ref>.supabase.co`", not "Livd". Google names the domain that owns the
 OAuth client, and that is Supabase's until Livd has a custom auth domain.
 
-**The email link is the fallback, and it is still incomplete.** Custom SMTP is
-the gap: Supabase's built-in sender disables the Subject and Body fields
-outright, so the branded template in
-[`supabase/templates/magic-link.html`](../supabase/templates/magic-link.html)
-cannot be applied and the sender still reads "Supabase Auth". It is also rate
-limited to a few emails an hour and is not something to launch on. One setting
-gates all three, and it needs a domain with SPF and DKIM. Sending a typed code
-rather than a link would also close the scanner hole, and editing that email
-needs the same setting.
+**The email is Livd's.** Custom SMTP through Resend (17 September 2026) is what
+made the templates editable and the sender `Livd <notifications@livd.site>`;
+the template itself is
+[`supabase/templates/magic-link.html`](../supabase/templates/magic-link.html),
+applied to both *Magic Link* and *Confirm signup*.
 
 ### Moving to a custom domain
 
