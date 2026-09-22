@@ -20,7 +20,7 @@ something a prospective renter can make a decision with.
 | **For** | Renters deciding where to live, and former residents contributing the record |
 | **My role** | Solo. Product, design system, interface, frontend, database, trust and safety, deployment |
 | **Built with** | Next.js 16 · React 19 · TypeScript · PostgreSQL via Supabase · Tailwind v4 · no ORM, no component library |
-| **Scale** | <!--count:tables-->42<!--/count--> tables · <!--count:policies-->75<!--/count--> RLS policies · <!--count:dbFunctions-->107<!--/count--> database functions · <!--count:tests-->1,198<!--/count--> tests · 12 markets |
+| **Scale** | <!--count:tables-->42<!--/count--> tables · <!--count:policies-->75<!--/count--> RLS policies · <!--count:dbFunctions-->112<!--/count--> database functions · <!--count:tests-->1,233<!--/count--> tests · 12 markets |
 | **State** | Deployed and working end to end, on seeded data. Not launched — no real reviews yet |
 
 ---
@@ -340,9 +340,9 @@ Cloudflare Turnstile on the two endpoints that create content. Fonts are
 self-hosted, so a deployment without bot protection contacts no third party at
 all.
 
-**<!--count:tables-->42<!--/count-->** tables · **<!--count:policies-->75<!--/count-->** RLS policies · **<!--count:dbFunctions-->107<!--/count-->** database functions ·
-**<!--count:migrations-->51<!--/count-->** migrations · **<!--count:routes-->41<!--/count-->** routes ·
-**<!--count:sourceFiles-->222<!--/count-->** source files · **<!--count:testFiles-->73<!--/count-->** test files.
+**<!--count:tables-->42<!--/count-->** tables · **<!--count:policies-->75<!--/count-->** RLS policies · **<!--count:dbFunctions-->112<!--/count-->** database functions ·
+**<!--count:migrations-->52<!--/count-->** migrations · **<!--count:routes-->41<!--/count-->** routes ·
+**<!--count:sourceFiles-->231<!--/count-->** source files · **<!--count:testFiles-->76<!--/count-->** test files.
 
 Full detail in [`docs/architecture.md`](docs/architecture.md) and
 [`docs/database-schema.md`](docs/database-schema.md).
@@ -351,7 +351,7 @@ Full detail in [`docs/architecture.md`](docs/architecture.md) and
 
 ## Evidence
 
-- **<!--count:tests-->1,198<!--/count--> tests** across <!--count:testFiles-->73<!--/count--> files (`npm test`), weighted toward the highest-risk
+- **<!--count:tests-->1,233<!--/count--> tests** across <!--count:testFiles-->76<!--/count--> files (`npm test`), weighted toward the highest-risk
   code: scoring, the safety linter, rate limiting, burst detection, the
   verification, sanction and account-deletion pipelines, the notification
   catalogue, the colour palette and the international layer.
