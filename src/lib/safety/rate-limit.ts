@@ -67,6 +67,21 @@ export const RATE_LIMITS = {
   /** Generous — this is typeahead, and a real user can outrun a low limit. */
   search: { limit: 120, windowSeconds: 60 },
   authRequest: { limit: 6, windowSeconds: 900 },
+  /**
+   * Sign-in emails from one place, whatever the addresses. `authRequest` is
+   * keyed by address, so on its own it lets one visitor spray links at a list
+   * of strangers and spend the project's hourly email allowance for everyone.
+   * Generous, because a household or an office shares an address.
+   */
+  authRequestOrigin: { limit: 20, windowSeconds: 3600 },
+  /**
+   * Typed sign-in codes, per address. Eight digits and ten tries in fifteen
+   * minutes is a one-in-ten-million chance; Supabase limits verification per
+   * IP on top of this.
+   */
+  authCodeVerify: { limit: 10, windowSeconds: 900 },
+  /** Sign-in link confirmations from one place. A person needs one. */
+  authLinkVerify: { limit: 30, windowSeconds: 900 },
   ownerResponse: { limit: 20, windowSeconds: 3600 },
   /** Each one costs a moderator a document to read. Tight on purpose. */
   verificationSubmit: { limit: 5, windowSeconds: 86_400 },

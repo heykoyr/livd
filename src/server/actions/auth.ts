@@ -3,19 +3,25 @@
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
-import { SITE, resolveDataBackend } from '@/config/site';
+import { SIGN_IN_EMAIL, SITE, resolveDataBackend } from '@/config/site';
 import { safeNextPath } from '@/lib/auth/safe-redirect';
+import {
+  classifyLinkRequestFailure,
+  classifyVerifyFailure,
+  resolveSpentLink,
+} from '@/lib/auth/sign-in-failures';
 import { copy } from '@/content/copy';
 import { checkRateLimit } from '@/lib/safety/rate-limit';
+import { logAuthEvent } from '@/server/auth/auth-log';
 import { createLocalSession, destroySession } from '@/server/auth/session';
 import { getRepository } from '@/server/data';
-import type { AuthActionState } from './action-state';
+import type { AuthActionState, SignInCodeState } from './action-state';
 
 /**
  * Authentication actions.
  *
- * Livd never handles a password. In production Supabase Auth sends a magic
- * link; in local development the same form creates or finds an account and
+ * Livd never handles a password. In production Supabase Auth emails a link and
+ * a code; in local development the same form creates or finds an account and
  * signs in directly, so the whole contribution flow can be exercised without an
  * email provider. The local path refuses to run in production.
  */
@@ -28,8 +34,23 @@ const emailSchema = z.object({
   next: z.string().optional().transform((value) => safeNextPath(value)),
 });
 
+/**
+ * Asking for a sign-in email.
+ *
+ * What the email contains, and why it works in any browser, is described in
+ * `supabase/templates/README.md`: it links to `/auth/confirm` with a token
+ * hash, and the confirmation is redeemed with `verifyOtp`, which needs nothing
+ * from the browser that asked. This action's job is only to ask Supabase to
+ * send it and to report the result honestly.
+ *
+ * `emailRedirectTo` still names `/auth/callback`. The template passes it on as
+ * `next`, and `/auth/confirm` unwraps the destination from it; and if the
+ * template ever reverted to Supabase's default `{{ .ConfirmationURL }}`, that
+ * link would land on the callback, which can still finish it in the browser
+ * that asked — degraded, rather than broken.
+ */
 export async function requestSignIn(
-  _previous: AuthActionState,
+  previous: AuthActionState,
   formData: FormData,
 ): Promise<AuthActionState> {
   const parsed = emailSchema.safeParse({
@@ -37,30 +58,47 @@ export async function requestSignIn(
     next: formData.get('next') || undefined,
   });
 
+  const typed = typeof formData.get('email') === 'string' ? String(formData.get('email')) : null;
+
   if (!parsed.success) {
     return {
       error: parsed.error.issues[0]?.message ?? copy.errors.validationTitle,
       sentTo: null,
+      email: typed,
     };
   }
 
   const { email, next } = parsed.data;
+  const sentCount = previous.sentTo === email ? (previous.sentCount ?? 1) : 0;
+  const refused = (error: string, cooldownSeconds: number | null = null): AuthActionState => ({
+    error,
+    // A refused resend keeps the "check your email" screen: the link already
+    // sent is still good, and taking the person back to an empty form would
+    // suggest otherwise.
+    sentTo: previous.sentTo === email ? email : null,
+    email,
+    cooldownSeconds,
+    sentCount,
+  });
 
-  const limit = await checkRateLimit('authRequest', email);
-  if (!limit.allowed) {
-    return { error: copy.errors.rateLimitedBody, sentTo: null };
+  const perAddress = await checkRateLimit('authRequest', email);
+  if (!perAddress.allowed) {
+    return refused(copy.auth.tooManyLinksWait, perAddress.retryAfter);
   }
 
   if (resolveDataBackend() === 'supabase') {
+    const { originIdentifier } = await import('./reports');
+    const perOrigin = await checkRateLimit('authRequestOrigin', `origin:${await originIdentifier()}`);
+    if (!perOrigin.allowed) {
+      return refused(copy.auth.tooManyLinksWait, perOrigin.retryAfter);
+    }
+
     const { createServerSupabaseClient } = await import('@/server/auth/supabase-client');
     const supabase = await createServerSupabaseClient();
 
-    // An absolute URL, always. The previous form fell back to `''` when
-    // NEXT_PUBLIC_SITE_URL was unset, producing a relative `emailRedirectTo`
-    // that Supabase discards in favour of the project's own Site URL — which
-    // is how a production email came to point at localhost. `SITE.url` resolves
-    // the configured origin, then VERCEL_URL, then localhost, so there is no
-    // arrangement of environment variables that yields a relative value.
+    // An absolute URL, always. A relative `emailRedirectTo` is discarded in
+    // favour of the project's Site URL — which is how a production email once
+    // came to point at localhost. `SITE.url` cannot be relative.
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
@@ -69,34 +107,48 @@ export async function requestSignIn(
     });
 
     if (error) {
-      // Log it. The generic message below tells people the failure "is already
-      // logged", and until this line existed that was not true — a production
-      // sign-in outage had to be diagnosed by reading Supabase's own auth logs
-      // through the management API, because Livd had recorded nothing at all.
-      //
-      // The email address is not logged. Which addresses tried to sign in is
-      // exactly the kind of record this product exists not to keep.
-      console.error('[livd] sign-in link request failed', {
-        status: error.status,
-        code: error.code,
-        message: error.message,
+      const failure = classifyLinkRequestFailure(error);
+
+      // The category and Supabase's code — never the address, which is exactly
+      // the kind of record this product exists not to keep.
+      logAuthEvent(failure.kind === 'unknown' || failure.kind === 'delivery_failed' ? 'error' : 'warn', {
+        event: 'link_request',
+        outcome: failure.kind,
+        route: '/sign-in',
+        providerCode: error.code,
+        providerStatus: error.status,
       });
 
-      // A send-rate limit is worth naming. It is a property of the email
-      // provider, not of the account, so saying so discloses nothing about
-      // whether the address is registered — and "try again shortly" is
-      // something the person can act on, where "something went wrong" is not.
-      if (error.status === 429 || error.code?.includes('rate_limit')) {
-        return { error: copy.auth.tooManyLinks, sentTo: null };
+      switch (failure.kind) {
+        case 'cooldown':
+          return refused(copy.auth.cooldown, failure.retryAfterSeconds);
+        case 'rate_limited':
+          // The project-wide hourly cap. Its reset time is not reported, so no
+          // countdown is invented for it.
+          return refused(copy.auth.tooManyLinks);
+        case 'invalid_email':
+          return refused(copy.auth.invalidEmail);
+        case 'delivery_failed':
+          return refused(copy.auth.deliveryFailed);
+        default:
+          // Deliberately not reporting "no such account": whether an address is
+          // registered is not something an unauthenticated visitor should learn.
+          return refused(copy.errors.genericBody);
       }
-
-      // Everything else stays generic. Deliberately not reporting "no such
-      // account": whether an address is registered is not something an
-      // unauthenticated visitor should learn.
-      return { error: copy.errors.genericBody, sentTo: null };
     }
 
-    return { error: null, sentTo: email };
+    logAuthEvent('info', { event: 'link_request', outcome: 'sent', route: '/sign-in' });
+
+    return {
+      error: null,
+      sentTo: email,
+      email,
+      // Supabase will refuse this address again until its interval has passed,
+      // so the resend button waits exactly that long rather than inviting a
+      // refusal.
+      cooldownSeconds: SIGN_IN_EMAIL.cooldownSeconds,
+      sentCount: sentCount + 1,
+    };
   }
 
   // Local adapter: create or find the account and sign in immediately.
@@ -107,20 +159,112 @@ export async function requestSignIn(
   redirect(next);
 }
 
+const codeSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(320),
+  // Supabase is configured for eight digits. Six to ten are accepted so that
+  // a change of length there is not an outage here; spaces are what people
+  // type when they copy "1234 5678".
+  code: z
+    .string()
+    .transform((value) => value.replace(/[\s-]/g, ''))
+    .pipe(z.string().regex(/^\d{6,10}$/)),
+  next: z.string().optional().transform((value) => safeNextPath(value)),
+});
+
+/**
+ * Signing in with the code printed in the email.
+ *
+ * The link covers the common case. The code covers the one a link cannot: the
+ * email opened on a phone while the sign-in page waits on a laptop. Same token
+ * underneath — using either spends both.
+ */
+export async function verifySignInCode(
+  _previous: SignInCodeState,
+  formData: FormData,
+): Promise<SignInCodeState> {
+  const parsed = codeSchema.safeParse({
+    email: formData.get('email'),
+    code: formData.get('code'),
+    next: formData.get('next') || undefined,
+  });
+
+  if (!parsed.success) {
+    return { status: 'error', error: copy.auth.codeMalformed, redirectTo: null };
+  }
+
+  const { email, code, next } = parsed.data;
+
+  const limit = await checkRateLimit('authCodeVerify', email);
+  if (!limit.allowed) {
+    return { status: 'error', error: copy.auth.tooManyCodes, redirectTo: null };
+  }
+
+  // The local adapter signs in on the first screen and never shows a code.
+  if (resolveDataBackend() !== 'supabase') {
+    return { status: 'error', error: copy.errors.genericBody, redirectTo: null };
+  }
+
+  const { createServerSupabaseClient } = await import('@/server/auth/supabase-client');
+  const { lookUpSpentLink, recordRedeemedLink, tokenHashesForCode } = await import(
+    '@/server/auth/link-status'
+  );
+  const supabase = await createServerSupabaseClient();
+
+  const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' });
+  const hashes = tokenHashesForCode(email, code);
+
+  if (!error) {
+    await recordRedeemedLink(hashes);
+    logAuthEvent('info', { event: 'code_verify', outcome: 'signed_in', route: '/sign-in' });
+    return { status: 'signed-in', error: null, redirectTo: next };
+  }
+
+  let outcome = classifyVerifyFailure(error);
+  if (outcome === 'spent') {
+    // A wrong code and an expired one look identical to Supabase. The code
+    // hashes to exactly what Supabase stored, so Livd can tell them apart.
+    const evidence = await Promise.all(hashes.map(lookUpSpentLink));
+    outcome = resolveSpentLink(
+      evidence.includes('present') ? 'present' : evidence.includes('used') ? 'used' : 'unknown',
+    );
+  }
+
+  logAuthEvent('warn', {
+    event: 'code_verify',
+    outcome,
+    route: '/sign-in',
+    providerCode: error.code,
+    providerStatus: error.status,
+  });
+
+  const message =
+    outcome === 'expired'
+      ? copy.auth.codeExpired
+      : outcome === 'used'
+        ? copy.auth.codeUsed
+        : outcome === 'rate_limited'
+          ? copy.auth.linkFailures.rate_limited.body()
+          : outcome === 'superseded' || outcome === 'invalid'
+            ? copy.auth.codeWrong
+            : copy.errors.genericBody;
+
+  return { status: 'error', error: message, redirectTo: null };
+}
+
 /**
  * Signing in with Google.
  *
- * Here because of a failure mode that no amount of care in the magic-link path
- * could fix. Supabase's email links are single-use, and Gmail's security
- * scanner follows every link it delivers within about fifteen seconds — so the
- * token is spent before the person has opened the message. Every account on
- * Livd shows the signature: email confirmed, session never created, a
- * consistent fourteen-to-nineteen second gap.
+ * The one sign-in that nothing is emailed for. It was added when email links
+ * were failing for everyone, on the theory that Gmail's scanner was spending
+ * them. Supabase's auth logs for the failure of 21 September 2026 showed a
+ * different cause: the link was opened in iOS Chrome, while the PKCE verifier
+ * it needed was a cookie in Safari, where the sign-in began. Email sign-in no
+ * longer depends on that (see `/auth/confirm`), and Google is simply the
+ * faster of two ways in.
  *
- * The usual remedy is to email a typed code instead of a link, which a scanner
- * cannot use. Supabase only permits editing that email once custom SMTP is
- * configured, and that needs a domain. OAuth needs neither: nothing is emailed,
- * so there is nothing to intercept.
+ * Google does still use PKCE, and that is correct here: the whole round trip —
+ * Livd, Google, Livd — happens in one browser tab, so the verifier is always
+ * where the return lands.
  *
  * This returns a URL rather than redirecting inside the action. `redirect`
  * throws, and throwing out of a Server Action that has just set the PKCE
@@ -172,10 +316,12 @@ export async function startGoogleSignIn(
   });
 
   if (error || !data?.url) {
-    console.error('[livd] Google sign-in could not start', {
-      status: error?.status,
-      code: error?.code,
-      message: error?.message,
+    logAuthEvent('error', {
+      event: 'oauth_start',
+      outcome: 'failed',
+      route: '/sign-in',
+      providerCode: error?.code,
+      providerStatus: error?.status,
     });
     return { error: copy.auth.googleFailed, sentTo: null };
   }

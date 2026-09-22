@@ -10,6 +10,23 @@
  * always stated with their basis.
  */
 
+/** "1 hour", "15 minutes" — a lifetime as a person would say it. */
+function formatMinutes(minutes: number): string {
+  if (minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return hours === 1 ? '1 hour' : `${hours} hours`;
+  }
+  return minutes === 1 ? '1 minute' : `${minutes} minutes`;
+}
+
+/** "42 seconds", "1:05" — a wait short enough to watch. */
+function formatCountdown(seconds: number): string {
+  const whole = Math.max(0, Math.ceil(seconds));
+  if (whole < 60) return whole === 1 ? '1 second' : `${whole} seconds`;
+  const rest = whole % 60;
+  return `${Math.floor(whole / 60)}:${String(rest).padStart(2, '0')}`;
+}
+
 export const copy = {
   brand: {
     name: 'Livd',
@@ -959,13 +976,98 @@ export const copy = {
     email: 'Email address',
     sendLink: 'Email me a sign-in link',
     sending: 'Sending',
+
+    // After a link is sent. The page says where it went, how to use it, and
+    // what to do if it does not arrive — so nobody has to guess whether
+    // anything happened.
     linkSentTitle: 'Check your email',
-    linkSentBody: (email: string) => `We sent a sign-in link to ${email}. It expires in 15 minutes.`,
+    linkSentBody: (email: string) => `We sent a sign-in link to ${email}.`,
+    linkResentBody: (email: string) =>
+      `We sent a new sign-in link to ${email}. Use the newest email — earlier links no longer work.`,
+    linkSentHowTo: (minutes: number) =>
+      `Tap “Sign in to Livd” in the email. It works in any browser on any device, and expires in ${formatMinutes(minutes)}.`,
+    linkSentSpam: 'Not there after a minute? Check your spam or promotions folder.',
+    codeLabel: 'Or enter the code from the email',
+    codeHint: 'Handy if the email opened on a different device.',
+    codeSubmit: 'Sign in with code',
+    codeWorking: 'Checking',
+    codeMalformed: 'Enter the code exactly as it appears in the email — numbers only.',
+    codeWrong:
+      'That code did not work. Check it against the newest email — each email has its own code.',
+    codeExpired: 'That code has expired. Send a new link and use the code in that email.',
+    codeUsed: 'That code has already been used. Send a new link to sign in again.',
+    resend: 'Send a new link',
+    resendIn: (seconds: number) => `Send a new link in ${formatCountdown(seconds)}`,
+    changeEmail: 'Use a different email',
+
+    // Refusals of a request, before any email exists. None of these say
+    // anything about whether the address has an account.
+    // The wait itself is on the button, counting down from the figure the
+    // server gave, so these sentences carry no number that would go stale.
+    cooldown:
+      'A sign-in link was sent to this address less than a minute ago — check your inbox. You can ask for another when the button below is ready.',
     tooManyLinks:
-      'Too many sign-in emails have been requested recently. Wait a few minutes and try again — this is a limit on our email provider, not on your account.',
-    linkFailedTitle: 'That link did not work',
-    linkFailedBody:
-      'Sign-in links expire, and each one can only be used once. Enter your email and we will send another.',
+      'Too many sign-in emails have been requested. Please wait a while before requesting another.',
+    tooManyLinksWait:
+      'Too many sign-in emails have been requested. Please wait before requesting another — the button below shows when you can.',
+    tooManyCodes: 'Too many codes have been tried. Please wait a few minutes, or send a new link.',
+    invalidEmail: 'That email address does not look right. Check it and try again.',
+    deliveryFailed:
+      'We could not send the email just now. Nothing is wrong with your account — please try again in a minute.',
+
+    // The page that finishes a link. Opening the link does not sign anybody
+    // in; this tap does. Email security scanners open links automatically,
+    // and one that signed in on opening would be spent before its owner
+    // arrived.
+    confirmTitle: 'Finish signing in',
+    confirmLead: 'Tap the button to sign in to Livd on this device.',
+    confirmButton: 'Sign in to Livd',
+    confirmWorking: 'Signing you in',
+    confirmWhy:
+      'This extra tap stops email security checks, which open links automatically, from using up your link before you do.',
+
+    // A link, code or Google return that did not finish. One title and one
+    // explanation for each thing that can actually have happened.
+    linkFailures: {
+      expired: {
+        title: 'This sign-in link has expired',
+        body: (minutes: number) =>
+          `Links work for ${formatMinutes(minutes)} after they are sent. Enter your email and we will send a new one.`,
+      },
+      used: {
+        title: 'This sign-in link has already been used',
+        body: () =>
+          'Each link works once. If you already opened it on another device or browser, you are signed in there. To sign in here, enter your email for a new link.',
+      },
+      superseded: {
+        title: 'This sign-in link is no longer valid',
+        body: () =>
+          'If you asked for more than one email, only the newest link works — try that one. Otherwise, enter your email and we will send a new link.',
+      },
+      invalid: {
+        title: 'This sign-in link is incomplete',
+        body: () =>
+          'Part of the link may have been lost when it was copied. Tap the button in the email instead, or enter your email for a new link.',
+      },
+      browser: {
+        title: 'This sign-in was started in a different browser',
+        body: () =>
+          'It can only be finished in the browser where it began. Go back to that browser, or enter your email below — email links work in any browser.',
+      },
+      cancelled: {
+        title: 'Google sign-in was cancelled',
+        body: () => 'Nothing was changed. Try again, or sign in with your email address instead.',
+      },
+      rate_limited: {
+        title: 'Too many attempts',
+        body: () => 'Please wait a minute before trying again.',
+      },
+      unknown: {
+        title: 'We could not sign you in',
+        body: () =>
+          'Something went wrong on our side, not yours. Enter your email and we will send a new link.',
+      },
+    },
     continueWithGoogle: 'Continue with Google',
     googleWorking: 'Opening Google',
     googleUnavailable:

@@ -2,8 +2,9 @@
   Livd — magic link email
   ============================================================================
 
-  Paste into Supabase: Authentication → Emails → Magic Link.
-  Subject line: Your Livd sign-in link
+  Paste into Supabase: Authentication → Emails → Magic Link, and the same
+  file into Confirm signup — a first sign-in is sent that template instead.
+  Subject line for both: Your Livd sign-in link
 
   This file is the source of truth. The dashboard has no API for templates, so
   the copy here and the copy live can drift; change this file first, then paste.
@@ -34,9 +35,23 @@
     alt="Livd", styled to match, so a client with images off shows the word
     exactly where the logo would have been. Nothing else loads: no hero, no
     icons, nothing that makes a sign-in email look like marketing.
-  * {{ .ConfirmationURL }} is Supabase's own token. It carries the PKCE code and
-    the redirect Livd asked for. Do not construct a URL by hand here — that is
-    what would break single use and expiry.
+  * The link is not Supabase's default .ConfirmationURL. That one goes to
+    Supabase, which spends the token the moment the link is opened and then
+    needs a PKCE secret kept by the browser that asked — so it failed
+    whenever the email opened in a different browser, and a mail scanner
+    opening it first used it up. This link goes to Livd's /auth/confirm with
+    Supabase's own .TokenHash, which is redeemed only when the person taps
+    "Sign in" there, in whichever browser they are using. Nothing is
+    constructed: the token hash, its single use and its expiry are all
+    Supabase's.
+  * .SiteURL as the host, always, so a sign-in email can only ever land on
+    https://livd.site. .RedirectTo rides along as `next`, and Livd takes only
+    a path from it.
+  * .Token is the same token as a code, for the person whose email opens on a
+    different device from the one they are signing in on. Using either the
+    link or the code spends both.
+  * Template variables are named without their braces in this comment on
+    purpose: Supabase renders them wherever they appear, comments included.
 -->
 <!doctype html>
 <html lang="en">
@@ -69,7 +84,7 @@
     <div
       style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#0d0e0d; opacity:0;"
     >
-      Use the button in this email to sign in to Livd. The link expires in 15 minutes.
+      Your link and code to sign in to Livd. They expire in 1 hour.
     </div>
 
     <table
@@ -121,14 +136,15 @@
                         class="livd-ink livd-title"
                         style="margin:0; font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:30px; line-height:1.15; letter-spacing:-0.021em; font-weight:400; color:#f2f1ed;"
                       >
-                        Your sign-in link
+                        Sign in to Livd
                       </h1>
 
                       <p
                         class="livd-muted"
                         style="margin:16px 0 0 0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; line-height:1.6; color:#a3a69f;"
                       >
-                        Use the button below to securely sign in to Livd.
+                        Tap the button to sign in. It works in any browser, on this device or
+                        another one.
                       </p>
                     </td>
                   </tr>
@@ -139,7 +155,7 @@
                     <td class="livd-pad" style="padding:28px 40px 0 40px;">
                       <!--[if mso]>
                         <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
-                          href="{{ .ConfirmationURL }}" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="17%" stroke="f" fillcolor="#d8e4de">
+                          href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next={{ .RedirectTo }}" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="17%" stroke="f" fillcolor="#d8e4de">
                           <w:anchorlock/>
                           <center style="color:#0d0e0d;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:500;">Sign in to Livd</center>
                         </v:roundrect>
@@ -154,7 +170,7 @@
                             style="background-color:#d8e4de; border-radius:8px;"
                           >
                             <a
-                              href="{{ .ConfirmationURL }}"
+                              href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next={{ .RedirectTo }}"
                               target="_blank"
                               class="livd-button"
                               style="display:inline-block; padding:14px 28px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; font-weight:500; line-height:20px; color:#0d0e0d; text-decoration:none; border-radius:8px;"
@@ -167,14 +183,35 @@
                     </td>
                   </tr>
 
+                  <!-- The code, for an email opened on a different device from
+                       the one signing in. Monospace and spaced so it can be read
+                       off one screen and typed into another. -->
                   <tr>
                     <td class="livd-pad" style="padding:28px 40px 0 40px;">
                       <p
                         class="livd-muted"
                         style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:14px; line-height:1.6; color:#a3a69f;"
                       >
-                        This link expires in 15 minutes and can only be used once. If you did not
-                        ask to sign in, you can ignore this email — nothing will happen.
+                        Signing in on another device? Enter this code on the Livd sign-in page:
+                      </p>
+                      <p
+                        class="livd-ink"
+                        style="margin:10px 0 0 0; font-family:'SFMono-Regular',Menlo,Consolas,'Courier New',monospace; font-size:26px; line-height:1.2; letter-spacing:0.18em; font-weight:600; color:#f2f1ed;"
+                      >
+                        {{ .Token }}
+                      </p>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td class="livd-pad" style="padding:24px 40px 0 40px;">
+                      <p
+                        class="livd-muted"
+                        style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:14px; line-height:1.6; color:#a3a69f;"
+                      >
+                        The link and code expire in 1 hour and work once. If you asked for more
+                        than one email, use the newest. If you did not ask to sign in, you can
+                        ignore this email — nothing will happen, and nobody can sign in without it.
                       </p>
                     </td>
                   </tr>
@@ -202,10 +239,10 @@
                             </p>
                             <p style="margin:8px 0 0 0; word-break:break-all;">
                               <a
-                                href="{{ .ConfirmationURL }}"
+                                href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next={{ .RedirectTo }}"
                                 target="_blank"
                                 style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.5; color:#d8e4de;"
-                                >{{ .ConfirmationURL }}</a
+                                >{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next={{ .RedirectTo }}</a
                               >
                             </p>
                           </td>

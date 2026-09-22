@@ -124,9 +124,10 @@ describe('the sign-in template', () => {
     }
   });
 
-  it('still hands sign-in to Supabase, untouched', () => {
+  it('links only through Supabase’s token hash, never a hand-built token', () => {
     // Four uses: the VML button, the anchor, and the fallback link, which
-    // carries it as both its href and the text somebody pastes.
-    expect(markup.match(/{{ \.ConfirmationURL }}/g) ?? []).toHaveLength(4);
+    // carries it as both its href and the text somebody pastes. What the link
+    // is and why is `tests/auth/sign-in-template.test.ts`.
+    expect(markup.match(/token_hash={{ \.TokenHash }}/g) ?? []).toHaveLength(4);
   });
 });

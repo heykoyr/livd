@@ -83,6 +83,38 @@ export function absoluteUrl(path = '/'): string {
   return `${SITE.url}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
+/**
+ * Every origin Livd itself answers on: this deployment's, and the canonical
+ * apex with its `www` twin. A sign-in link naming any other host is not
+ * trusted to choose where anyone lands.
+ */
+export function livdOrigins(): string[] {
+  const canonical = new URL(CANONICAL_ORIGIN);
+  return Array.from(
+    new Set([SITE.url, CANONICAL_ORIGIN, `${canonical.protocol}//www.${canonical.host}`]),
+  );
+}
+
+/**
+ * Email sign-in, as configured in Supabase.
+ *
+ * Supabase owns both numbers — Authentication → Email → "Email OTP
+ * Expiration" and the SMTP "minimum interval between emails" — and exposes
+ * neither to the application. They are written down here so the interface
+ * tells people the truth, and `supabase/templates/README.md` records the live
+ * values. If either changes in the dashboard, change it here.
+ */
+export const SIGN_IN_EMAIL = {
+  /** `mailer_otp_exp`: how long a link or code works. */
+  lifetimeMinutes: 60,
+  /**
+   * `smtp_max_frequency`: how soon the same address can be sent another.
+   * The server enforces it; this only lets the resend button count down to
+   * the moment it will be accepted rather than inviting a refusal.
+   */
+  cooldownSeconds: 60,
+} as const;
+
 export type DataBackend = 'local' | 'supabase';
 
 /**

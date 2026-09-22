@@ -28,9 +28,36 @@ import type { SafetyCode } from '@/lib/safety/content-linter';
 export interface AuthActionState {
   error: string | null;
   sentTo: string | null;
+  /**
+   * The address as typed, echoed back so a refused request does not leave the
+   * person retyping it. Only ever their own input.
+   */
+  email?: string | null;
+  /**
+   * Seconds until another request for this address will be accepted, when
+   * that is actually known — Supabase's own cooldown after a send, or the
+   * figure its refusal names. Never a guess: absent when the wait is unknown.
+   */
+  cooldownSeconds?: number | null;
+  /** How many links this screen has sent, so a resend can say it replaced one. */
+  sentCount?: number;
 }
 
 export const initialAuthState: AuthActionState = { error: null, sentTo: null };
+
+/** Signing in with the code printed in the email. */
+export interface SignInCodeState {
+  status: 'idle' | 'error' | 'signed-in';
+  error: string | null;
+  /** Set on success: a same-site path, already through `safeNextPath`. */
+  redirectTo: string | null;
+}
+
+export const initialSignInCodeState: SignInCodeState = {
+  status: 'idle',
+  error: null,
+  redirectTo: null,
+};
 
 /* -------------------------------------------------------------------------
  * Review submission

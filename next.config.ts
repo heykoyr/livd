@@ -99,6 +99,22 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // The sign-in routes carry a one-time token in their URL or body.
+        // Listed after the global rule on purpose: for the same key, the later
+        // match wins.
+        //
+        // `same-origin` rather than `no-referrer`: the token-bearing URL is
+        // never sent to another site, but the confirm form's POST keeps this
+        // site's Origin header — under `no-referrer` browsers send
+        // `Origin: null`, and `/auth/verify` refuses a post it cannot place.
+        source: '/auth/:path*',
+        headers: [
+          { key: 'Referrer-Policy', value: 'same-origin' },
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
     ];
   },
 };
