@@ -69,8 +69,15 @@ export async function generateMetadata({
 
   const reviewCount = localities.reduce((sum, locality) => sum + locality.reviewCount, 0);
   const propertyCount = localities.reduce((sum, locality) => sum + locality.propertyCount, 0);
+  const demoPropertyCount = localities.reduce(
+    (sum, locality) => sum + locality.demoPropertyCount,
+    0,
+  );
 
   return {
+    // Sample data only, so nothing here is Livd's own record yet: followed,
+    // not indexed — the rule the sample properties' own pages follow.
+    ...(demoPropertyCount === propertyCount ? { robots: { index: false, follow: true } } : {}),
     title: copy.explore.countryHeading(market.name),
     description: `${propertyCount} ${
       propertyCount === 1 ? 'property' : 'properties'

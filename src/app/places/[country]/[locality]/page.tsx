@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { PropertyGrid } from '@/components/places/place-tile';
 import { PropertyCard } from '@/components/property/property-card';
 import { ButtonLink } from '@/components/ui/button';
+import { Pagination } from '@/components/ui/pagination';
 import { EmptyState, Stat } from '@/components/ui/primitives';
 import { getMarket } from '@/config/markets';
 import { absoluteUrl } from '@/config/site';
@@ -16,7 +17,11 @@ import {
   localityHref,
   neighbourhoodHref,
 } from '@/lib/places';
-import { getRepository } from '@/server/data';
+import {
+  getCachedNeighbourhoods,
+  getCachedPlaceOverview,
+  getCachedPlaceProperties,
+} from '@/server/data/cache';
 import type { PropertySummary } from '@/types/domain';
 
 /**
@@ -34,93 +39,103 @@ interface Params {
   locality: string;
 }
 
-async function load(params: Params) {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+/** `?page=` as a positive integer; anything else is the first page. */
+function pageFrom(searchParams: SearchParams): number {
+  const raw = Array.isArray(searchParams.page) ? searchParams.page[0] : searchParams.page;
+  const page = Number.parseInt(raw ?? '', 10);
+  return Number.isFinite(page) && page >= 1 && page <= 10_000 ? page : 1;
+}
+
+/**
+ * The page's figures and one page of its properties.
+ *
+ * This used to load every property in the city and every review of every one
+ * of them, then count on the server. That was fine at a handful of properties
+ * and is not at two hundred: the figures now come from the database's rollup
+ * (`livd_place_overview`) and only the twenty-four cards on screen load their
+ * reviews.
+ */
+async function load(params: Params, page: number) {
   const countryCode = params.country.toUpperCase();
   const locality = decodePlaceSegment(params.locality);
+  const scope = { countryCode, locality };
 
-  const repository = await getRepository();
-  const properties = await repository.propertiesInLocality(countryCode, locality);
+  const [overview, properties] = await Promise.all([
+    getCachedPlaceOverview(scope),
+    getCachedPlaceProperties(scope, page),
+  ]);
 
-  return { countryCode, locality, properties };
+  return { countryCode, locality, overview, properties };
 }
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<Params>;
+  searchParams: Promise<SearchParams>;
 }): Promise<Metadata> {
   const resolved = await params;
-  const { countryCode, properties } = await load(resolved);
+  const page = pageFrom(await searchParams);
+  const { countryCode, overview } = await load(resolved, page);
 
-  if (properties.length === 0) {
+  if (!overview) {
     return { title: 'Place not found', robots: { index: false, follow: false } };
   }
 
   const market = getMarket(countryCode);
   // Use the stored spelling rather than the URL's, so the title reads properly.
-  const name = properties[0]!.property.address.locality;
-  const reviewCount = properties.reduce((sum, s) => sum + s.intelligence.reviewCount, 0);
+  const name = overview.locality;
+  const { propertyCount, reviewCount } = overview;
+  const canonical = localityHref(countryCode, name);
 
   return {
     title: `Renting in ${name}, ${market.name}`,
-    description: `${properties.length} ${
-      properties.length === 1 ? 'property' : 'properties'
+    description: `${propertyCount} ${
+      propertyCount === 1 ? 'property' : 'properties'
     } in ${name} with ${reviewCount} resident ${
       reviewCount === 1 ? 'review' : 'reviews'
     } on Livd. Read what people who lived there say before you commit.`,
     alternates: {
-      canonical: absoluteUrl(localityHref(countryCode, name)),
+      canonical: absoluteUrl(page > 1 ? `${canonical}?page=${page}` : canonical),
     },
+    // A city made only of sample properties is fabricated content, and follows
+    // the rule their own pages do: readable, linked, never indexed.
+    ...(overview.demoPropertyCount === propertyCount
+      ? { robots: { index: false, follow: true } }
+      : {}),
   };
 }
 
-export default async function LocalityPage({ params }: { params: Promise<Params> }) {
+export default async function LocalityPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<Params>;
+  searchParams: Promise<SearchParams>;
+}) {
   const resolved = await params;
-  const { countryCode, properties } = await load(resolved);
+  const page = pageFrom(await searchParams);
+  const { countryCode, locality, overview, properties } = await load(resolved, page);
 
-  if (properties.length === 0) notFound();
+  // Nothing here at all, or a page number past the end of what is.
+  if (!overview || properties.items.length === 0) notFound();
 
   const market = getMarket(countryCode);
-  const name = properties[0]!.property.address.locality;
+  const name = overview.locality;
 
-  const reviewCount = properties.reduce((sum, s) => sum + s.intelligence.reviewCount, 0);
-  const scored = properties.filter((s) => s.intelligence.overallScore !== null);
-  const medianScore = medianOf(scored.map((s) => s.intelligence.overallScore!));
-
-  // Only properties with enough evidence contribute to a locality-level claim.
-  const evidenced = properties.filter(
-    (s) => s.intelligence.confidence === 'moderate' || s.intelligence.confidence === 'strong',
-  );
-  const recommendRates = evidenced
-    .map((s) => s.intelligence.recommendRate)
-    .filter((rate): rate is number => rate !== null);
-  const recommendRate =
-    recommendRates.length > 0
-      ? recommendRates.reduce((sum, rate) => sum + rate, 0) / recommendRates.length
-      : null;
+  const { reviewCount, medianScore, recommendRate, scoredCount, evidencedCount } = overview;
 
   /**
-   * The neighbourhoods this city's properties sit in.
-   *
-   * Derived from the properties already loaded for this page rather than
-   * re-queried — it is the same set, and a second round trip to build a chip
-   * row would be a round trip for nothing.
+   * The neighbourhoods this city's properties sit in, from the same aggregate
+   * the Explore page ranks by — every one of them, not just those on the page
+   * of properties below.
    */
-  const neighbourhoods = [
-    ...properties
-      .reduce((map, summary) => {
-        const value = summary.property.address.neighbourhood;
-        if (!value) return map;
-        const key = value.toLowerCase();
-        const existing = map.get(key);
-        map.set(key, {
-          name: existing?.name ?? value,
-          reviewCount: (existing?.reviewCount ?? 0) + summary.intelligence.reviewCount,
-        });
-        return map;
-      }, new Map<string, { name: string; reviewCount: number }>())
-      .values(),
-  ].sort((a, b) => b.reviewCount - a.reviewCount || a.name.localeCompare(b.name));
+  const neighbourhoods = (await getCachedNeighbourhoods({ countryCode, locality })).map(
+    (entry) => ({ name: entry.neighbourhood, reviewCount: entry.reviewCount }),
+  );
 
   return (
     <div className="container-shell py-12 md:py-16">
@@ -152,7 +167,7 @@ export default async function LocalityPage({ params }: { params: Promise<Params>
       </div>
 
       <dl className="mt-9 grid grid-cols-2 gap-6 border-y border-border py-6 sm:grid-cols-4">
-        <Stat label="Properties" value={properties.length} />
+        <Stat label="Properties" value={overview.propertyCount} />
         <Stat label="Resident reviews" value={reviewCount} />
         <Stat
           label="Median score"
@@ -160,7 +175,7 @@ export default async function LocalityPage({ params }: { params: Promise<Params>
           hint={
             medianScore === null
               ? 'not enough scored properties'
-              : `across ${scored.length} scored ${scored.length === 1 ? 'property' : 'properties'}`
+              : `across ${scoredCount} scored ${scoredCount === 1 ? 'property' : 'properties'}`
           }
         />
         <Stat
@@ -169,8 +184,8 @@ export default async function LocalityPage({ params }: { params: Promise<Params>
           hint={
             recommendRate === null
               ? 'not enough evidence yet'
-              : `across ${evidenced.length} well-reviewed ${
-                  evidenced.length === 1 ? 'property' : 'properties'
+              : `across ${evidencedCount} well-reviewed ${
+                  evidencedCount === 1 ? 'property' : 'properties'
                 }`
           }
         />
@@ -207,12 +222,23 @@ export default async function LocalityPage({ params }: { params: Promise<Params>
       </h2>
 
       <PropertyGrid className="mt-5">
-        {properties.map((summary) => (
+        {properties.items.map((summary) => (
           <li key={summary.property.id}>
             <PropertyCard summary={summary} />
           </li>
         ))}
       </PropertyGrid>
+
+      <Pagination
+        className="mt-8"
+        page={properties.page}
+        pageSize={properties.pageSize}
+        total={properties.total}
+        buildHref={(target) => {
+          const href = localityHref(countryCode, name);
+          return target > 1 ? `${href}?page=${target}` : href;
+        }}
+      />
 
       <div className="mt-14">
         <EmptyState
@@ -227,15 +253,6 @@ export default async function LocalityPage({ params }: { params: Promise<Params>
       </div>
     </div>
   );
-}
-
-function medianOf(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1
-    ? sorted[mid]!
-    : Math.round((sorted[mid - 1]! + sorted[mid]!) / 2);
 }
 
 /** Helper for the summary card list. */

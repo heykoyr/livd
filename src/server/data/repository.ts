@@ -165,6 +165,12 @@ export interface LocalitySummary {
   adminArea: string | null;
   propertyCount: number;
   reviewCount: number;
+  /**
+   * How many of `propertyCount` are seeded sample data. Never rendered; it is
+   * what keeps a place made only of sample properties out of the sitemap and
+   * out of a search engine's index, the same rule demo property pages follow.
+   */
+  demoPropertyCount: number;
   href: string;
 }
 
@@ -182,6 +188,8 @@ export interface NeighbourhoodSummary {
   neighbourhood: string;
   propertyCount: number;
   reviewCount: number;
+  /** As on `LocalitySummary`: sample properties among `propertyCount`. */
+  demoPropertyCount: number;
   href: string;
 }
 
@@ -190,6 +198,51 @@ export interface NeighbourhoodQuery {
   countryCode?: string | null;
   locality?: string | null;
   limit?: number;
+}
+
+/**
+ * A city, or a neighbourhood within one.
+ *
+ * Matched the way a URL segment arrives: case- and accent-insensitive, so
+ * `/places/ng/lagos/lekki%20phase%201` finds "Lekki Phase 1" in "Lagos".
+ */
+export interface PlaceScope {
+  countryCode: string;
+  locality: string;
+  neighbourhood?: string | null;
+}
+
+/**
+ * The headline figures a place page prints.
+ *
+ * Read from the `property_stats` rollup rather than by loading every review in
+ * the place — which is what the page used to do, and which stops being
+ * possible somewhere past a few hundred properties.
+ */
+export interface PlaceOverview {
+  countryCode: string;
+  /** The stored spelling, for headings. */
+  locality: string;
+  neighbourhood: string | null;
+  adminArea: string | null;
+  propertyCount: number;
+  reviewCount: number;
+  /** Properties with a score at all. */
+  scoredCount: number;
+  medianScore: number | null;
+  /** Properties with at least moderate evidence. */
+  evidencedCount: number;
+  /** Mean would-return rate across evidenced properties that have one. */
+  recommendRate: number | null;
+  demoPropertyCount: number;
+}
+
+/** One page of a place's properties, most reviewed first. */
+export interface PlacePropertyPage {
+  items: PropertySummary[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 /** What an account erasure actually did. Reported back, never guessed at. */
@@ -490,6 +543,11 @@ export interface LivdRepository {
    * Finds an existing active property matching the same real-world address, so
    * a contributor adding a property they could not find does not create a
    * duplicate of one that already exists under a different spelling.
+   *
+   * Real properties only. A seeded sample property is not a real-world address
+   * however alike the names are, and matching one would attach a resident's
+   * real review to fabricated data that vanishes when sample data is turned
+   * off. Migration 0052 lets the two coexist at the index for the same reason.
    */
   findDuplicateProperty(input: CreatePropertyInput): Promise<Property | null>;
 
@@ -520,6 +578,19 @@ export interface LivdRepository {
     locality: string,
     neighbourhood: string,
   ): Promise<PropertySummary[]>;
+  /**
+   * A place's headline figures, or null when nothing is there — which the page
+   * turns into a not-found, exactly as an empty property list used to.
+   */
+  placeOverview(scope: PlaceScope): Promise<PlaceOverview | null>;
+  /**
+   * One page of a place's properties, most reviewed first, so a city of two
+   * hundred properties renders twenty-four cards rather than two hundred.
+   */
+  propertiesInPlace(
+    scope: PlaceScope,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<PlacePropertyPage>;
 
   /* ---- Reviews ---- */
 

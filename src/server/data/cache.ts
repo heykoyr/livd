@@ -3,7 +3,12 @@ import 'server-only';
 import { unstable_cache, updateTag } from 'next/cache';
 
 import type { PropertyIntelligence, PropertySummary } from '@/types/domain';
-import type { NeighbourhoodSummary } from './repository';
+import type {
+  NeighbourhoodSummary,
+  PlaceOverview,
+  PlacePropertyPage,
+  PlaceScope,
+} from './repository';
 import { getRepository } from './index';
 
 /**
@@ -128,4 +133,37 @@ export const getCachedNeighbourhoods = (
       String(options.limit ?? 'all'),
     ],
     { tags: [DISCOVERY_TAG], revalidate: 3600 },
+  )();
+
+/**
+ * A place page's scope as a cache key: folded, so `/places/ng/lagos` and a
+ * link spelled `/places/NG/Lagos` share one entry rather than warming two.
+ */
+const placeKey = (scope: PlaceScope): string[] => [
+  scope.countryCode.toUpperCase(),
+  scope.locality.trim().toLowerCase(),
+  scope.neighbourhood?.trim().toLowerCase() ?? '-',
+];
+
+export const getCachedPlaceOverview = (scope: PlaceScope): Promise<PlaceOverview | null> =>
+  unstable_cache(
+    async () => {
+      const repository = await getRepository();
+      return repository.placeOverview(scope);
+    },
+    ['place-overview', ...placeKey(scope)],
+    { tags: [DISCOVERY_TAG], revalidate: 600 },
+  )();
+
+export const getCachedPlaceProperties = (
+  scope: PlaceScope,
+  page: number,
+): Promise<PlacePropertyPage> =>
+  unstable_cache(
+    async () => {
+      const repository = await getRepository();
+      return repository.propertiesInPlace(scope, { page });
+    },
+    ['place-properties', ...placeKey(scope), String(page)],
+    { tags: [DISCOVERY_TAG], revalidate: 600 },
   )();

@@ -354,7 +354,11 @@ export interface LocalDatabase {
 
 const DATA_DIR = join(process.cwd(), '.data');
 const DATA_FILE = join(DATA_DIR, 'livd.json');
-const SCHEMA_VERSION = 1;
+/**
+ * Bumped when the seed changes shape, so an existing store reseeds rather
+ * than keeping stale sample data. 2: the expanded geographic sample dataset.
+ */
+const SCHEMA_VERSION = 2;
 
 let cache: LocalDatabase | null = null;
 let loading: Promise<LocalDatabase> | null = null;

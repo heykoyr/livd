@@ -104,6 +104,9 @@ import type {
   NeighbourhoodSummary,
   NotificationPreferences,
   NotificationRecipient,
+  PlaceOverview,
+  PlacePropertyPage,
+  PlaceScope,
   ReviewListOptions,
   ReviewListResult,
 } from '../repository';
@@ -631,6 +634,8 @@ export class LocalRepository implements LivdRepository {
     return (
       visibleProperties(database).find(
         (property) =>
+          // Real properties only, as in the Supabase adapter.
+          !property.isDemo &&
           addressKey({
             countryCode: property.address.countryCode,
             locality: property.address.locality,
@@ -824,13 +829,16 @@ export class LocalRepository implements LivdRepository {
     const localities = new Map<string, LocalitySummary>();
 
     for (const property of properties) {
-      const key = `${property.address.countryCode}:${property.address.locality}`;
+      // Keyed on the folded name, as `livd_locality_summaries` groups, so
+      // "Lagos" and "lagos" are one city in both adapters.
+      const key = `${property.address.countryCode}:${normaliseForSearch(property.address.locality)}`;
       const reviewCount = publishedReviewsFor(database, property.id).length;
       const existing = localities.get(key);
 
       if (existing) {
         existing.propertyCount += 1;
         existing.reviewCount += reviewCount;
+        if (property.isDemo) existing.demoPropertyCount += 1;
       } else {
         localities.set(key, {
           countryCode: property.address.countryCode,
@@ -838,6 +846,7 @@ export class LocalRepository implements LivdRepository {
           adminArea: property.address.adminArea,
           propertyCount: 1,
           reviewCount,
+          demoPropertyCount: property.isDemo ? 1 : 0,
           href: localityHref(property.address.countryCode, property.address.locality),
         });
       }
@@ -885,6 +894,7 @@ export class LocalRepository implements LivdRepository {
       if (existing) {
         existing.propertyCount += 1;
         existing.reviewCount += reviewCount;
+        if (property.isDemo) existing.demoPropertyCount += 1;
       } else {
         neighbourhoods.set(key, {
           countryCode,
@@ -892,6 +902,7 @@ export class LocalRepository implements LivdRepository {
           neighbourhood: neighbourhood!,
           propertyCount: 1,
           reviewCount,
+          demoPropertyCount: property.isDemo ? 1 : 0,
           href: neighbourhoodHref(countryCode, locality, neighbourhood!),
         });
       }
@@ -926,6 +937,101 @@ export class LocalRepository implements LivdRepository {
       )
       .map((property) => summaryFor(database, property))
       .sort((a, b) => b.intelligence.reviewCount - a.intelligence.reviewCount);
+  }
+
+  /**
+   * Every visible property in a place, most reviewed first and then by slug —
+   * the order `livd_place_property_ids` pages in.
+   */
+  private async placeSummaries(scope: PlaceScope): Promise<PropertySummary[]> {
+    const database = await getDatabase();
+    const country = scope.countryCode.toUpperCase();
+    const localityTarget = normaliseForSearch(scope.locality);
+    const neighbourhoodTarget = scope.neighbourhood ? normaliseForSearch(scope.neighbourhood) : null;
+
+    return visibleProperties(database)
+      .filter(
+        (p) =>
+          p.address.countryCode === country &&
+          normaliseForSearch(p.address.locality) === localityTarget &&
+          (neighbourhoodTarget === null ||
+            (p.address.neighbourhood !== null &&
+              normaliseForSearch(p.address.neighbourhood) === neighbourhoodTarget)),
+      )
+      .map((property) => summaryFor(database, property))
+      .sort(
+        (a, b) =>
+          b.intelligence.reviewCount - a.intelligence.reviewCount ||
+          a.property.slug.localeCompare(b.property.slug),
+      );
+  }
+
+  async placeOverview(scope: PlaceScope): Promise<PlaceOverview | null> {
+    const summaries = await this.placeSummaries(scope);
+    if (summaries.length === 0) return null;
+
+    const scores = summaries
+      .map((s) => s.intelligence.overallScore)
+      .filter((score): score is number => score !== null)
+      .sort((a, b) => a - b);
+    const mid = Math.floor(scores.length / 2);
+    const medianScore =
+      scores.length === 0
+        ? null
+        : scores.length % 2 === 1
+          ? scores[mid]!
+          : Math.round((scores[mid - 1]! + scores[mid]!) / 2);
+
+    const evidenced = summaries.filter(
+      (s) => s.intelligence.confidence === 'moderate' || s.intelligence.confidence === 'strong',
+    );
+    const rates = evidenced
+      .map((s) => s.intelligence.recommendRate)
+      .filter((rate): rate is number => rate !== null);
+
+    // The spelling most of the place's properties use, as `mode()` picks.
+    const commonest = (values: Array<string | null>): string | null => {
+      const counts = new Map<string, number>();
+      for (const value of values) if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+      return (
+        [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ??
+        null
+      );
+    };
+
+    return {
+      countryCode: scope.countryCode.toUpperCase(),
+      locality: commonest(summaries.map((s) => s.property.address.locality))!,
+      neighbourhood: scope.neighbourhood
+        ? commonest(summaries.map((s) => s.property.address.neighbourhood))
+        : null,
+      adminArea: commonest(summaries.map((s) => s.property.address.adminArea)),
+      propertyCount: summaries.length,
+      reviewCount: summaries.reduce((sum, s) => sum + s.intelligence.reviewCount, 0),
+      scoredCount: scores.length,
+      medianScore,
+      evidencedCount: evidenced.length,
+      recommendRate:
+        rates.length > 0 ? rates.reduce((sum, rate) => sum + rate, 0) / rates.length : null,
+      demoPropertyCount: summaries.filter((s) => s.property.isDemo).length,
+    };
+  }
+
+  async propertiesInPlace(
+    scope: PlaceScope,
+    options: { page?: number; pageSize?: number } = {},
+  ): Promise<PlacePropertyPage> {
+    const pageSize = Math.min(60, Math.max(1, options.pageSize ?? 24));
+    const page = Math.max(1, Math.floor(options.page ?? 1));
+    const summaries = await this.placeSummaries(scope);
+    const start = (page - 1) * pageSize;
+
+    return {
+      items: summaries.slice(start, start + pageSize),
+      total: summaries.length,
+      page,
+      pageSize,
+    };
   }
 
   /* ---------------------------------------------------------------------
@@ -3629,12 +3735,18 @@ export class LocalRepository implements LivdRepository {
           }
         : null,
 
+      // Sample data excluded, as in `livd_admin_attention` since 0052.
       platform: {
-        properties: database.properties.filter((property) => property.status === 'active').length,
-        reviews: database.reviews.filter((review) => review.status === 'published').length,
-        users: database.users.length,
-        reviewsLast30Days: database.reviews.filter((review) => review.createdAt >= monthAgo)
-          .length,
+        properties: database.properties.filter(
+          (property) => property.status === 'active' && !property.isDemo,
+        ).length,
+        reviews: database.reviews.filter(
+          (review) => review.status === 'published' && !review.isDemo,
+        ).length,
+        users: database.users.filter((user) => !user.email.endsWith('@demo.livd.invalid')).length,
+        reviewsLast30Days: database.reviews.filter(
+          (review) => review.createdAt >= monthAgo && !review.isDemo,
+        ).length,
       },
     };
   }

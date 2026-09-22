@@ -89,8 +89,13 @@ Indexes: unique `slug` · GIN on `search_vector` · GIN `pg_trgm` on
 `status = 'active'`.
 
 Duplicate prevention: a unique index on
-`(country_code, locality, lower(coalesce(street_address,'')), lower(coalesce(building_name,'')))`
-where `status = 'active'`.
+`(country_code, lower(locality), lower(coalesce(street_address,'')), lower(coalesce(building_name,'')))`
+where `status = 'active'` — split by provenance since 0052, so
+`properties_real_address_unique` covers real properties and
+`properties_demo_address_unique` covers seeded ones. A resident's building can
+never be refused, or matched as a duplicate, because a sample property happens
+to share its name; `findDuplicateProperty` ignores sample rows for the same
+reason.
 
 **`property_aliases`** — `property_id`, `alias`, `source`. Former building names
 and colloquial names, folded into search.
@@ -413,6 +418,27 @@ trigger on `reviews` and `review_category_ratings`.
 "Adminralty Way" still finds "Admiralty Way".
 
 `livd_slugify(text)` — deterministic, unicode-aware slug generation.
+
+Place pages (0052) — aggregated in Postgres so they are complete at any size;
+PostgREST truncates a response at 1,000 rows, which an aggregation done in the
+application would silently inherit. All take `include_demo`, defaulting to
+false, and are SECURITY INVOKER over rows `anon` can already read:
+
+- `livd_place_key(text)` — the SQL twin of `normaliseForSearch`: how city and
+  neighbourhood names are grouped and matched.
+- `livd_locality_summaries(country, include_demo)` — cities, with property,
+  review and sample-property counts.
+- `livd_neighbourhood_summaries(country, locality, include_demo, limit)` —
+  neighbourhoods, ranked by review count.
+- `livd_place_overview(country, locality, neighbourhood, include_demo)` — a
+  place page's headline figures, from `property_stats`.
+- `livd_place_property_ids(country, locality, neighbourhood, include_demo,
+  page_size, page_offset)` — one page of a place's properties, most reviewed
+  first, with the total.
+
+`livd_admin_attention()` — the admin dashboard in one call. Its four platform
+figures exclude sample data (`is_demo` rows and `demo.livd.invalid` accounts)
+since 0052, and the dashboard says so.
 
 `set_updated_at()` — standard `BEFORE UPDATE` trigger.
 

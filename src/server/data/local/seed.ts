@@ -1,8 +1,13 @@
 /**
- * Development seed data.
+ * Seed data: the sixteen original sample properties, plus the expanded
+ * geographic dataset in `src/server/data/seed/`.
  *
- * Sixteen properties across eight markets, generated deterministically so the
- * dataset is identical on every machine and every run.
+ * The sixteen below are the first sample properties Livd shipped with, across
+ * eight markets, and they are kept exactly as they were: they are in the
+ * production database, real accounts have saved one and location-checked
+ * another, and a generator that quietly changed them would describe rows the
+ * database does not hold. Everything added since is generated from real
+ * geography instead of written out here — see `generateExpandedSeed`.
  *
  * Each property has a *profile* — a shape its reviews should take — rather than
  * hand-written records. That produces data with genuine internal consistency:
@@ -24,49 +29,8 @@ import type {
   UserProfile,
 } from '@/types/domain';
 import { propertySlug } from '@/lib/utils';
-
-/* -------------------------------------------------------------------------
- * Deterministic randomness
- * ---------------------------------------------------------------------- */
-
-function mulberry32(seed: number): () => number {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function hashSeed(value: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function pick<T>(random: () => number, items: readonly T[]): T {
-  return items[Math.floor(random() * items.length)]!;
-}
-
-function pickSome<T>(random: () => number, items: readonly T[], count: number): T[] {
-  const pool = [...items];
-  const chosen: T[] = [];
-  for (let i = 0; i < count && pool.length > 0; i += 1) {
-    chosen.push(pool.splice(Math.floor(random() * pool.length), 1)[0]!);
-  }
-  return chosen;
-}
-
-/** Clamped 1–5 draw around a mean, so a profile produces a spread not a constant. */
-function drawRating(random: () => number, mean: number, spread = 0.9): number {
-  const noise = (random() + random() + random() - 1.5) * spread * 1.4;
-  return Math.max(1, Math.min(5, Math.round(mean + noise)));
-}
+import { drawRating, hashSeed, mulberry32, pick, pickSome } from '../seed/random';
+import { generateExpandedSeed, type ExpandedSeedOptions } from '../seed/generate';
 
 /* -------------------------------------------------------------------------
  * Property profiles
@@ -772,6 +736,49 @@ export interface SeedData {
   users: UserProfile[];
 }
 
+export interface GenerateSeedOptions extends ExpandedSeedOptions {
+  /**
+   * `local`, the default, is the original sixteen plus a few properties in
+   * every city — enough to exercise every page of the product on a laptop
+   * without a file-backed store the size of a database. `full` is everything,
+   * and is what the Supabase loader writes.
+   */
+  scale?: 'local' | 'full';
+}
+
+/** What the database's address uniqueness compares (0052). */
+function addressIdentity(property: Property): string {
+  const { countryCode, locality, streetAddress, buildingName } = property.address;
+  return [countryCode, locality, streetAddress ?? '', buildingName ?? '']
+    .map((part) => part.toLowerCase())
+    .join('|');
+}
+
+/** Properties per city in the local development store. */
+export const LOCAL_PER_CITY = 3;
+
+export function generateSeed(options: GenerateSeedOptions = {}): SeedData {
+  const legacy = generateLegacySeed();
+  const expanded = generateExpandedSeed({
+    ...options,
+    maxPerCity: options.maxPerCity ?? (options.scale === 'full' ? undefined : LOCAL_PER_CITY),
+  });
+
+  // A generated name can coincide with one of the original sixteen in the same
+  // city ("Cedar Row" in Austin). The original keeps it; the generated one is
+  // dropped rather than renamed, because renaming would make its name depend
+  // on something other than its own key.
+  const legacyAddresses = new Set(legacy.properties.map((p) => addressIdentity(p)));
+  const kept = expanded.properties.filter((p) => !legacyAddresses.has(addressIdentity(p)));
+  const keptIds = new Set(kept.map((p) => p.id));
+
+  return {
+    properties: [...legacy.properties, ...kept],
+    reviews: [...legacy.reviews, ...expanded.reviews.filter((r) => keptIds.has(r.propertyId))],
+    users: legacy.users,
+  };
+}
+
 /** The point in time the seed is generated relative to. */
 const SEED_NOW = new Date('2026-09-01T00:00:00.000Z');
 
@@ -779,7 +786,8 @@ function isoMonth(year: number, month: number): string {
   return new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
 }
 
-export function generateSeed(): SeedData {
+/** The original sixteen, unchanged. */
+export function generateLegacySeed(): SeedData {
   const properties: Property[] = [];
   const reviews: Review[] = [];
   const users: UserProfile[] = [];

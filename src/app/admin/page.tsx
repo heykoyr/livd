@@ -373,6 +373,13 @@ export default async function AdminDashboard() {
             />
           </dl>
 
+          {/* Said on the page because it is a definition: these figures were
+              counted with the seed in them until 0052, and a number that
+              changes meaning silently is worse than one that is wrong. */}
+          <p className="mt-5 text-micro text-ink-subtle">
+            Seeded sample properties, reviews and accounts are not counted here.
+          </p>
+
           {/* Only when there is something to say. A zero here is the healthy
               state and does not need a row of its own. */}
           {unlocatableProperties > 0 && (

@@ -97,6 +97,9 @@ import type {
   NeighbourhoodSummary,
   NotificationPreferences,
   NotificationRecipient,
+  PlaceOverview,
+  PlacePropertyPage,
+  PlaceScope,
   ReviewListOptions,
   ReviewListResult,
 } from '../repository';
@@ -465,6 +468,69 @@ interface AdminUserReportRow {
 const RELEVANCE_MATCH_CAP = 200;
 
 /**
+ * The largest response PostgREST will return, and so the page size for any
+ * read that has to see every row.
+ *
+ * A request past `max_rows` is not refused — it is truncated, silently, to the
+ * first thousand. Every read here that aggregates "all the reviews of these
+ * properties" pages at this size until a short page says it has reached the
+ * end, so the answer is complete however many reviews a place accumulates.
+ */
+const MAX_ROWS = 1000;
+
+/**
+ * Property ids per `in.(…)` filter. Each id is 37 characters of URL, and a
+ * request line past a few kilobytes starts being refused by proxies along the
+ * way; eighty ids is about three.
+ */
+const ID_CHUNK = 80;
+
+/** Place-page grid size. Divides evenly into the one-, two- and three-column grid. */
+const PLACE_PAGE_SIZE = 24;
+
+/** Splits a list into runs of at most `size`. */
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Reads every row a query matches, a page at a time.
+ *
+ * `build` is called once per page with the range to apply, because a Supabase
+ * query builder is consumed by awaiting it and cannot be re-run. The query
+ * must carry a total order so that pages neither overlap nor skip.
+ */
+async function readAllRows<T>(
+  build: (from: number, to: number) => PromiseLike<{
+    data: unknown[] | null;
+    error: { message: string } | null;
+  }>,
+  context: string,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += MAX_ROWS) {
+    const { data, error } = await build(from, from + MAX_ROWS - 1);
+    if (error) throw new Error(`${context}: ${error.message}`);
+    const page = (data ?? []) as T[];
+    rows.push(...page);
+    if (page.length < MAX_ROWS) return rows;
+  }
+}
+
+/** One row of the place-aggregate RPCs, whose counts arrive as bigint strings. */
+interface PlaceSummaryRow {
+  country_code: string;
+  locality: string;
+  admin_area?: string | null;
+  neighbourhood?: string | null;
+  property_count: number | string;
+  review_count: number | string;
+  demo_property_count: number | string;
+}
+
+/**
  * The only thing `relevancePage` does with the query it is handed.
  *
  * Structural rather than imported: the Supabase client's builder type is
@@ -564,18 +630,19 @@ export class SupabaseRepository implements LivdRepository {
 
   private async fetchPublishedReviews(propertyId: string): Promise<Review[]> {
     const supabase = this.publicClient();
-    let query = supabase
-      .from('reviews')
-      .select(REVIEW_SELECT)
-      .eq('property_id', propertyId)
-      .eq('status', 'published');
+    const demoAllowed = showDemoData();
 
-    if (!showDemoData()) query = query.eq('is_demo', false);
+    const rows = await readAllRows<ReviewRow>((from, to) => {
+      let query = supabase
+        .from('reviews')
+        .select(REVIEW_SELECT)
+        .eq('property_id', propertyId)
+        .eq('status', 'published');
+      if (!demoAllowed) query = query.eq('is_demo', false);
+      return query.order('id').range(from, to);
+    }, 'fetchPublishedReviews');
 
-    const { data, error } = await query;
-    if (error) throw new Error(`fetchPublishedReviews: ${error.message}`);
-
-    return (data ?? []).map((row) => toReview(row as unknown as ReviewRow, TAG_POLARITY));
+    return rows.map((row) => toReview(row, TAG_POLARITY));
   }
 
   async createProperty(input: CreatePropertyInput, createdBy: string): Promise<Property> {
@@ -627,7 +694,10 @@ export class SupabaseRepository implements LivdRepository {
       .select(PROPERTY_SELECT)
       .eq('country_code', input.countryCode.toUpperCase())
       .ilike('locality', input.locality)
-      .eq('status', 'active');
+      .eq('status', 'active')
+      // Real properties only — see the interface. A sample property with the
+      // same name is not the same building.
+      .eq('is_demo', false);
 
     if (input.streetAddress) query = query.ilike('street_address', input.streetAddress);
     else query = query.is('street_address', null);
@@ -823,25 +893,42 @@ export class SupabaseRepository implements LivdRepository {
     };
   }
 
-  /** Attaches intelligence to a page of properties in one round trip. */
+  /**
+   * Attaches intelligence to a list of properties.
+   *
+   * One request per run of `ID_CHUNK` properties, in parallel, each paged past
+   * the row cap. This used to be a single request for every review of every
+   * property passed in, which was right at eighteen properties and wrong at a
+   * city of two hundred: PostgREST returned the first thousand reviews and
+   * nothing said the rest were missing, so properties further down the list
+   * rendered as unreviewed.
+   */
   private async summarise(properties: Property[]): Promise<PropertySummary[]> {
     if (properties.length === 0) return [];
 
     const supabase = this.publicClient();
-    let query = supabase
-      .from('reviews')
-      .select(REVIEW_SELECT)
-      .in('property_id', properties.map((p) => p.id))
-      .eq('status', 'published');
+    const demoAllowed = showDemoData();
 
-    if (!showDemoData()) query = query.eq('is_demo', false);
-
-    const { data, error } = await query;
-    if (error) throw new Error(`summarise: ${error.message}`);
+    const pages = await Promise.all(
+      chunk(
+        properties.map((p) => p.id),
+        ID_CHUNK,
+      ).map((ids) =>
+        readAllRows<ReviewRow>((from, to) => {
+          let query = supabase
+            .from('reviews')
+            .select(REVIEW_SELECT)
+            .in('property_id', ids)
+            .eq('status', 'published');
+          if (!demoAllowed) query = query.eq('is_demo', false);
+          return query.order('id').range(from, to);
+        }, 'summarise'),
+      ),
+    );
 
     const byProperty = new Map<string, Review[]>();
-    for (const row of data ?? []) {
-      const review = toReview(row as unknown as ReviewRow, TAG_POLARITY);
+    for (const row of pages.flat()) {
+      const review = toReview(row, TAG_POLARITY);
       const bucket = byProperty.get(review.propertyId) ?? [];
       bucket.push(review);
       byProperty.set(review.propertyId, bucket);
@@ -962,53 +1049,34 @@ export class SupabaseRepository implements LivdRepository {
     return this.summarise((data ?? []).map((row) => toProperty(row as unknown as PropertyRow)));
   }
 
+  /**
+   * Cities, aggregated in Postgres (0052).
+   *
+   * This used to select one row per property and count them here, which
+   * PostgREST truncated at a thousand rows without saying so: a country past
+   * that size would have lost cities from its own page. One small result now,
+   * whatever the size of the table.
+   */
   async listLocalities(countryCode?: string | null): Promise<LocalitySummary[]> {
-    const supabase = this.publicClient();
-
-    let query = supabase
-      .from('properties')
-      .select(`country_code, locality, admin_area, property_stats ( review_count )`)
-      .eq('status', 'active');
-
-    if (countryCode) query = query.eq('country_code', countryCode.toUpperCase());
-    if (!showDemoData()) query = query.eq('is_demo', false);
-
-    const { data, error } = await query;
+    const { data, error } = await this.publicClient().rpc('livd_locality_summaries', {
+      filter_country: countryCode ? countryCode.toUpperCase() : null,
+      include_demo: showDemoData(),
+    });
     if (error) throw new Error(`listLocalities: ${error.message}`);
 
-    const localities = new Map<string, LocalitySummary>();
+    const localities = ((data ?? []) as PlaceSummaryRow[]).map((row) => ({
+      countryCode: row.country_code,
+      locality: row.locality,
+      adminArea: row.admin_area ?? null,
+      propertyCount: Number(row.property_count),
+      reviewCount: Number(row.review_count),
+      demoPropertyCount: Number(row.demo_property_count),
+      href: localityHref(row.country_code, row.locality),
+    }));
 
-    // A to-one embed is still typed as an array by the client's generic types,
-    // so it is normalised here rather than trusted to be an object.
-    for (const row of (data ?? []) as unknown as Array<{
-      country_code: string;
-      locality: string;
-      admin_area: string | null;
-      property_stats: { review_count: number } | Array<{ review_count: number }> | null;
-    }>) {
-      const key = `${row.country_code}:${row.locality}`;
-      const stats = Array.isArray(row.property_stats)
-        ? row.property_stats[0]
-        : row.property_stats;
-      const reviewCount = stats?.review_count ?? 0;
-      const existing = localities.get(key);
-
-      if (existing) {
-        existing.propertyCount += 1;
-        existing.reviewCount += reviewCount;
-      } else {
-        localities.set(key, {
-          countryCode: row.country_code,
-          locality: row.locality,
-          adminArea: row.admin_area,
-          propertyCount: 1,
-          reviewCount,
-          href: localityHref(row.country_code, row.locality),
-        });
-      }
-    }
-
-    return [...localities.values()].sort(
+    // Ordered again here, with the same comparator the local adapter uses, so
+    // the two agree on ties whatever collation the database sorts text with.
+    return localities.sort(
       (a, b) => b.reviewCount - a.reviewCount || a.locality.localeCompare(b.locality),
     );
   }
@@ -1034,66 +1102,121 @@ export class SupabaseRepository implements LivdRepository {
     return summaries.sort((a, b) => b.intelligence.reviewCount - a.intelligence.reviewCount);
   }
 
+  /** Neighbourhoods, aggregated in Postgres for the same reason as cities. */
   async listNeighbourhoods(options: NeighbourhoodQuery = {}): Promise<NeighbourhoodSummary[]> {
-    const supabase = this.publicClient();
-
-    // Three columns and a count, never a property row. The aggregate itself is
-    // small; what would be expensive is fetching the properties to build it.
-    let query = supabase
-      .from('properties')
-      .select('country_code, locality, neighbourhood, property_stats ( review_count )')
-      .eq('status', 'active')
-      .not('neighbourhood', 'is', null);
-
-    if (options.countryCode) query = query.eq('country_code', options.countryCode.toUpperCase());
-    if (options.locality) query = query.ilike('locality', options.locality);
-    if (!showDemoData()) query = query.eq('is_demo', false);
-
-    const { data, error } = await query;
+    const { data, error } = await this.publicClient().rpc('livd_neighbourhood_summaries', {
+      filter_country: options.countryCode ? options.countryCode.toUpperCase() : null,
+      filter_locality: options.locality ?? null,
+      include_demo: showDemoData(),
+      // Limited in the database, which ranks by the same three keys as below,
+      // so the rows it keeps are the rows this would have kept.
+      result_limit: options.limit ?? null,
+    });
     if (error) throw new Error(`listNeighbourhoods: ${error.message}`);
 
-    const neighbourhoods = new Map<string, NeighbourhoodSummary>();
-
-    // A to-one embed is still typed as an array by the client's generic types,
-    // so it is normalised here rather than trusted to be an object.
-    for (const row of (data ?? []) as unknown as Array<{
-      country_code: string;
-      locality: string;
-      neighbourhood: string | null;
-      property_stats: { review_count: number } | Array<{ review_count: number }> | null;
-    }>) {
-      if (!row.neighbourhood) continue;
-
-      const key = `${row.country_code}:${normaliseForSearch(row.locality)}:${normaliseForSearch(
-        row.neighbourhood,
-      )}`;
-      const stats = Array.isArray(row.property_stats) ? row.property_stats[0] : row.property_stats;
-      const reviewCount = stats?.review_count ?? 0;
-      const existing = neighbourhoods.get(key);
-
-      if (existing) {
-        existing.propertyCount += 1;
-        existing.reviewCount += reviewCount;
-      } else {
-        neighbourhoods.set(key, {
-          countryCode: row.country_code,
-          locality: row.locality,
-          neighbourhood: row.neighbourhood,
-          propertyCount: 1,
-          reviewCount,
-          href: neighbourhoodHref(row.country_code, row.locality, row.neighbourhood),
-        });
-      }
-    }
-
-    const ranked = [...neighbourhoods.values()].sort(
-      (a, b) =>
-        b.reviewCount - a.reviewCount ||
-        b.propertyCount - a.propertyCount ||
-        a.neighbourhood.localeCompare(b.neighbourhood),
-    );
+    const ranked = ((data ?? []) as PlaceSummaryRow[])
+      .filter((row): row is PlaceSummaryRow & { neighbourhood: string } =>
+        Boolean(row.neighbourhood),
+      )
+      .map((row) => ({
+        countryCode: row.country_code,
+        locality: row.locality,
+        neighbourhood: row.neighbourhood,
+        propertyCount: Number(row.property_count),
+        reviewCount: Number(row.review_count),
+        demoPropertyCount: Number(row.demo_property_count),
+        href: neighbourhoodHref(row.country_code, row.locality, row.neighbourhood),
+      }))
+      .sort(
+        (a, b) =>
+          b.reviewCount - a.reviewCount ||
+          b.propertyCount - a.propertyCount ||
+          a.neighbourhood.localeCompare(b.neighbourhood),
+      );
 
     return options.limit === undefined ? ranked : ranked.slice(0, options.limit);
+  }
+
+  async placeOverview(scope: PlaceScope): Promise<PlaceOverview | null> {
+    const { data, error } = await this.publicClient().rpc('livd_place_overview', {
+      filter_country: scope.countryCode.toUpperCase(),
+      filter_locality: scope.locality,
+      filter_neighbourhood: scope.neighbourhood ?? null,
+      include_demo: showDemoData(),
+    });
+    if (error) throw new Error(`placeOverview: ${error.message}`);
+
+    const row = ((data ?? []) as Array<{
+      locality: string;
+      neighbourhood: string | null;
+      admin_area: string | null;
+      property_count: number | string;
+      review_count: number | string;
+      scored_count: number | string;
+      median_score: number | null;
+      evidenced_count: number | string;
+      recommend_rate: number | string | null;
+      demo_property_count: number | string;
+    }>)[0];
+
+    if (!row || Number(row.property_count) === 0) return null;
+
+    return {
+      countryCode: scope.countryCode.toUpperCase(),
+      locality: row.locality,
+      neighbourhood: scope.neighbourhood ? row.neighbourhood : null,
+      adminArea: row.admin_area,
+      propertyCount: Number(row.property_count),
+      reviewCount: Number(row.review_count),
+      scoredCount: Number(row.scored_count),
+      medianScore: row.median_score === null ? null : Number(row.median_score),
+      evidencedCount: Number(row.evidenced_count),
+      recommendRate: row.recommend_rate === null ? null : Number(row.recommend_rate),
+      demoPropertyCount: Number(row.demo_property_count),
+    };
+  }
+
+  async propertiesInPlace(
+    scope: PlaceScope,
+    options: { page?: number; pageSize?: number } = {},
+  ): Promise<PlacePropertyPage> {
+    const pageSize = Math.min(60, Math.max(1, options.pageSize ?? PLACE_PAGE_SIZE));
+    const page = Math.max(1, Math.floor(options.page ?? 1));
+    const supabase = this.publicClient();
+
+    const { data, error } = await supabase.rpc('livd_place_property_ids', {
+      filter_country: scope.countryCode.toUpperCase(),
+      filter_locality: scope.locality,
+      filter_neighbourhood: scope.neighbourhood ?? null,
+      include_demo: showDemoData(),
+      page_size: pageSize,
+      page_offset: (page - 1) * pageSize,
+    });
+    if (error) throw new Error(`propertiesInPlace: ${error.message}`);
+
+    const rows = (data ?? []) as Array<{ property_id: string; total_count: number | string }>;
+    // A page past the end carries no rows, and so no total. Asking for the
+    // total separately would be a second query to render an empty page.
+    const total = rows.length > 0 ? Number(rows[0]!.total_count) : 0;
+    if (rows.length === 0) return { items: [], total, page, pageSize };
+
+    const { data: propertyRows, error: propertyError } = await supabase
+      .from('properties')
+      .select(PROPERTY_SELECT)
+      .in(
+        'id',
+        rows.map((row) => row.property_id),
+      );
+    if (propertyError) throw new Error(`propertiesInPlace: ${propertyError.message}`);
+
+    // The RPC decided the order; the id lookup does not preserve it.
+    const order = new Map(rows.map((row, index) => [row.property_id, index]));
+    const properties = ((propertyRows ?? []) as unknown as PropertyRow[])
+      .map(toProperty)
+      .filter((property) => this.allowed(property))
+      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+
+    return { items: await this.summarise(properties), total, page, pageSize };
   }
 
   async propertiesInNeighbourhood(

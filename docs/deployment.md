@@ -122,26 +122,38 @@ Apply them through the Supabase dashboard's SQL editor, the Supabase CLI, or any
 Postgres client. There is no ORM and no migration runner to install — raw SQL is
 clearer for an RLS-heavy schema, and there is one data layer rather than many.
 
-### Seeding the demonstration data
+### Seeding the sample data
 
 ```bash
-npm run seed:supabase -- --dry     # report what it would write
-npm run seed:supabase              # apply
-npm run seed:supabase -- --purge   # remove it again
+npm run seed:supabase -- --dry                    # the plan; nothing is written
+npm run seed:supabase                             # everything
+npm run seed:supabase -- --countries=NG           # one market
+npm run seed:supabase -- --cities=GB/London       # one city
+npm run seed:supabase -- --purge                  # remove it, if nothing real depends on it
 ```
 
 Reuses the same generator as the local store, so the two cannot describe
-different properties. Idempotent — ids are derived deterministically, so
-re-running updates rather than duplicates.
+different properties. The dataset — real cities and neighbourhoods, invented
+properties, sample reviews on the existing review model — is described in
+[sample-data.md](sample-data.md).
+
+**Insert-only.** Every write is `ON CONFLICT DO NOTHING` on a deterministic id,
+so a row that already exists, seeded or real, is never modified. Re-running is
+safe, and growing a city inserts only what is new. A property whose rows are
+all already present is skipped without sending anything.
 
 Everything it writes is marked `is_demo`, which is what makes the **Sample data**
-badge appear, marks those pages `noindex`, and keeps them out of the sitemap.
+badge appear, marks those pages `noindex`, and keeps them out of the sitemap and
+the admin platform figures.
 
-It needs the service-role key: demo rows have no authenticated author, so every
-RLS insert policy correctly refuses them.
+It needs the service-role key: sample rows have no authenticated author, so
+every RLS insert policy correctly refuses them. It runs no application code and
+so sends no email.
 
-The seeded set is 16 properties, 222 reviews, 2,033 category ratings, 212
-departure reasons and 1,313 tags.
+`--purge` refuses if any real account has saved, location-checked, reviewed,
+claimed or reported sample data, because deleting a sample property cascades
+into those rows. In production that is already the case, so the way to hide
+sample data there is `LIVD_SHOW_DEMO_DATA=false`, not a purge.
 
 `LIVD_SHOW_DEMO_DATA` controls whether seeded data is visible at all. It has to
 be turned off the moment real reviews exist, or the two will sit side by side.

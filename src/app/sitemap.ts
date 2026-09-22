@@ -46,7 +46,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }),
     ]);
 
-    const localityRoutes: MetadataRoute.Sitemap = localities.map((locality) => ({
+    // Places made only of sample properties are left out, for the reason the
+    // sample properties themselves are: fabricated content must never reach an
+    // index. They stay reachable by link; they are simply not advertised.
+    const realLocalities = localities.filter(
+      (locality) => locality.propertyCount > locality.demoPropertyCount,
+    );
+    const realNeighbourhoods = neighbourhoods.filter(
+      (neighbourhood) => neighbourhood.propertyCount > neighbourhood.demoPropertyCount,
+    );
+
+    const localityRoutes: MetadataRoute.Sitemap = realLocalities.map((locality) => ({
       url: `${SITE.url}${locality.href}`,
       changeFrequency: 'weekly',
       priority: 0.7,
@@ -55,14 +65,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // One entry per country that actually has a city in it, so no country page
     // in the sitemap resolves to an empty state.
     const countryRoutes: MetadataRoute.Sitemap = [
-      ...new Set(localities.map((locality) => locality.countryCode)),
+      ...new Set(realLocalities.map((locality) => locality.countryCode)),
     ].map((countryCode) => ({
       url: `${SITE.url}${countryHref(countryCode)}`,
       changeFrequency: 'weekly',
       priority: 0.6,
     }));
 
-    const neighbourhoodRoutes: MetadataRoute.Sitemap = neighbourhoods.map((neighbourhood) => ({
+    const neighbourhoodRoutes: MetadataRoute.Sitemap = realNeighbourhoods.map((neighbourhood) => ({
       url: `${SITE.url}${neighbourhood.href}`,
       changeFrequency: 'weekly',
       priority: 0.7,
