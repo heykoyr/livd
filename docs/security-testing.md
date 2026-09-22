@@ -1760,3 +1760,68 @@ is the only evidence that it tests anything.
 - Security advisor, after 0050: no new finding. The SECURITY DEFINER warnings
   are the same deliberate set 0021 and 0042 explain; the two new trigger
   functions are not executable by any client role.
+
+## Sign-in, audited end to end — 21–22 September 2026
+
+Prompted by a real failure: on an iPhone, a sign-in link requested in Safari and
+opened by iOS in Chrome showed "That link did not work … sign-in links expire",
+and the retry was refused as "a limit on our email provider". Both sentences
+were wrong. Supabase's own auth log was the evidence throughout.
+
+### What the log showed
+
+| UTC | Endpoint | Result |
+|---|---|---|
+| 01:29:06 | `POST /otp` | 200 — a first sign-in, so Supabase sent *Confirm signup*, still its default template |
+| 01:29:37 | `GET /verify` | 303 — user agent `CriOS`, iOS Chrome |
+| 01:29:39 | `POST /token` | 400 `validation_failed` — "both auth code and code verifier should be non-empty" |
+| 01:39:12 | `GET /verify` | 303 — Chrome again, second link |
+| 01:39:14 | `POST /token` | 400 `bad_code_verifier` — Chrome now held a verifier, from another request |
+| 01:39:30 | `GET /verify` | 403 "One-time token not found" — the same link, tapped again |
+| 01:39:49 | `POST /otp` | 429 `over_email_send_rate_limit` — "you can only request this after 10 seconds" |
+
+`auth.flow_state` agreed: every email flow since 7 September had an auth code
+issued and never exchanged.
+
+**Root cause.** The email carried `{{ .ConfirmationURL }}`: Supabase spends the
+token on the first GET and returns a PKCE code whose exchange needs a verifier
+cookie from the browser that asked. Safari had it; Chrome did not. The 429 was
+the 60-second per-address interval (`smtp_max_frequency`), not the provider —
+custom SMTP through Resend had been live since 17 September.
+
+### What changed
+
+The token-hash flow Supabase documents for server-rendered apps, with a
+confirmation step: the email links to `/auth/confirm?token_hash=…`, which
+spends nothing; a same-origin POST to `/auth/verify` redeems it with
+`verifyOtp`. Full design and the dashboard values:
+[`supabase/templates/README.md`](../supabase/templates/README.md). Migration
+`0051_sign_in_link_status` adds the lookup that tells expired from used.
+
+### Checked
+
+| Property | How | Result |
+|---|---|---|
+| Opening a link spends nothing | `GET /auth/verify` on production | 405, `Allow: POST` |
+| Login CSRF | `POST /auth/verify` with `Origin: https://evil.example`, and with none | 403, `verifyOtp` never called (`tests/auth/verify-route.test.ts`) |
+| Open redirect | `next` as another host, `//host`, `/\host`, `javascript:`, a look-alike host, localhost | always a Livd path (`tests/auth/confirm-link.test.ts`, 25 cases) |
+| Token leakage | redirect `Location` headers; the log line on every path | no token, code or address in either (tests assert both) |
+| Referrer | `/auth/*` headers on production | `Referrer-Policy: same-origin`, `Cache-Control: private, no-cache, no-store`, `X-Robots-Tag: noindex, nofollow` |
+| One-time use | Supabase deletes the token on redemption; a second POST fails | enforced by GoTrue, not by Livd; the second tap is told "already used" |
+| Malformed link | `GET /auth/confirm?token_hash=x` on production | 307 to `/sign-in?error=invalid`, Supabase not asked |
+| Unknown token | same-origin POST of a well-formed invented token on production | 303 to `/sign-in?error=superseded` |
+| New functions | `has_function_privilege` for anon, authenticated, service_role; security advisor | service role only; no new advisor finding |
+| Double submission | a pressed button plus Enter | one request (`tests/auth/sign-in-form.test.tsx`; the test fails with the guard removed) |
+
+### What this does not claim
+
+- Cross-browser and cross-device completion depend on the dashboard template
+  being the one in this repository. The application tolerates the old one —
+  its links land on `/auth/callback` and say "started in a different browser"
+  when that is what happened — but only the new template makes them work
+  anywhere.
+- A token-hash link is a bearer credential for its lifetime; PKCE's binding to
+  the requesting browser is given up for email, deliberately, and kept for
+  Google.
+- Supabase's per-IP limits see Vercel's egress addresses, not visitors'. Livd's
+  own per-address and per-origin limits are the ones that are per person.
