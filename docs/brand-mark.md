@@ -83,13 +83,17 @@ link, the link's own `aria-label` ("Livd — home") names it.
 
 **Where it is used.** `SiteHeader`, `SiteFooter` and `global-not-found.tsx`.
 
-**In email.** Both templates render the logo as a transparent PNG from
-`public/brand/email/` — no client renders SVG. The sign-in email is dark in
-every client and uses the white file at 140 × 41; the notification shell is
-light and uses the dark-ink file at 82 × 24. Neither carries a tile: a ground
+**In email.** Both templates are dark in every client and render the white
+logo as a transparent PNG from `public/brand/email/` — no client renders SVG.
+The sign-in email shows it at 140 × 41, the notification shell at 82 × 24.
+
+Neither carries a tile, and neither leaves its ground to the client. A ground
 baked into the image is a white rectangle waiting to happen the first time a
-client darkens the message around it. See
-[`supabase/templates/README.md`](../supabase/templates/README.md).
+client darkens the message around it; a ground left unstated is the same bug
+one step back, since Gmail will then choose one and the logo cannot follow.
+See [`supabase/templates/README.md`](../supabase/templates/README.md) and
+`tests/notify/email-ground.test.ts`, which holds both emails to the dark
+theme's own palette.
 
 ### The social card
 

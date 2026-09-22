@@ -66,7 +66,7 @@ describe('a notification email', () => {
       propertySlug: 'the-franklin-brooklyn',
     });
 
-    expect(html).toContain(`src="${ORIGIN}${LIGHT}"`);
+    expect(html).toContain(`src="${ORIGIN}${DARK}"`);
     expect(html).toContain('alt="Livd"');
   });
 
@@ -98,31 +98,8 @@ describe('the sign-in template', () => {
     expect(images[0]).toContain('alt="Livd"');
   });
 
-  /**
-   * The email states its own ground rather than leaving a client to decide.
-   * Gmail does not honour `prefers-color-scheme`; it inverts a light message
-   * itself and leaves every image untouched, which is how a logo on a light
-   * tile came to sit in a dark message as a white rectangle. A white logo is
-   * only right on a dark ground, so the ground has to be written down.
-   */
-  it('declares the dark scheme it is drawn in', () => {
-    expect(markup).toContain('<meta name="color-scheme" content="dark" />');
-    expect(markup).toContain('<meta name="supported-color-schemes" content="dark" />');
-  });
-
-  it('is dark in the markup, not by a media query a client may ignore', () => {
-    expect(markup).not.toContain('prefers-color-scheme');
-    // The canvas, the card and the body copy, as the dark theme declares them.
-    expect(markup).toContain('background-color:#0d0e0d');
-    expect(markup).toContain('background-color:#161816');
-    expect(markup).toContain('color:#f2f1ed');
-  });
-
-  it('leaves no light-theme colour behind to fight the ground', () => {
-    for (const light of ['#fbfaf8', '#ffffff', '#e5e1d9', '#17191a', '#5c5f5b', '#12312a']) {
-      expect(markup, `${light} is a light-theme value`).not.toContain(light);
-    }
-  });
+  // The ground both emails are drawn on — the scheme they declare and the
+  // palette they use — is `tests/notify/email-ground.test.ts`.
 
   it('links only through Supabase’s token hash, never a hand-built token', () => {
     // Four uses: the VML button, the anchor, and the fallback link, which

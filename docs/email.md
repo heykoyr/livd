@@ -287,9 +287,14 @@ suppress a real send; and it is recorded in the audit trail as
   `dmarc=pass header.from=livd.site`
 - every link, including the one behind the logo, on `https://livd.site`
 - the logo at the top rendering as the official mark, not as alt text — it is
-  loaded from `https://livd.site/brand/email/livd-logo.png`
-- **no rectangle around the logo**, in a dark client as well as a light one.
-  The file is transparent; a tile around it means the wrong asset shipped
+  loaded from `https://livd.site/brand/email/livd-logo-white.png`
+- **the message dark**, in a light client as well as a dark one. Both emails
+  state the dark scheme and write its palette inline, because Gmail ignores
+  `prefers-color-scheme` and inverts a light message itself — which leaves the
+  logo, the one thing it will not invert, on a ground nobody chose. A light
+  message means an old template is live
+- **no rectangle around the logo.** The file is transparent; a tile around it
+  means the wrong asset shipped
 
 The page cannot test sign-in email. Supabase sends that itself — see
 [`supabase/templates/README.md`](../supabase/templates/README.md).
