@@ -92,6 +92,40 @@ The local development store uses a slice of the same dataset — the original
 sixteen plus three properties per city (`LOCAL_PER_CITY`) — so every page works
 on a laptop without a store the size of a database.
 
+## What loading it turned up
+
+Four defects that a sixteen-property dataset could not show, each fixed where
+it was rather than worked around in the seed:
+
+- **Place pages counted in JavaScript.** Explore, the country and city pages,
+  the directory and the sitemap selected one row per property and aggregated in
+  the application. PostgREST truncates a response at 1,000 rows, so past that
+  size the counts would have been quietly short. Now aggregated in Postgres
+  (0052).
+- **`ts_rank > 0` was not a match test.** It returns a tiny positive number for
+  a row matching none of a multi-word query's words, so every two-word search
+  matched the whole table: "Port Harcourt" returned all 1,842 seeded
+  properties. A full-text match now means all the words (0054).
+- **Search read every property on every keystroke.** Now an index-backed
+  candidate set (0054).
+- **Sample accounts broke Auth's user listing.** The original SQL seed left four
+  token columns NULL in `auth.users`, where Auth always writes `''` and reads
+  them as strings. Any admin user listing for the whole project failed with
+  "Database error finding users" (0053).
+
+Two more were found and fixed in the application rather than the database: a
+resident adding a building could be matched to a sample property as a duplicate
+(`findDuplicateProperty` now ignores sample rows), and city pages loaded every
+review in the city to render one screen of cards.
+
+**One known divergence.** Five review sentences that assumed a tenancy had
+ended ("while I lived there") were reworded after Nigeria and the United
+Kingdom had been seeded. About 400 rows there keep the earlier wording, 174 of
+them on reviews by current residents. The loader never rewrites a row that
+exists, and rewriting them would have written several hundred
+evidence-preservation snapshots about sample data. Everything seeded since uses
+the corrected wording.
+
 ## Coverage
 
 Generated from `generateSeed({ scale: 'full' })`, the original sixteen included.

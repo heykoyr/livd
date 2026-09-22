@@ -117,12 +117,37 @@ function fail(context, error) {
   throw new Error(`${context}: ${error.message}`);
 }
 
+/**
+ * Retries a request that failed for a reason that is not about the data.
+ *
+ * A full run makes thousands of requests over the better part of an hour, and
+ * one dropped connection should not undo it. Only transport failures and the
+ * server's own temporary refusals are retried; a constraint violation is a
+ * fact about the rows and is raised immediately.
+ */
+async function withRetry(context, run) {
+  let delay = 500;
+  for (let attempt = 1; ; attempt += 1) {
+    const { error, ...rest } = await run();
+    if (!error) return rest;
+
+    const transient =
+      /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|network|timeout|too many|503|504|upstream/i.test(
+        `${error.message} ${error.code ?? ''}`,
+      );
+    if (!transient || attempt >= 5) fail(context, error);
+
+    process.stdout.write(`\n  ${context}: ${error.message} — retrying in ${delay}ms\n`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay *= 2;
+  }
+}
+
 /** Every row of a query, a thousand at a time — PostgREST truncates past that. */
 async function readAll(build, context) {
   const rows = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await build().range(from, from + 999);
-    if (error) fail(context, error);
+    const { data } = await withRetry(context, () => build().range(from, from + 999));
     rows.push(...(data ?? []));
     if (!data || data.length < 1000) return rows;
   }
@@ -132,20 +157,18 @@ async function insertAll(table, rows, conflictTarget) {
   let written = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
     const slice = rows.slice(i, i + BATCH);
-    const { error } = await supabase
-      .from(table)
-      .upsert(slice, { onConflict: conflictTarget, ignoreDuplicates: true });
-    if (error) fail(table, error);
+    await withRetry(table, () =>
+      supabase.from(table).upsert(slice, { onConflict: conflictTarget, ignoreDuplicates: true }),
+    );
     written += slice.length;
   }
   return written;
 }
 
 async function countWhere(table, select, apply) {
-  const { count, error } = await apply(
-    supabase.from(table).select(select, { count: 'exact', head: true }),
+  const { count } = await withRetry(`count ${table}`, () =>
+    apply(supabase.from(table).select(select, { count: 'exact', head: true })),
   );
-  if (error) fail(`count ${table}`, error);
   return count ?? 0;
 }
 
@@ -295,27 +318,56 @@ if (DRY_RUN) {
 
 /* --- accounts --- */
 
-const { data: listed, error: listError } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-if (listError) fail('list accounts', listError);
-const idByEmail = new Map((listed?.users ?? []).map((u) => [u.email, u.id]));
-
-let accountsCreated = 0;
-for (const user of seed.users) {
-  if (idByEmail.has(user.email)) continue;
-  // Confirmed directly, so no confirmation email is ever sent.
-  const { data, error } = await supabase.auth.admin.createUser({
-    email: user.email,
-    email_confirm: true,
-    user_metadata: { livd_demo: true },
-  });
-  if (error && !/already/i.test(error.message)) fail(`account ${user.email}`, error);
-  if (data?.user) idByEmail.set(user.email, data.user.id);
-  accountsCreated += 1;
+// Sample accounts created by `build-seed-sql.mjs` carry deterministic ids, so
+// they are found in `profiles` by id — no Auth API call, and no dependence on
+// listing every account in the project (which is paged, and which a single
+// malformed row can break for everyone; see 0053).
+const idBySeedId = new Map();
+{
+  const expected = seed.users.map((user) => [user.id, uuidFor(user.id)]);
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .in(
+      'id',
+      expected.map(([, id]) => id),
+    );
+  if (error) fail('sample accounts', error);
+  const present = new Set((data ?? []).map((row) => row.id));
+  for (const [seedId, id] of expected) if (present.has(id)) idBySeedId.set(seedId, id);
 }
 
-const emailBySeedId = new Map(seed.users.map((u) => [u.id, u.email]));
+// Anything missing — a fresh project, or accounts made through the admin API
+// with server-assigned ids — is looked up by email and created if absent.
+let accountsCreated = 0;
+const missing = seed.users.filter((user) => !idBySeedId.has(user.id));
+if (missing.length > 0) {
+  const idByEmail = new Map();
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) fail('list accounts', error);
+    for (const u of data?.users ?? []) idByEmail.set(u.email, u.id);
+    if (!data || data.users.length < 1000) break;
+  }
+  for (const user of missing) {
+    if (idByEmail.has(user.email)) {
+      idBySeedId.set(user.id, idByEmail.get(user.email));
+      continue;
+    }
+    // Confirmed directly, so no confirmation email is ever sent.
+    const { data, error } = await supabase.auth.admin.createUser({
+      email: user.email,
+      email_confirm: true,
+      user_metadata: { livd_demo: true },
+    });
+    if (error) fail(`account ${user.email}`, error);
+    idBySeedId.set(user.id, data.user.id);
+    accountsCreated += 1;
+  }
+}
+
 function authorIdFor(seedUserId) {
-  const resolved = idByEmail.get(emailBySeedId.get(seedUserId));
+  const resolved = idBySeedId.get(seedUserId);
   if (!resolved) throw new Error(`No account for ${seedUserId}`);
   return resolved;
 }

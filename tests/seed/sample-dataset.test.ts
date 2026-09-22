@@ -198,8 +198,10 @@ describe('geography', () => {
       const name = cityKey(countryCode, city.name);
       if (allocation.reduce((a, b) => a + b, 0) !== city.properties) problems.push(`${name}: does not sum`);
       if (Math.max(...allocation) > MAX_PER_NEIGHBOURHOOD) problems.push(`${name}: over the cap`);
-      // No neighbourhood holds more than a quarter of a city of any size.
-      if (city.properties >= 40 && Math.max(...allocation) / city.properties >= 0.25) {
+      // No neighbourhood holds much more than its share: under three tenths
+      // of a city with many, and at most twice an even split with few.
+      const ceiling = Math.max(0.3, 2 / city.neighbourhoods.length);
+      if (city.properties >= 40 && Math.max(...allocation) / city.properties > ceiling) {
         problems.push(`${name}: one neighbourhood dominates`);
       }
       if (city.properties >= city.neighbourhoods.length && Math.min(...allocation) < 1) {

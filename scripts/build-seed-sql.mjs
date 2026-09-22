@@ -74,6 +74,7 @@ chunks.push(`
 -- downstream, which is how the demo data is removed in one statement.
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password,
+  confirmation_token, recovery_token, email_change_token_new, email_change,
   email_confirmed_at, created_at, updated_at,
   raw_app_meta_data, raw_user_meta_data, is_sso_user, is_anonymous
 )
@@ -83,6 +84,9 @@ select
   'authenticated', 'authenticated',
   v.email,
   '',
+  -- Auth writes '' here and reads these as strings; a NULL in any row breaks
+  -- every admin user listing in the project (0053).
+  '', '', '', '',
   now(), now(), now(),
   '{"provider":"demo","providers":["demo"]}'::jsonb,
   '{"livd_demo":true}'::jsonb,

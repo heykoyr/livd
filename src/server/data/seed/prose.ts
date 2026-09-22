@@ -46,7 +46,7 @@ const CATEGORY_LINES: Record<string, Bank> = {
     good: [
       'Repairs were handled quickly, usually within a couple of days of reporting them.',
       'Anything that broke got fixed without much chasing, which is rarer than it should be.',
-      'The {building} is clearly looked after; the {common} were repainted while I was there.',
+      'The {building} is clearly looked after; the {common} were repainted recently.',
       'When [the kitchen tap|a pipe under the sink|the shower] went, someone came out the next morning.',
       'Maintenance is the strong point here. Small jobs get done without a fuss.',
       'The place has been kept in good condition, and it shows.',
@@ -127,7 +127,7 @@ const CATEGORY_LINES: Record<string, Bank> = {
       'The main door lock was broken for long stretches and anyone could walk in.',
       'The lighting at the entrance was out for months.',
       "I didn't feel comfortable walking back from {transit} after dark.",
-      'There were a couple of break-ins in the {building} while I lived there.',
+      'There have been a couple of break-ins in the {building}.',
     ],
     mixed: [
       'The {building} itself feels secure; the street outside less so after dark.',
@@ -145,7 +145,7 @@ const CATEGORY_LINES: Record<string, Bank> = {
       'You hear everything through the floors: footsteps, conversations, all of it.',
       'Traffic noise from the main road carries straight into the bedroom.',
       'Weekend noise from nearby venues made sleeping difficult.',
-      'Construction next door went on for most of my tenancy.',
+      'Construction next door went on for months.',
       "Thin walls. I knew my {neighbours}' routines better than my own.",
     ],
     mixed: [
@@ -196,7 +196,7 @@ const CATEGORY_LINES: Record<string, Bank> = {
   },
   water_supply: {
     good: [
-      'Water ran reliably the entire time I lived there.',
+      'Water ran reliably the whole time.',
       'Water pressure was strong on every floor.',
       'Clean water every day, which is not a given in this part of town.',
     ],
@@ -264,7 +264,7 @@ const CATEGORY_LINES: Record<string, Bank> = {
     ],
     bad: [
       'The {bins} area was left to overflow and nobody took responsibility.',
-      'The {common} were dirty for most of my time there.',
+      'The {common} are dirty more often than not.',
       'Collections were unreliable and the entrance often smelled.',
     ],
   },

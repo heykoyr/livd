@@ -404,6 +404,7 @@ function generateProperty(
   );
 
   const used = new Set<string>();
+  const bodies = new Set<string>();
   const reviews: Review[] = [];
   const authorBase = hashSeed(key) % DEMO_AUTHOR_COUNT;
 
@@ -420,6 +421,7 @@ function generateProperty(
         available,
         earliest,
         used,
+        bodies,
         // Seven is coprime with 120, so consecutive reviews of one property
         // always have different authors — which is what the database's
         // one-review-per-tenancy index requires of them.
@@ -634,6 +636,8 @@ interface ReviewInput {
   available: ReadonlySet<string>;
   earliest: Date;
   used: Set<string>;
+  /** Bodies already on this property, so none appears twice on its page. */
+  bodies: Set<string>;
   author: string;
 }
 
@@ -763,21 +767,29 @@ function generateReview(input: ReviewInput): Review {
     if (second && random() < 0.4) secondaryDepartureReasons.push(second);
   }
 
-  const body =
-    random() < 0.18
-      ? null
-      : composeReviewBody({
-          random,
-          flavour,
-          propertyType: input.propertyType,
-          residency,
-          tenureMonths,
-          monthsSinceLeaving,
-          overallRating,
-          ratings: categoryRatings,
-          departureReason: primaryDepartureReason,
-          used: input.used,
-        });
+  const prose = {
+    flavour,
+    propertyType: input.propertyType,
+    residency,
+    tenureMonths,
+    monthsSinceLeaving,
+    overallRating,
+    ratings: categoryRatings,
+    departureReason: primaryDepartureReason,
+    used: input.used,
+  };
+  let body = random() < 0.18 ? null : composeReviewBody({ ...prose, random });
+
+  // A long body identical to one already on this property is rephrased — from
+  // a separate stream, so nothing else about the review, and nothing about any
+  // review that did not collide, depends on whether this happened.
+  if (body && body.length > 80 && input.bodies.has(body)) {
+    const rephrase = rngFor(`review:${input.key}/${input.index}/rephrase`);
+    for (let attempt = 0; attempt < 6 && body && input.bodies.has(body); attempt += 1) {
+      body = composeReviewBody({ ...prose, random: rephrase });
+    }
+  }
+  if (body) input.bodies.add(body);
 
   // Rent as it was when they lived there, not as it is now.
   const yearsBefore = (SAMPLE_AS_OF.getTime() - createdAtDate.getTime()) / (365.25 * DAY);

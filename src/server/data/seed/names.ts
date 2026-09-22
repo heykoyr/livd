@@ -124,6 +124,7 @@ const GERMAN: NameBank = {
     'Kanal', 'Brunnen', 'Mühlen', 'Brücken', 'Hafen', 'Speicher', 'Ziegel', 'Kupfer',
     'Glas', 'Eisen', 'Stein', 'Sand', 'Wiesen', 'Garten', 'Park', 'Hügel',
     'Falken', 'Lerchen', 'Schwalben', 'Kranich', 'Reiher', 'Eulen', 'Finken', 'Meisen',
+    'Tannen', 'Kiefern', 'Efeu', 'Lavendel', 'Quellen', 'Ufer', 'Feld', 'Wald',
   ],
   forms: [
     (h) => `${h}hof`,
@@ -138,6 +139,10 @@ const GERMAN: NameBank = {
     (h) => `${h}blick`,
     (h) => `${h}werk`,
     (h) => `${h}loft`,
+    (h) => `${h}residenz`,
+    (h) => `${h}gärten`,
+    (h) => `${h}winkel`,
+    (h) => `${h}zeile`,
   ],
 };
 
@@ -148,6 +153,8 @@ const DUTCH: NameBank = {
     'Tulp', 'Roos', 'Anjer', 'Iris', 'Lelie', 'Klaproos', 'Madelief', 'Zonnebloem',
     'Molen', 'Brug', 'Sluis', 'Gracht', 'Dijk', 'Haven', 'Kade', 'Werf',
     'Zon', 'Maan', 'Ster', 'Wolk', 'Wind', 'Duin', 'Polder', 'Weide',
+    'Els', 'Populier', 'Hazelaar', 'Vlier', 'Hulst', 'Meidoorn', 'Ooievaar', 'Fazant',
+    'Waterlelie', 'Korenbloem', 'Hei', 'Riet', 'Veen', 'Beek', 'Akker', 'Boomgaard',
   ],
   forms: [
     (h) => `De ${h}`,
@@ -161,6 +168,7 @@ const DUTCH: NameBank = {
     (h) => `${h}flat`,
     (h) => `${h}park`,
     (h) => `${h}toren`,
+    (h) => `${h}hoek`,
   ],
 };
 
@@ -168,9 +176,11 @@ const FRENCH: NameBank = {
   heads: [
     'les Tilleuls', 'les Platanes', 'les Marronniers', 'les Acacias', 'les Cèdres', 'les Pins', 'les Chênes', 'les Érables',
     'les Lilas', 'les Glycines', 'les Mimosas', 'les Iris', 'les Lavandes', 'les Roses', 'les Jasmins', 'les Magnolias',
-    'du Parc', 'du Canal', 'du Moulin', 'de la Fontaine', 'du Belvédère', 'des Jardins', 'des Vignes', 'du Verger',
+    'du Lavoir', 'du Canal', 'du Moulin', 'de la Fontaine', 'du Belvédère', 'du Rempart', 'des Vignes', 'du Verger',
     'du Soleil', "de l'Aube", 'des Alizés', 'du Mistral', 'des Étoiles', 'de la Source', 'des Coteaux', 'du Val',
-    'Saint-Clair', 'Beausoleil', 'Bellevue', 'Montplaisir', 'Belair', 'Clairefontaine', 'Mirabeau', 'Florian',
+    'Saint-Clair', 'Beausoleil', 'Bellevue', 'Montplaisir', 'Belair', 'Clairefontaine', 'les Oliviers', 'les Cyprès',
+    'les Peupliers', 'les Bouleaux', 'les Saules', 'les Camélias', 'les Hortensias', 'les Bruyères', 'du Lac', 'du Port',
+    'des Collines', 'des Tourterelles', 'des Hirondelles', 'des Mésanges', 'du Cloître', 'des Arcades', 'du Pré', "de l'Horloge",
   ],
   forms: [
     (h) => `Résidence ${h}`,
@@ -183,6 +193,12 @@ const FRENCH: NameBank = {
     (h) => `Le Domaine ${h}`,
     (h) => `Les Hauts ${h}`,
     (h) => `Le Patio ${h}`,
+    (h) => `Les Balcons ${h}`,
+    (h) => `Le Parc ${h}`,
+    (h) => `Les Allées ${h}`,
+    (h) => `Le Hameau ${h}`,
+    (h) => `Les Rives ${h}`,
+    (h) => `L'Atelier ${h}`,
   ],
 };
 
@@ -216,12 +232,18 @@ const SOUTHERN_AFRICAN: NameBank = {
 };
 
 const GULF: NameBank = {
+  // Descriptive nouns — trees, water, stones — rather than words that are
+  // also common given names, and nothing that is a developer's or a
+  // retailer's brand.
   heads: [
-    'Sidra', 'Ghaf', 'Samar', 'Yasmin', 'Warda', 'Noor', 'Sahab', 'Bahar',
-    'Nakhla', 'Rimth', 'Arfaj', 'Qamar', 'Najma', 'Shams', 'Hilal', 'Burhan',
-    'Mawj', 'Sahel', 'Khor', 'Wadi', 'Rawda', 'Bustan', 'Janna', 'Zahra',
-    'Lulu Al Bahr', 'Dana', 'Marjan Al Sahil', 'Fairouz', 'Zumurud', 'Yaqoot', 'Almas', 'Fidda',
-    'Oasis', 'Dune', 'Palm', 'Falcon', 'Pearl', 'Coral', 'Harbour', 'Skyline',
+    'Al Waha', 'Al Ghaf', 'Al Sidr', 'Al Arfaj', 'Al Nakhla', 'Al Bustan', 'Al Rawda', 'Al Wadi',
+    'Al Khor', 'Al Sahel', 'Al Mawj', 'Al Sahab', 'Al Fayrouz', 'Al Zumurud', 'Al Yaqoot', 'Al Fidda',
+    'Al Dhahab', 'Oasis', 'Dune', 'Palm', 'Falcon', 'Pearl', 'Coral', 'Harbour',
+    'Skyline', 'Mirage', 'Sandstone', 'Horizon', 'Crescent', 'Lagoon', 'Meadow', 'Breeze',
+    'Seabreeze', 'Sunset', 'Sunrise', 'Amber', 'Opal', 'Jade', 'Onyx', 'Cedar',
+    'Olive', 'Acacia', 'Jasmine', 'Lotus', 'Orchid', 'Iris', 'Tulip', 'Saffron',
+    'Sapphire', 'Emerald', 'Topaz', 'Waterside', 'Parkside', 'Lakeside', 'Hillside', 'Greenview',
+    'Silverline', 'Goldcrest', 'Starlight', 'Baywater',
   ],
   forms: [
     (h) => `${h} Residence`,
@@ -236,17 +258,20 @@ const GULF: NameBank = {
     (h) => `${h} Plaza`,
     (h) => `${h} Villas`,
     (h) => `${h} Point`,
+    (h) => `${h} Square`,
   ],
 };
 
 const INDIAN: NameBank = {
+  // As in the Gulf bank: nouns, not the many words that double as given names.
   heads: [
-    'Neem', 'Gulmohar', 'Tulsi', 'Lotus', 'Kamal', 'Champa', 'Mogra', 'Chameli',
-    'Ashoka Tree', 'Banyan', 'Peepal', 'Silver Oak', 'Palash', 'Amaltas', 'Kadamba', 'Parijat',
-    'Sapphire', 'Emerald', 'Ruby', 'Pearl', 'Coral', 'Topaz', 'Crystal', 'Diamond',
-    'Sunrise', 'Sunshine', 'Moonlight', 'Starlight', 'Rainbow', 'Horizon', 'Skyline', 'Harmony',
-    'Shanti', 'Anand', 'Sukh', 'Sampada', 'Samriddhi', 'Prakriti', 'Vasundhara', 'Aakash',
+    'Neem', 'Gulmohar', 'Tulsi', 'Lotus', 'Mogra', 'Chameli', 'Ashoka Tree', 'Banyan',
+    'Peepal', 'Silver Oak', 'Palash', 'Amaltas', 'Kadamba', 'Parijat', 'Sapphire', 'Emerald',
+    'Ruby', 'Pearl', 'Coral', 'Topaz', 'Crystal', 'Diamond', 'Sunrise', 'Sunshine',
+    'Moonlight', 'Starlight', 'Rainbow', 'Horizon', 'Skyline', 'Harmony', 'Sampada', 'Samriddhi',
     'Green Valley', 'Palm Grove', 'Lake View', 'Hill View', 'River Side', 'Park View', 'Garden City', 'Orchid',
+    'Mango Grove', 'Coconut Grove', 'Jasmine', 'Marigold', 'Hibiscus', 'Bamboo', 'Teak', 'Sandalwood',
+    'Mahogany', 'Tamarind', 'Saffron', 'Monsoon', 'Meadow', 'Silver Sand', 'Blue Ridge', 'Evergreen',
   ],
   forms: [
     (h) => `${h} Residency`,
