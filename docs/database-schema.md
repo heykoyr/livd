@@ -84,9 +84,11 @@ because nothing is collected.
 | `search_vector` | generated `tsvector`, GIN-indexed |
 
 Indexes: unique `slug` · GIN on `search_vector` · GIN `pg_trgm` on
-`building_name` and `street_address` for typo tolerance · composite
+`building_name` and `street_address` for typo tolerance · GIN `pg_trgm` on
+`livd_search_text(...)` of name, street, neighbourhood and locality, which is
+what search actually matches on (0054) · composite
 `(country_code, locality, neighbourhood)` for location pages · partial index on
-`status = 'active'`.
+`status = 'active'` · partial `(latitude, longitude)` for proximity (0049).
 
 Duplicate prevention: a unique index on
 `(country_code, lower(locality), lower(coalesce(street_address,'')), lower(coalesce(building_name,'')))`
@@ -413,9 +415,17 @@ cannot be reconstructed against a person.
 weighting the application applies, fired by an `AFTER INSERT/UPDATE/DELETE`
 trigger on `reviews` and `review_category_ratings`.
 
-`livd_property_search(query text, country text, limit int)` — combined
-`tsvector` rank and `pg_trgm` similarity over properties and aliases, so
-"Adminralty Way" still finds "Admiralty Way".
+`livd_property_search(query text, country text, limit int, offset int)` —
+combined `tsvector` rank and `pg_trgm` similarity over properties, aliases and
+country names, so "Adminralty Way" still finds "Admiralty Way" and "Nigeria"
+finds Nigeria. Since 0054 it reads an index-backed candidate set rather than
+scoring every active property, and a full-text match means *all* the query's
+words: `ts_rank > 0` returns a tiny positive number for a row that matches none
+of them, which made every two-word query match the entire table.
+
+`livd_search_text(text)` — `lower(unaccent(...))` with the dictionary named so
+it is IMMUTABLE and can be indexed. Backed by GIN trigram indexes on the
+building name, street, neighbourhood and locality, and on alias text.
 
 `livd_slugify(text)` — deterministic, unicode-aware slug generation.
 
