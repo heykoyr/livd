@@ -153,6 +153,17 @@ describe('what it refuses', () => {
     );
   });
 
+  it('answers cleanly on the local adapter, where no link can be real', async () => {
+    vi.stubEnv('LIVD_DATA_BACKEND', 'local');
+    const { POST } = await load();
+
+    const response = await POST(post(valid));
+
+    expect(verifyOtp).not.toHaveBeenCalled();
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toContain('error=unknown');
+  });
+
   it('never lands anywhere but a Livd path, whatever next says', async () => {
     verifyOtp.mockResolvedValue({ data: {}, error: null });
     const { POST } = await load();

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { livdOrigins } from '@/config/site';
+import { livdOrigins, resolveDataBackend } from '@/config/site';
 import { destinationFromLink, parseEmailLinkParams } from '@/lib/auth/confirm-link';
 import {
   classifyVerifyFailure,
@@ -55,6 +55,10 @@ export async function POST(request: Request): Promise<Response> {
   const link = parseEmailLinkParams({ token_hash: field('token_hash'), type: field('type') });
 
   if (!link) return failed('invalid', next, url);
+
+  // The local adapter sends no email, so no link can be real; saying so beats
+  // a 500 from a Supabase client with nothing to connect to.
+  if (resolveDataBackend() !== 'supabase') return failed('unknown', next, url);
 
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
   const limit = await checkRateLimit('authLinkVerify', `origin:${ip}`);
