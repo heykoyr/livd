@@ -457,9 +457,10 @@ npm run dev
 ```
 
 Open <http://localhost:3000>. No database, no accounts, no configuration — the
-app ships with a file-backed store seeded with sixteen properties across eight
-countries, and it works end to end: search, property pages, the review flow,
-moderation, all of it.
+app ships with a file-backed store seeded with sample properties across every
+supported market, and it works end to end: search, property pages, the review
+flow, moderation, all of it. See [docs/sample-data.md](docs/sample-data.md) for
+what that dataset is and how it grows.
 
 The local sign-in adapter has no email step: enter any address on `/sign-in` and
 you are signed in. The first account created becomes an admin, so `/admin` is
