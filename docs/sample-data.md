@@ -107,7 +107,10 @@ it was rather than worked around in the seed:
   matched the whole table: "Port Harcourt" returned all 1,842 seeded
   properties. A full-text match now means all the words (0054).
 - **Search read every property on every keystroke.** Now an index-backed
-  candidate set (0054).
+  candidate set (0054), fenced with `as materialized` (0055) — without the
+  fence the planner pushed the final filter back down into a full scan and the
+  candidates bought nothing. Measured over the finished dataset: 136 ms before,
+  143 ms with the candidates alone, 14-44 ms with the fence.
 - **Sample accounts broke Auth's user listing.** The original SQL seed left four
   token columns NULL in `auth.users`, where Auth always writes `''` and reads
   them as strings. Any admin user listing for the whole project failed with
@@ -128,31 +131,82 @@ the corrected wording.
 
 ## Coverage
 
-Generated from `generateSeed({ scale: 'full' })`, the original sixteen included.
-Regenerate when the geography changes.
+As loaded in production, read back from the database. The generator
+produces exactly these rows; regenerate this table when the geography
+changes.
 
 | Country | Regions | Cities | Neighbourhoods | Properties | Reviews |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Australia | 1 | 1 | 1 | 1 | 15 |
-| Canada | 2 | 2 | 2 | 2 | 27 |
-| Germany | 1 | 1 | 1 | 1 | 13 |
-| Ireland | 1 | 1 | 1 | 1 | 2 |
-| Netherlands | 1 | 1 | 1 | 1 | 12 |
+| Australia | 7 | 8 | 80 | 616 | 5,286 |
+| Canada | 6 | 8 | 80 | 612 | 5,248 |
+| France | 7 | 8 | 68 | 570 | 4,589 |
+| Germany | 7 | 8 | 79 | 641 | 5,091 |
+| India | 9 | 10 | 113 | 1,000 | 8,129 |
+| Ireland | 4 | 4 | 30 | 256 | 2,086 |
+| Netherlands | 5 | 6 | 45 | 406 | 3,351 |
 | Nigeria | 17 | 17 | 171 | 998 | 8,218 |
+| South Africa | 4 | 5 | 49 | 465 | 3,950 |
+| United Arab Emirates | 3 | 3 | 32 | 310 | 2,687 |
 | United Kingdom | 12 | 12 | 157 | 833 | 7,217 |
-| United States | 4 | 4 | 4 | 4 | 49 |
-| **Total** | **39** | **39** | **338** | **1,841** | **15,553** |
+| United States | 14 | 18 | 202 | 1,509 | 12,917 |
+| **Total** | **95** | **107** | **1106** | **8,216** | **68,769** |
 
 By city:
 
 | Country | Region | City | Neighbourhoods | Properties | Reviews |
 | --- | --- | --- | ---: | ---: | ---: |
-| Australia | NSW | Sydney | 1 | 1 | 15 |
-| Canada | ON | Toronto | 1 | 1 | 18 |
-| Canada | BC | Vancouver | 1 | 1 | 9 |
-| Germany | Berlin | Berlin | 1 | 1 | 13 |
-| Ireland | County Dublin | Dublin | 1 | 1 | 2 |
-| Netherlands | Noord-Holland | Amsterdam | 1 | 1 | 12 |
+| Australia | NSW | Sydney | 22 | 171 | 1,576 |
+| Australia | VIC | Melbourne | 18 | 160 | 1,344 |
+| Australia | QLD | Brisbane | 11 | 90 | 784 |
+| Australia | WA | Perth | 9 | 70 | 522 |
+| Australia | SA | Adelaide | 6 | 50 | 476 |
+| Australia | ACT | Canberra | 5 | 30 | 221 |
+| Australia | QLD | Gold Coast | 5 | 25 | 207 |
+| Australia | TAS | Hobart | 4 | 20 | 156 |
+| Canada | ON | Toronto | 20 | 171 | 1,506 |
+| Canada | BC | Vancouver | 13 | 121 | 1,132 |
+| Canada | QC | Montreal | 13 | 110 | 979 |
+| Canada | AB | Calgary | 9 | 60 | 509 |
+| Canada | ON | Ottawa | 9 | 60 | 519 |
+| Canada | AB | Edmonton | 6 | 40 | 265 |
+| Canada | NS | Halifax | 5 | 25 | 184 |
+| Canada | MB | Winnipeg | 5 | 25 | 154 |
+| France | Île-de-France | Paris | 22 | 190 | 1,614 |
+| France | Auvergne-Rhône-Alpes | Lyon | 10 | 90 | 637 |
+| France | Provence-Alpes-Côte d'Azur | Marseille | 9 | 80 | 645 |
+| France | Nouvelle-Aquitaine | Bordeaux | 6 | 50 | 383 |
+| France | Occitanie | Toulouse | 6 | 50 | 523 |
+| France | Hauts-de-France | Lille | 5 | 40 | 320 |
+| France | Pays de la Loire | Nantes | 5 | 40 | 239 |
+| France | Provence-Alpes-Côte d'Azur | Nice | 5 | 30 | 228 |
+| Germany | Berlin | Berlin | 19 | 171 | 1,484 |
+| Germany | Bavaria | Munich | 13 | 110 | 858 |
+| Germany | Hamburg | Hamburg | 12 | 100 | 840 |
+| Germany | North Rhine-Westphalia | Cologne | 9 | 70 | 543 |
+| Germany | Hesse | Frankfurt | 9 | 70 | 553 |
+| Germany | North Rhine-Westphalia | Düsseldorf | 6 | 40 | 258 |
+| Germany | Saxony | Leipzig | 6 | 40 | 249 |
+| Germany | Baden-Württemberg | Stuttgart | 5 | 40 | 306 |
+| India | Maharashtra | Mumbai | 21 | 190 | 1,632 |
+| India | Karnataka | Bengaluru | 17 | 170 | 1,367 |
+| India | Delhi | Delhi | 16 | 160 | 1,279 |
+| India | Tamil Nadu | Chennai | 12 | 100 | 840 |
+| India | Telangana | Hyderabad | 12 | 100 | 789 |
+| India | Maharashtra | Pune | 11 | 90 | 675 |
+| India | West Bengal | Kolkata | 10 | 80 | 814 |
+| India | Gujarat | Ahmedabad | 6 | 40 | 257 |
+| India | Haryana | Gurugram | 4 | 40 | 265 |
+| India | Uttar Pradesh | Noida | 4 | 30 | 211 |
+| Ireland | County Dublin | Dublin | 16 | 151 | 1,438 |
+| Ireland | County Cork | Cork | 6 | 50 | 344 |
+| Ireland | County Galway | Galway | 4 | 30 | 164 |
+| Ireland | County Limerick | Limerick | 4 | 25 | 140 |
+| Netherlands | Noord-Holland | Amsterdam | 15 | 151 | 1,309 |
+| Netherlands | Zuid-Holland | Rotterdam | 8 | 80 | 699 |
+| Netherlands | Zuid-Holland | The Hague | 7 | 60 | 513 |
+| Netherlands | Utrecht | Utrecht | 7 | 60 | 546 |
+| Netherlands | Noord-Brabant | Eindhoven | 4 | 30 | 161 |
+| Netherlands | Groningen | Groningen | 4 | 25 | 123 |
 | Nigeria | Lagos State | Lagos | 32 | 222 | 1,922 |
 | Nigeria | FCT | Abuja | 23 | 161 | 1,512 |
 | Nigeria | Rivers State | Port Harcourt | 13 | 90 | 658 |
@@ -170,6 +224,14 @@ By city:
 | Nigeria | Delta State | Warri | 5 | 25 | 159 |
 | Nigeria | Ondo State | Akure | 4 | 20 | 184 |
 | Nigeria | Anambra State | Onitsha | 5 | 20 | 139 |
+| South Africa | Western Cape | Cape Town | 16 | 150 | 1,443 |
+| South Africa | Gauteng | Johannesburg | 15 | 150 | 1,372 |
+| South Africa | KwaZulu-Natal | Durban | 6 | 70 | 490 |
+| South Africa | Gauteng | Pretoria | 8 | 70 | 502 |
+| South Africa | Eastern Cape | Gqeberha | 4 | 25 | 143 |
+| United Arab Emirates | Dubai | Dubai | 18 | 170 | 1,562 |
+| United Arab Emirates | Abu Dhabi | Abu Dhabi | 9 | 90 | 726 |
+| United Arab Emirates | Sharjah | Sharjah | 5 | 50 | 399 |
 | United Kingdom | Greater London | London | 43 | 221 | 2,105 |
 | United Kingdom | Greater Manchester | Manchester | 18 | 121 | 1,127 |
 | United Kingdom | West Midlands | Birmingham | 15 | 100 | 886 |
@@ -182,7 +244,21 @@ By city:
 | United Kingdom | Tyne and Wear | Newcastle upon Tyne | 6 | 30 | 214 |
 | United Kingdom | Nottinghamshire | Nottingham | 7 | 25 | 123 |
 | United Kingdom | South Yorkshire | Sheffield | 6 | 25 | 176 |
-| United States | TX | Austin | 1 | 1 | 19 |
-| United States | NY | Brooklyn | 1 | 1 | 23 |
-| United States | IL | Chicago | 1 | 1 | 7 |
-| United States | WA | Seattle | 1 | 1 | 0 |
+| United States | NY | New York | 16 | 170 | 1,474 |
+| United States | CA | Los Angeles | 19 | 160 | 1,465 |
+| United States | IL | Chicago | 18 | 141 | 1,205 |
+| United States | NY | Brooklyn | 14 | 121 | 1,105 |
+| United States | TX | Houston | 12 | 90 | 767 |
+| United States | CA | San Francisco | 14 | 90 | 769 |
+| United States | TX | Austin | 12 | 81 | 693 |
+| United States | WA | Seattle | 12 | 81 | 572 |
+| United States | MA | Boston | 12 | 80 | 678 |
+| United States | DC | Washington | 12 | 80 | 720 |
+| United States | GA | Atlanta | 10 | 75 | 625 |
+| United States | PA | Philadelphia | 10 | 70 | 723 |
+| United States | TX | Dallas | 8 | 60 | 522 |
+| United States | FL | Miami | 8 | 60 | 445 |
+| United States | CO | Denver | 8 | 50 | 477 |
+| United States | AZ | Phoenix | 6 | 40 | 282 |
+| United States | MN | Minneapolis | 6 | 30 | 214 |
+| United States | OR | Portland | 5 | 30 | 181 |
