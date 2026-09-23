@@ -83,17 +83,29 @@ link, the link's own `aria-label` ("Livd — home") names it.
 
 **Where it is used.** `SiteHeader`, `SiteFooter` and `global-not-found.tsx`.
 
-**In email.** Both templates are dark in every client and render the white
-logo as a transparent PNG from `public/brand/email/` — no client renders SVG.
-The sign-in email shows it at 140 × 41, the notification shell at 82 × 24.
+**In email the logo is three elements**, and which one shows depends on what
+the client will tell you.
 
-Neither carries a tile, and neither leaves its ground to the client. A ground
-baked into the image is a white rectangle waiting to happen the first time a
-client darkens the message around it; a ground left unstated is the same bug
-one step back, since Gmail will then choose one and the logo cannot follow.
+Both templates carry both schemes: light inline, dark in a
+`prefers-color-scheme` block. A client that answers the query gets the
+official file drawn for the ground it reported — `livd-logo.png` on light,
+`livd-logo-white.png` on dark, both transparent PNGs from
+`public/brand/email/`, since no client renders SVG.
+
+Gmail answers nothing. It supports neither that query nor the `color-scheme`
+meta, and in its dark theme it rewrites the message itself: it inverts grounds
+and text, and never the pixels of an image. There is no file that survives
+that, and it has now been proved twice in opposite directions — a light
+message inverted to dark stranded a white tile on it, and a dark message
+inverted to *light* left a white logo invisible on it. So the element Gmail
+sees is **the wordmark set as type**, which inverts along with the ground
+under it, and the image files are revealed only by the query Gmail does not
+answer.
+
 See [`supabase/templates/README.md`](../supabase/templates/README.md) and
-`tests/notify/email-ground.test.ts`, which holds both emails to the dark
-theme's own palette.
+`tests/notify/email-ground.test.ts`, which holds both emails to both of the
+product's palettes and checks the type is what survives a stripped
+stylesheet.
 
 ### The social card
 

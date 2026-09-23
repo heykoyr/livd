@@ -163,10 +163,13 @@ then apply it to both templates. `tests/auth/sign-in-template.test.ts` asserts
 the link shape, that `{{ .ConfirmationURL }}` is gone, and that the file says
 nothing Supabase-branded.
 
-What the email is checked against — tables, inline styles, one dark palette
-written into the markup because Gmail inverts rather than honouring
-`prefers-color-scheme`, one transparent logo — is described in the file's
-header comment.
+What the email is checked against — tables, inline styles, both colour schemes
+(light in the markup, dark in a `prefers-color-scheme` block), and a logo in
+three elements because Gmail honours neither that query nor the `color-scheme`
+meta and inverts the message on its own account — is described in the file's
+header comment. The short version: a client that says which ground it is on
+gets the official file for it, and Gmail gets the wordmark as type, which is
+the only thing that inverts along with the ground beneath it.
 
 ---
 

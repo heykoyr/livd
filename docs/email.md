@@ -286,15 +286,18 @@ suppress a real send; and it is recorded in the audit trail as
 - `Authentication-Results`: `dkim=pass header.i=@livd.site`, `spf=pass`, and
   `dmarc=pass header.from=livd.site`
 - every link, including the one behind the logo, on `https://livd.site`
-- the logo at the top rendering as the official mark, not as alt text — it is
-  loaded from `https://livd.site/brand/email/livd-logo-white.png`
-- **the message dark**, in a light client as well as a dark one. Both emails
-  state the dark scheme and write its palette inline, because Gmail ignores
-  `prefers-color-scheme` and inverts a light message itself — which leaves the
-  logo, the one thing it will not invert, on a ground nobody chose. A light
-  message means an old template is live
-- **no rectangle around the logo.** The file is transparent; a tile around it
-  means the wrong asset shipped
+- **the message matching the device** — light on a light one, dark on a dark
+  one. Both emails carry both schemes: light inline, dark in a
+  `prefers-color-scheme` block
+- **the wordmark legible whichever it is.** What shows depends on the client:
+  - Apple Mail, iOS Mail, Outlook.com answer the query, so they get the
+    official file for their ground — `livd-logo.png` on light,
+    `livd-logo-white.png` on dark
+  - **Gmail answers nothing** and inverts the message itself, leaving images
+    untouched. It therefore gets the wordmark set as type, which inverts with
+    the ground. Seeing an image in Gmail means the stylesheet reached it after
+    all; seeing a white rectangle, or nothing where the logo should be, means
+    an old template is live
 
 The page cannot test sign-in email. Supabase sends that itself — see
 [`supabase/templates/README.md`](../supabase/templates/README.md).

@@ -6,19 +6,24 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { EMAIL_PALETTE } from '@/server/notify/shell';
 
 /**
- * The ground a Livd email is drawn on.
+ * The ground a Livd email is read on, and the logo that belongs to it.
  *
- * Email has no settled ground unless the message states one. Gmail does not
- * honour `prefers-color-scheme`; in dark mode it inverts a light message
- * itself, and it inverts grounds and text while leaving every image as drawn.
- * So a light email is a message whose ground the client picks and whose logo
- * cannot follow — which is exactly how a logo on a light tile came to sit in
- * a darkened message as a white rectangle.
+ * Both emails carry both schemes: light inline on every element, dark in a
+ * `prefers-color-scheme` block. A reader on a dark device gets the dark
+ * message and the white logo; a reader on a light one gets the light message
+ * and the dark-ink logo.
  *
- * Both emails therefore declare the dark scheme and write its palette inline.
- * There are two of them, in two languages, one of which lives in a dashboard
- * outside this repository — so what is asserted here is that they agree: with
- * the product's dark theme, and with each other.
+ * Gmail can be asked nothing. It supports neither that media query nor the
+ * `color-scheme` meta, and in its dark theme it rewrites the message itself —
+ * inverting grounds and text, never the pixels of an image. That has broken
+ * the logo twice in opposite directions: a light message inverts to dark and
+ * left a white tile stranded on it, and a dark message inverts to *light* and
+ * left a white logo invisible on it. So the element Gmail sees is the wordmark
+ * set as type, which inverts along with the ground beneath it, and the image
+ * files are revealed only by the query Gmail does not answer.
+ *
+ * What is asserted here is that arrangement, in both emails, plus the palette
+ * parity that keeps mail and product from drifting apart.
  */
 
 // `process.cwd()` rather than `import.meta.url`: these run in jsdom, where
@@ -29,8 +34,8 @@ const TEMPLATE = read('supabase/templates/magic-link.html');
 /** The markup only: the file opens with a comment block that discusses colour. */
 const TEMPLATE_MARKUP = TEMPLATE.slice(TEMPLATE.indexOf('<!doctype html>'));
 
-/** Each email colour, and the dark-theme token it must equal. */
-const TOKENS: Array<[keyof typeof EMAIL_PALETTE, string]> = [
+/** Each email colour, and the token it must equal in each theme. */
+const TOKENS: Array<[keyof typeof EMAIL_PALETTE.light, string]> = [
   ['canvas', 'canvas'],
   ['surface', 'surface'],
   ['border', 'border'],
@@ -40,9 +45,6 @@ const TOKENS: Array<[keyof typeof EMAIL_PALETTE, string]> = [
   ['brand', 'brand'],
   ['brandInk', 'ink-inverse'],
 ];
-
-/** Every light-theme value, so a stray one cannot hide in either email. */
-const LIGHT_THEME = ['#fbfaf8', '#ffffff', '#e5e1d9', '#17191a', '#5c5f5b', '#6d7069', '#12312a'];
 
 let renderNotification: typeof import('@/server/notify/messages').renderNotification;
 let saved: string | undefined;
@@ -67,15 +69,40 @@ const notification = () =>
     propertySlug: 'the-franklin-brooklyn',
   }).html;
 
+/** Everything outside `<style>`: what a client that drops stylesheets keeps. */
+const withoutStylesheet = (html: string) => html.replace(/<style[\s\S]*?<\/style>/g, '');
+
+/**
+ * What such a client actually *shows*: the same, less the elements held back
+ * for a scheme it never asked about. The dark logo is one of them, and it
+ * carries dark ink inline so that its alt text is legible if it is ever
+ * revealed — which is correct, and would otherwise read as a stray dark value.
+ */
+const visible = (html: string) =>
+  withoutStylesheet(html).replace(/<[a-z]+[^>]*display:\s*none[^>]*>/gi, '');
+
+/** The rules inside the dark block, which is the only place dark may appear. */
+const darkBlock = (html: string) => {
+  const at = html.indexOf('@media (prefers-color-scheme: dark)');
+  expect(at, 'no dark scheme block').toBeGreaterThan(-1);
+  return html.slice(at, html.indexOf('}\n}', at) + 3) || html.slice(at);
+};
+
 describe('the email palette', () => {
   const css = read('src/app/globals.css');
-  const dark = css.slice(css.indexOf("[data-theme='dark'] {"), css.indexOf('@media print'));
+  const darkAt = css.indexOf("[data-theme='dark'] {");
+  const light = css.slice(0, darkAt);
+  const dark = css.slice(darkAt, css.indexOf('@media print'));
 
-  it.each(TOKENS)('%s is the dark theme’s --color-%s, exactly', (key, token) => {
-    const declared = dark.match(new RegExp(`--color-${token}:\\s*(#[0-9a-fA-F]{6})`))?.[1];
+  const declared = (block: string, token: string) =>
+    block.match(new RegExp(`--color-${token}:\\s*(#[0-9a-fA-F]{6})`))?.[1]?.toLowerCase();
 
-    expect(declared, `--color-${token} in globals.css`).toBeDefined();
-    expect(EMAIL_PALETTE[key].toLowerCase()).toBe(declared!.toLowerCase());
+  it.each(TOKENS)('light %s is the light theme’s --color-%s', (key, token) => {
+    expect(EMAIL_PALETTE.light[key].toLowerCase()).toBe(declared(light, token));
+  });
+
+  it.each(TOKENS)('dark %s is the dark theme’s --color-%s', (key, token) => {
+    expect(EMAIL_PALETTE.dark[key].toLowerCase()).toBe(declared(dark, token));
   });
 });
 
@@ -83,40 +110,81 @@ describe.each([
   ['the notification email', () => notification()],
   ['the sign-in template', () => TEMPLATE_MARKUP],
 ])('%s', (_name, html) => {
-  it('declares the scheme it is already drawn in', () => {
-    expect(html()).toMatch(/<meta name="color-scheme" content="dark"/);
-    expect(html()).toMatch(/<meta name="supported-color-schemes" content="dark"/);
+  it('offers both schemes rather than claiming one', () => {
+    expect(html()).toMatch(/<meta name="color-scheme" content="light dark"/);
+    expect(html()).toMatch(/<meta name="supported-color-schemes" content="light dark"/);
   });
 
-  it('draws the ground and the card inline, not by a query a client may ignore', () => {
-    // Hex case differs between the two — one is generated, one is hand-written.
-    const markup = html().toLowerCase();
+  it('is light inline, so a client told nothing renders the light message', () => {
+    const bare = withoutStylesheet(html()).toLowerCase();
 
-    expect(markup).toContain(EMAIL_PALETTE.canvas.toLowerCase());
-    expect(markup).toContain(EMAIL_PALETTE.surface.toLowerCase());
-    expect(markup).not.toContain('prefers-color-scheme');
+    expect(bare).toContain(EMAIL_PALETTE.light.canvas.toLowerCase());
+    expect(bare).toContain(EMAIL_PALETTE.light.surface.toLowerCase());
+    expect(bare).toContain(EMAIL_PALETTE.light.ink.toLowerCase());
   });
 
-  it.each(LIGHT_THEME)('carries no light-theme %s to fight that ground', (colour) => {
-    expect(html().toLowerCase()).not.toContain(colour);
+  it('keeps every dark value inside the query, and nowhere visible', () => {
+    const shown = visible(html()).toLowerCase();
+
+    for (const value of Object.values(EMAIL_PALETTE.dark)) {
+      expect(shown, `${value} is applied to something the light message shows`).not.toContain(
+        value.toLowerCase(),
+      );
+    }
   });
 
-  it('shows the white logo, which is the one that ground calls for', () => {
+  it('remaps the ground, the card and the ink when the query is answered', () => {
+    const block = darkBlock(html()).toLowerCase();
+
+    expect(block).toContain(EMAIL_PALETTE.dark.canvas.toLowerCase());
+    expect(block).toContain(EMAIL_PALETTE.dark.surface.toLowerCase());
+    expect(block).toContain(EMAIL_PALETTE.dark.ink.toLowerCase());
+  });
+
+  /**
+   * The Gmail case. Gmail answers no query, so what it renders is the markup
+   * with the stylesheet taken away — and in that state the logo must be the
+   * type, because type is the only thing that inverts with the ground.
+   */
+  it('shows the wordmark as type, and no image, to a client that answers nothing', () => {
+    const bare = withoutStylesheet(html());
+
+    expect(bare).toContain('class="livd-type"');
+    expect(bare).toMatch(/Livd<span style="color:#[aA]{2}5329;?">\.<\/span>/);
+
+    for (const image of bare.match(/<img[^>]*livd-logo[^>]*>/g) ?? []) {
+      expect(image, 'an image is visible before the query answers').toContain('display:none');
+    }
+  });
+
+  it('reveals one official file per ground, and only through the query', () => {
+    expect(html()).toContain('/brand/email/livd-logo.png');
     expect(html()).toContain('/brand/email/livd-logo-white.png');
-    expect(html()).not.toContain('/brand/email/livd-logo.png');
+
+    const dark = darkBlock(html());
+    expect(dark).toContain('.livd-logo-dark');
+    expect(dark).toContain('.livd-type');
+
+    const lightAt = html().indexOf('@media (prefers-color-scheme: light)');
+    expect(lightAt, 'no light scheme block').toBeGreaterThan(-1);
+    expect(html().slice(lightAt, lightAt + 200)).toContain('.livd-logo-light');
+  });
+
+  it('names Livd on every logo image, for a client with images turned off', () => {
+    for (const image of html().match(/<img[^>]*livd-logo[^>]*>/g) ?? []) {
+      expect(image).toContain('alt="Livd"');
+    }
   });
 });
 
 describe('both emails together', () => {
-  it('state the same ground, so two Livd emails look like one sender', () => {
+  it('draw on the same two grounds, so two Livd emails look like one sender', () => {
     const html = notification().toLowerCase();
     const template = TEMPLATE_MARKUP.toLowerCase();
 
-    for (const value of Object.values(EMAIL_PALETTE)) {
-      const colour = value.toLowerCase();
-      // `surface` is the card in both; every other value appears in both too.
-      expect(html, `notification email is missing ${colour}`).toContain(colour);
-      expect(template, `sign-in template is missing ${colour}`).toContain(colour);
+    for (const value of Object.values(EMAIL_PALETTE.light)) {
+      expect(html, `notification email is missing ${value}`).toContain(value.toLowerCase());
+      expect(template, `sign-in template is missing ${value}`).toContain(value.toLowerCase());
     }
   });
 });

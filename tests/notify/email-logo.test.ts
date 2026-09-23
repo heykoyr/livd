@@ -59,21 +59,16 @@ describe('the files email points at', () => {
 });
 
 describe('a notification email', () => {
-  it('shows the official logo, from the canonical origin', () => {
+  it('carries both official files, from the canonical origin', () => {
     const { html } = renderNotification({
       kind: 'review_published',
       propertyName: 'The Franklin',
       propertySlug: 'the-franklin-brooklyn',
     });
 
+    expect(html).toContain(`src="${ORIGIN}${LIGHT}"`);
     expect(html).toContain(`src="${ORIGIN}${DARK}"`);
     expect(html).toContain('alt="Livd"');
-  });
-
-  it('no longer sets the wordmark as type', () => {
-    const { html } = renderNotification({ kind: 'review_held', propertyName: 'The Franklin' });
-    // The old shell drew it as a word plus a coloured full stop.
-    expect(html).not.toContain('>Livd<span');
   });
 
   it('keeps naming Livd in the text part, which has no images at all', () => {
@@ -86,16 +81,16 @@ describe('the sign-in template', () => {
   const template = read('supabase/templates/magic-link.html');
   const markup = template.slice(template.indexOf('<!doctype html>'));
 
-  it('shows the white logo, absolute, on the canonical origin', () => {
+  it('carries both official files, absolute, on the canonical origin', () => {
+    expect(markup).toContain(`src="${ORIGIN}${LIGHT}"`);
     expect(markup).toContain(`src="${ORIGIN}${DARK}"`);
-    expect(markup).not.toContain(`src="${ORIGIN}${LIGHT}"`);
   });
 
-  it('carries one logo and names Livd for a client with images turned off', () => {
+  it('carries one file per ground, each naming Livd with images turned off', () => {
     const images = markup.match(/<img[\s\S]*?\/>/g) ?? [];
 
-    expect(images).toHaveLength(1);
-    expect(images[0]).toContain('alt="Livd"');
+    expect(images).toHaveLength(2);
+    for (const image of images) expect(image).toContain('alt="Livd"');
   });
 
   // The ground both emails are drawn on — the scheme they declare and the

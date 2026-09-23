@@ -229,15 +229,36 @@ function withoutComments(source: string): string {
 }
 
 describe('the OS colour scheme', () => {
-  it('is read by no code and no stylesheet under src/', () => {
-    // `src/app/icon.svg` is the one deliberate exception, and is not scanned:
-    // the favicon is drawn on the browser's tab strip rather than on the page,
-    // so it follows the browser. See docs/brand-mark.md.
+  /**
+   * Two files are allowed to ask, and both are outside the page.
+   *
+   * The rule is about Livd's own surface: what the visitor chose beats what
+   * their machine prefers, everywhere the product is drawn. Neither of these
+   * is drawn there.
+   *
+   * - `src/app/icon.svg` is the favicon, painted on the browser's tab strip.
+   * - `src/server/notify/shell.ts` is an email. There is no visitor to have
+   *   chosen anything and no `data-theme` to read — the reader's client is
+   *   the only thing that knows which ground the message is on, so asking it
+   *   is the only way to send the right one. See docs/brand-mark.md.
+   */
+  const ALLOWED = ['src/app/icon.svg', 'src/server/notify/shell.ts'];
+
+  it('is read by no code and no stylesheet under src/, bar two that are not the page', () => {
     const offenders = sourceFiles(SRC)
       .filter((file) => withoutComments(readFileSync(file, 'utf8')).includes('prefers-color-scheme'))
-      .map((file) => relative(process.cwd(), file));
+      .map((file) => relative(process.cwd(), file).replaceAll('\\', '/'))
+      .filter((file) => !ALLOWED.includes(file));
 
     expect(offenders).toEqual([]);
+  });
+
+  it('is still read by the email shell, which is the exception being allowed', () => {
+    // If this stops being true the exception above is dead wood — remove it
+    // rather than leaving a licence nothing uses.
+    const shell = readFileSync(join(SRC, 'server/notify/shell.ts'), 'utf8');
+
+    expect(withoutComments(shell)).toContain('prefers-color-scheme');
   });
 });
 
